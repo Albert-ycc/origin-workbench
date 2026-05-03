@@ -1,0 +1,80 @@
+Origin Workbench
+================
+
+This product is a fork of Multica (https://github.com/multica-ai/multica),
+maintained as a single-user local Agent workbench with a different product
+direction. This NOTICE file accompanies the LICENSE and lists the upstream
+attribution and the substantive modifications made by the fork.
+
+Upstream
+--------
+
+The upstream Multica project is licensed under a modified Apache License 2.0
+(see LICENSE for the full text, including the additional conditions §1a and
+§1b). The Multica project is © 2025 Multica, Inc.
+
+This fork retains the upstream LICENSE text in full and acknowledges the
+following:
+
+- Multica's original product direction is a multi-tenant SaaS / self-hosted
+  task management platform with AI agents as first-class collaborators.
+- Multica's runtime, daemon, task queue, agent_task_queue execution model,
+  CLI surface, and Go backend architecture are reused unmodified.
+- The Multica trademark, "Multica" wordmark, the official logo assets in
+  `docs/assets/`, and any public service hosted at multica.ai belong to
+  Multica, Inc. and are not part of this fork.
+
+Substantive modifications by the Origin fork
+--------------------------------------------
+
+The following are the principal modifications made on top of upstream
+Multica v0.2.21:
+
+1.  Single-user local product reframing
+    - Repositioned as a single-user local Agent workbench ("Origin"),
+      with Mission as the primary user object and a hardcoded local
+      workspace named `Fairy`.
+    - Removed multi-tenant SaaS concepts from the product surface
+      (workspace creation, member invitation, role management, cloud
+      onboarding flows) — see §2.1 of docs/origin-product-architecture-prd.md
+      (kept private to the fork) for the design rationale.
+    - Replaced the email-and-verification-code login flow with a
+      `/auth/local-signin` endpoint that takes only a name and avatar.
+
+2.  New product objects (Origin Phase 1)
+    - Idea Pool — lightweight pre-Mission incubation layer (migration 074).
+    - Council Session — on-demand multi-agent rooms with activity-level
+      gating (migration 075).
+    - User Profile — per-(workspace,user) identity card and preferences
+      block intended as the closest layer of a three-layer system prompt
+      injection (migration 076).
+
+3.  Frontend reductions
+    - Removed `apps/web/` (the upstream Next.js web frontend) entirely.
+      The Electron desktop app is the only first-class shell.
+    - Removed `Dockerfile.web` and the `frontend` service from
+      `docker-compose.selfhost*.yml`.
+    - Removed several settings tabs that conflict with the single-user
+      reframing (workspace info / repos / members / labs) and the
+      auto-updater (which would overwrite the fork with stock Multica
+      releases).
+
+4.  UI polish
+    - Lorelei avatar set (30 SVG presets) bundled as a deterministic
+      offline avatar pool, replacing emoji and DiceBear remote URLs.
+    - Sidebar header simplified from a workspace dropdown into a
+      pure user-identity block; the avatar dropdown menu (which
+      mixed account, workspace and logout actions) was removed.
+    - Agent card density reduced; agents grid switched to
+      `auto-fill / minmax(220px, 1fr)` for window-resize friendliness.
+    - Help launcher rewritten to point at the upstream repository
+      and license rather than the upstream documentation site.
+
+The original Multica README (preserved verbatim from upstream) is available
+at `README.upstream.md`. The current `README.md` describes the Origin fork.
+
+This NOTICE file is provided to satisfy Apache License 2.0 §4(d) and to
+make the relationship to upstream Multica explicit. Nothing in this fork
+modifies or removes the LOGO or copyright information present in any
+upstream `apps/web/` artifact (the entire `apps/web/` tree was removed
+rather than modified).

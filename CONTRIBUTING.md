@@ -501,7 +501,7 @@ Nothing in this flow touches the system-installed `multica` or the default
 | Health port | `19514` | `19514 + 1 + (name_hash % 1000)` |
 | Workspaces dir | `~/multica_workspaces/` | `~/multica_workspaces_dev-<slug>-<hash>/` |
 | Database | remote / production | local Docker: `multica_<slug>_<hash>` |
-| Desktop profile | `desktop-api.multica.ai` | `desktop-localhost-<port>` |
+| Desktop profile | `origin-desktop` | `desktop-localhost-<port>` |
 
 Multiple worktrees can run simultaneously without conflict.
 

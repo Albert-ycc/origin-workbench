@@ -6,11 +6,14 @@ body:
   - type: dropdown
     id: deployment
     attributes:
-      label: Deployment type
-      description: Are you using the hosted version or a self-hosted instance?
+      label: Product area
+      description: Which local-first area does this request affect?
       options:
-        - multica.ai (hosted)
-        - Self-hosted
+        - Desktop workbench
+        - Agent daemon / runtime
+        - Missions / council sessions
+        - Skills / memory / capability pool
+        - Developer tooling
     validations:
       required: true
 

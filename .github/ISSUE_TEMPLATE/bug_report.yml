@@ -6,11 +6,12 @@ body:
   - type: dropdown
     id: deployment
     attributes:
-      label: Deployment type
-      description: Are you using the hosted version or a self-hosted instance?
+      label: Runtime mode
+      description: How are you running Origin?
       options:
-        - multica.ai (hosted)
-        - Self-hosted
+        - Desktop + local backend
+        - Backend only
+        - Development checkout
     validations:
       required: true
 
@@ -46,5 +47,5 @@ body:
     id: context
     attributes:
       label: Additional context (optional)
-      description: Environment info, logs, or anything else that might help.
+      description: OS, app version, backend logs, daemon logs, or anything else that might help.
       render: shell

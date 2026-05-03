@@ -2,16 +2,15 @@
   "name": "@multica/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Multica Desktop — native desktop client for the Multica platform.",
-  "homepage": "https://multica.ai",
+  "description": "Origin Desktop — local AI agent workbench.",
+  "homepage": "https://github.com/Albert-ycc/origin-workbench",
   "repository": {
     "type": "git",
-    "url": "https://github.com/multica-ai/multica.git",
+    "url": "https://github.com/Albert-ycc/origin-workbench.git",
     "directory": "apps/desktop"
   },
   "author": {
-    "name": "Multica",
-    "email": "support@multica.ai"
+    "name": "Origin contributors"
   },
   "license": "UNLICENSED",
   "main": "./out/main/index.js",

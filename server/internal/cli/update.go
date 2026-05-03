@@ -18,6 +18,7 @@ import (
 )
 
 const DefaultUpdateDownloadTimeout = 120 * time.Second
+const originReleaseRepo = "Albert-ycc/origin-workbench"
 
 // GitHubRelease is the subset of the GitHub releases API response we need.
 type GitHubRelease struct {
@@ -73,7 +74,7 @@ func findReleaseAsset(assets []GitHubReleaseAsset, targetVersion, goos, goarch s
 
 func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/multica-ai/multica/releases/tags/"+tag, nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/"+originReleaseRepo+"/releases/tags/"+tag, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -96,10 +97,10 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	return &release, nil
 }
 
-// FetchLatestRelease fetches the latest release tag from the multica GitHub repo.
+// FetchLatestRelease fetches the latest release tag from the Origin GitHub repo.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/multica-ai/multica/releases/latest", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/"+originReleaseRepo+"/releases/latest", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -155,15 +156,10 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew runs `brew upgrade multica-ai/tap/multica`.
-// Returns the combined output and any error.
+// UpdateViaBrew is intentionally disabled in the Origin fork. The upstream
+// Homebrew tap installs official Multica, which would overwrite this fork.
 func UpdateViaBrew() (string, error) {
-	cmd := exec.Command("brew", "upgrade", "multica-ai/tap/multica")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("brew upgrade failed: %w", err)
-	}
-	return string(out), nil
+	return "", fmt.Errorf("Homebrew updates are disabled for Origin; install from https://github.com/%s/releases/latest or use scripts/install.sh", originReleaseRepo)
 }
 
 func updateDownloadTimeoutOrDefault(timeout time.Duration) time.Duration {

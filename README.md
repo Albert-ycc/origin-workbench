@@ -1,200 +1,105 @@
-<p align="center">
-  <img src="docs/assets/banner.jpg" alt="Multica — humans and agents, side by side" width="100%">
-</p>
+# Origin Workbench
 
-<div align="center">
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
-  <img alt="Multica" src="docs/assets/logo-light.svg" width="50">
-</picture>
-
-# Multica
-
-**Your next 10 hires won't be human.**
-
-The open-source managed agents platform.<br/>
-Turn coding agents into real teammates — assign tasks, track progress, compound skills.
-
-[![CI](https://github.com/multica-ai/multica/actions/workflows/ci.yml/badge.svg)](https://github.com/multica-ai/multica/actions/workflows/ci.yml)
-[![GitHub stars](https://img.shields.io/github/stars/multica-ai/multica?style=flat)](https://github.com/multica-ai/multica/stargazers)
-
-[Website](https://multica.ai) · [Cloud](https://multica.ai/app) · [X](https://x.com/MulticaAI) · [Self-Hosting](SELF_HOSTING.md) · [Contributing](CONTRIBUTING.md)
-
-**English | [简体中文](README.zh-CN.md)**
-
-</div>
-
-## What is Multica?
-
-Multica turns coding agents into real teammates. Assign issues to an agent like you'd assign to a colleague — they'll pick up the work, write code, report blockers, and update statuses autonomously.
-
-No more copy-pasting prompts. No more babysitting runs. Your agents show up on the board, participate in conversations, and compound reusable skills over time. Think of it as open-source infrastructure for managed agents — vendor-neutral, self-hosted, and designed for human + AI teams. Works with **Claude Code**, **Codex**, **OpenClaw**, **OpenCode**, **Hermes**, **Gemini**, **Pi**, **Cursor Agent**, **Kimi**, and **Kiro CLI**.
-
-<p align="center">
-  <img src="docs/assets/hero-screenshot.png" alt="Multica board view" width="800">
-</p>
-
-## Why "Multica"?
-
-Multica — **Mul**tiplexed **I**nformation and **C**omputing **A**gent.
-
-The name is a nod to Multics, the pioneering operating system of the 1960s that introduced time-sharing — letting multiple users share a single machine as if each had it to themselves. Unix was born as a deliberate simplification of Multics: one user, one task, one elegant philosophy.
-
-We think the same inflection is happening again. For decades, software teams have been single-threaded — one engineer, one task, one context switch at a time. AI agents change that equation. Multica brings time-sharing back, but for an era where the "users" multiplexing the system are both humans and autonomous agents.
-
-In Multica, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code — just like their human colleagues. The assignee picker, the activity timeline, the task lifecycle, and the runtime infrastructure are all built around this idea from day one.
-
-Like Multics before it, the bet is on multiplexing: a small team shouldn't feel small. With the right system, two engineers and a fleet of agents can move like twenty.
-
-## Features
-
-Multica manages the full agent lifecycle: from task assignment to execution monitoring to skill reuse.
-
-- **Agents as Teammates** — assign to an agent like you'd assign to a colleague. They have profiles, show up on the board, post comments, create issues, and report blockers proactively.
-- **Autonomous Execution** — set it and forget it. Full task lifecycle management (enqueue, claim, start, complete/fail) with real-time progress streaming via WebSocket.
-- **Reusable Skills** — every solution becomes a reusable skill for the whole team. Deployments, migrations, code reviews — skills compound your team's capabilities over time.
-- **Unified Runtimes** — one dashboard for all your compute. Local daemons and cloud runtimes, auto-detection of available CLIs, real-time monitoring.
-- **Multi-Workspace** — organize work across teams with workspace-level isolation. Each workspace has its own agents, issues, and settings.
-
----
-
-## Quick Install
-
-### macOS / Linux (Homebrew - recommended)
-
-```bash
-brew install multica-ai/tap/multica
-```
-
-Use `brew upgrade multica-ai/tap/multica` to keep the CLI current.
-
-### macOS / Linux (install script)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-```
-
-Use this if Homebrew is not available. The script installs the Multica CLI on macOS and Linux by using Homebrew when it is on `PATH`, otherwise it downloads the binary directly.
-
-### Windows (PowerShell)
-
-```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
-```
-
-Then configure, authenticate, and start the daemon in one command:
-
-```bash
-multica setup          # Connect to Multica Cloud, log in, start daemon
-```
-
-> **Self-hosting?** Add `--with-server` to deploy a full Multica server on your machine:
+> A single-user local AI Agent workbench, forked from
+> [multica-ai/multica](https://github.com/multica-ai/multica).
 >
-> ```bash
-> curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
-> multica setup self-host
-> ```
->
-> This pulls the official Multica images from GHCR (latest stable by default). Requires Docker. See the [Self-Hosting Guide](SELF_HOSTING.md) for details.
-> If the selected GHCR tag has not been published yet, fall back to `make selfhost-build` from a checkout.
+> **Powered by Multica** · Apache 2.0 (with the upstream's additional conditions —
+> see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)).
+> The original Multica README is preserved at [`README.upstream.md`](README.upstream.md).
 
 ---
 
-## Getting Started
+## What is Origin?
 
-### 1. Set up and start the daemon
+Origin reframes Multica from "multi-tenant SaaS for human + agent teams" into a
+**personal local Agent workbench**. One operator, one machine, one workspace,
+many agents. The desktop app is the only first-class shell.
+
+If Multica is "Linear with AI agents as teammates", Origin is "the personal
+notebook + multi-agent control plane I want on my own laptop":
+
+- I describe what I want in natural language → a captain agent decomposes it.
+- I drop a half-formed idea into the **Idea Pool** → it sits there until I'm
+  ready, then upgrades to a Mission with one click.
+- When a decision needs multiple perspectives, I open a **Council Session** —
+  a temporary room with the right agents, with explicit "quiet / concise /
+  lively" turn-taking rules.
+- My identity card and communication preferences live in
+  **User Profile**, ready to be injected as the closest layer of every agent's
+  system prompt (Phase 7 wires this end-to-end with API runtimes).
+
+It runs entirely against `localhost`. There is no Origin Cloud, no team
+invitation, no email verification — sign in with a name and an avatar and you're
+in.
+
+## Differences from upstream Multica
+
+| Area | Upstream Multica | Origin fork |
+|---|---|---|
+| Deployment model | Multi-tenant SaaS / self-hosted | Single-user, single workspace, local-only |
+| Login | Email + verification code (or Google OAuth) | Name + avatar (`/auth/local-signin`) |
+| Workspace | User-creatable, switchable | Hardcoded `Fairy`, no UI to rename |
+| Web frontend | `apps/web/` (Next.js) | **Removed.** Desktop is the only shell. |
+| Members / invitations / labs / repos | Settings tabs | **Removed** — they conflict with the single-user model. |
+| Auto-updater | Pulls from official Multica releases | **Removed** — would overwrite the fork. |
+| Idea Pool / Council Session / User Profile | — | New product objects (Phase 1, migrations 074–076). |
+| Avatars | Generated via DiceBear remote URLs | Bundled 30-Lorelei offline pool. |
+
+A complete list of substantive modifications lives in [`NOTICE`](NOTICE).
+
+## Status
+
+This is an active personal fork — interfaces will change without notice. If
+you want a stable, supported product, use upstream Multica.
+
+The product roadmap and PM-flavoured design notes are kept private to the
+fork (in `docs-private/`, gitignored). The architectural decisions worth
+sharing are documented in [`NOTICE`](NOTICE).
+
+## Quick start
+
+The desktop app is the only supported shell.
 
 ```bash
-multica setup           # Configure, authenticate, and start the daemon
+# 1. Install deps
+pnpm install
+
+# 2. Start the backend (Postgres + Go server) via Docker Compose
+docker compose -f docker-compose.selfhost.yml \
+  -f docker-compose.selfhost.build.yml up -d --build backend
+
+# 3. Run the desktop app in dev mode (electron-vite HMR)
+pnpm dev:desktop
 ```
 
-The daemon runs in the background and auto-detects agent CLIs (`claude`, `codex`, `openclaw`, `opencode`, `hermes`, `gemini`, `pi`, `cursor-agent`, `kimi`, `kiro-cli`) on your PATH.
+The app opens at the local sign-in screen — pick an avatar, type a name, and
+you're in. Local sign-in does not require email or verification code.
 
-### 2. Verify your runtime
-
-Open your workspace in the Multica web app. Navigate to **Settings → Runtimes** — you should see your machine listed as an active **Runtime**.
-
-> **What is a Runtime?** A Runtime is a compute environment that can execute agent tasks. It can be your local machine (via the daemon) or a cloud instance. Each runtime reports which agent CLIs are available, so Multica knows where to route work.
-
-### 3. Create an agent
-
-Go to **Settings → Agents** and click **New Agent**. Pick the runtime you just connected and choose a provider (Claude Code, Codex, OpenClaw, OpenCode, Hermes, Gemini, Pi, Cursor Agent, Kimi, or Kiro CLI). Give your agent a name — this is how it will appear on the board, in comments, and in assignments.
-
-### 4. Assign your first task
-
-Create an issue from the board (or via `multica issue create`), then assign it to your new agent. The agent will automatically pick up the task, execute it on your runtime, and report progress — just like a human teammate.
-
----
-
-## Multica vs Paperclip
-
-| | Multica | Paperclip |
-|---|---------|-----------|
-| **Focus** | Team AI agent collaboration platform | Solo AI agent company simulator |
-| **User model** | Multi-user teams with roles & permissions | Single board operator |
-| **Agent interaction** | Issues + Chat conversations | Issues + Heartbeat |
-| **Deployment** | Cloud-first | Local-first |
-| **Management depth** | Lightweight (Issues / Projects / Labels) | Heavy governance (Org chart / Approvals / Budgets) |
-| **Extensibility** | Skills system | Skills + Plugin system |
-
-**TL;DR — Multica is built for teams that want to collaborate with AI agents on real projects together.**
-
----
-
-## CLI
-
-The `multica` CLI connects your local machine to Multica — authenticate, manage workspaces, and run the agent daemon.
-
-| Command | Description |
-|---------|-------------|
-| `multica login` | Authenticate (opens browser) |
-| `multica daemon start` | Start the local agent runtime |
-| `multica daemon status` | Check daemon status |
-| `multica setup` | One-command setup for Multica Cloud (configure + login + start daemon) |
-| `multica setup self-host` | Same, but for self-hosted deployments |
-| `multica issue list` | List issues in your workspace |
-| `multica issue create` | Create a new issue |
-| `multica update` | Update to the latest version |
-
-See the [CLI and Daemon Guide](CLI_AND_DAEMON.md) for the full command reference.
-
----
-
-## Architecture
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
-│   Next.js    │────>│  Go Backend  │────>│   PostgreSQL     │
-│   Frontend   │<────│  (Chi + WS)  │<────│   (pgvector)     │
-└──────────────┘     └──────┬───────┘     └──────────────────┘
-                            │
-                     ┌──────┴───────┐
-                     │ Agent Daemon │  runs on your machine
-                     └──────────────┘  (Claude Code, Codex, OpenCode,
-                                        OpenClaw, Hermes, Gemini,
-                                        Pi, Cursor Agent, Kimi,
-                                        Kiro CLI)
-```
-
-| Layer | Stack |
-|-------|-------|
-| Frontend | Next.js 16 (App Router) |
-| Backend | Go (Chi router, sqlc, gorilla/websocket) |
-| Database | PostgreSQL 17 with pgvector |
-| Agent Runtime | Local daemon executing Claude Code, Codex, OpenClaw, OpenCode, Hermes, Gemini, Pi, Cursor Agent, Kimi, or Kiro CLI |
-
-## Development
-
-For contributors working on the Multica codebase, see the [Contributing Guide](CONTRIBUTING.md).
-
-**Prerequisites:** [Node.js](https://nodejs.org/) v20+, [pnpm](https://pnpm.io/) v10.28+, [Go](https://go.dev/) v1.26+, [Docker](https://www.docker.com/)
+## Build a release desktop app
 
 ```bash
-make dev
+pnpm --filter @multica/desktop build
+cd apps/desktop
+CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder \
+  --mac --arm64 --dir -c.mac.notarize=false -c.mac.identity=null
 ```
 
-`make dev` auto-detects your environment (main checkout or worktree), creates the env file, installs dependencies, sets up the database, runs migrations, and starts all services.
+The packaged `.app` lands in `apps/desktop/dist-local/mac-arm64/`.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow, worktree support, testing, and troubleshooting.
+## License & attribution
+
+This fork is distributed under the **same modified Apache License 2.0** as
+upstream Multica. See [`LICENSE`](LICENSE) for the full text including the
+upstream's additional conditions §1a (no SaaS / commercial embedding without
+written permission) and §1b (preserve LOGO / copyright in `apps/web/`).
+The Origin fork resolves §1b by removing `apps/web/` rather than modifying it.
+
+For the formal modification list and upstream attribution, see [`NOTICE`](NOTICE).
+
+The "Multica" name, wordmark, logo assets, and the multica.ai service belong
+to Multica, Inc. and are not part of this fork.
+
+## Upstream
+
+- Source: https://github.com/multica-ai/multica
+- License: https://github.com/multica-ai/multica/blob/main/LICENSE

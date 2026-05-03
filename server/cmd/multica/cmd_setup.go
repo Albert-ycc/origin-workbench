@@ -19,34 +19,34 @@ import (
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure the CLI, authenticate, and start the daemon",
-	Long: `Configures the CLI to connect to Multica Cloud (multica.ai), then
+	Long: `Configures the CLI to connect to the local Origin backend, then
 authenticates via browser and starts the agent daemon.
 
 If a configuration already exists, you will be prompted before overwriting.
 
-Use 'multica setup self-host' to connect to a self-hosted server instead.
+This fork does not support the upstream Multica Cloud setup path. Use
+'multica setup self-host' for the local backend.
 
 Use --profile to create an isolated configuration for a separate environment:
   multica setup self-host --profile staging --server-url https://api-staging.co`,
-	RunE: runSetupCloud,
+	RunE: runSetupSelfHost,
 }
 
 var setupCloudCmd = &cobra.Command{
 	Use:   "cloud",
-	Short: "Configure the CLI for Multica Cloud (multica.ai)",
-	Long: `Explicitly configures the CLI to connect to Multica Cloud (multica.ai).
-
-This is equivalent to running 'multica setup' without a subcommand.`,
-	RunE: runSetupCloud,
+	Short: "Disabled in the Origin fork",
+	Long:  `Origin is local-only. The upstream Multica Cloud setup path is disabled in this fork.`,
+	RunE:  runSetupCloud,
 }
 
 var setupSelfHostCmd = &cobra.Command{
 	Use:   "self-host",
-	Short: "Configure the CLI for a self-hosted Multica server",
-	Long: `Configures the CLI to connect to a self-hosted Multica server.
+	Short: "Configure the CLI for a local Origin backend",
+	Long: `Configures the CLI to connect to a local Origin backend.
 
-By default, connects to http://localhost:8080 (backend) and http://localhost:3000 (frontend).
-Use --server-url and --app-url to specify a custom server (e.g. an on-premise deployment).
+By default, connects to http://localhost:8080 (backend) and http://localhost:3000
+(desktop/dev browser compatibility URL). Use --server-url and --app-url to
+specify a custom local/LAN backend.
 
 If you run this command from a different machine than the server, also pass
 --callback-host <FQDN-or-IP-the-browser-can-reach-back-to-this-machine-on> so
@@ -60,8 +60,8 @@ Examples:
 }
 
 func init() {
-	setupSelfHostCmd.Flags().String("server-url", "", "Backend server URL (e.g. https://api.internal.co)")
-	setupSelfHostCmd.Flags().String("app-url", "", "Frontend app URL (e.g. https://app.internal.co)")
+	setupSelfHostCmd.Flags().String("server-url", "", "Backend server URL (e.g. http://localhost:8080)")
+	setupSelfHostCmd.Flags().String("app-url", "", "Desktop/dev app URL used for browser auth compatibility")
 	setupSelfHostCmd.Flags().Int("port", 8080, "Backend server port (used when --server-url is not set)")
 	setupSelfHostCmd.Flags().Int("frontend-port", 3000, "Frontend port (used when --app-url is not set)")
 	setupSelfHostCmd.Flags().String(callbackHostFlag, "", "Host the OAuth callback URL points at (auto-detected when empty). Use this for reverse-proxy / FQDN setups.")
@@ -113,42 +113,7 @@ func confirmOverwrite(profile string) (bool, error) {
 }
 
 func runSetupCloud(cmd *cobra.Command, args []string) error {
-	profile := resolveProfile(cmd)
-
-	ok, err := confirmOverwrite(profile)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
-	}
-
-	cfg := cli.CLIConfig{
-		ServerURL: "https://api.multica.ai",
-		AppURL:    "https://multica.ai",
-	}
-	if err := cli.SaveCLIConfigForProfile(cfg, profile); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-
-	fmt.Fprintln(os.Stderr, "Configured for Multica Cloud (https://multica.ai).")
-	fmt.Fprintf(os.Stderr, "  server_url: %s\n", cfg.ServerURL)
-	fmt.Fprintf(os.Stderr, "  app_url:    %s\n", cfg.AppURL)
-	printConfigLocation(profile)
-
-	// Authenticate.
-	fmt.Fprintln(os.Stderr, "")
-	if err := runLogin(cmd, args); err != nil {
-		return err
-	}
-
-	fmt.Fprintln(os.Stderr, "\nStarting daemon...")
-	if err := runDaemonBackground(cmd); err != nil {
-		return fmt.Errorf("start daemon: %w", err)
-	}
-	fmt.Fprintln(os.Stderr, "\n✓ Setup complete! Your machine is now connected to Multica.")
-
-	return nil
+	return fmt.Errorf("Origin is local-only; use 'multica setup self-host' against your local backend")
 }
 
 func runSetupSelfHost(cmd *cobra.Command, args []string) error {
@@ -162,10 +127,10 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	serverURL, _ := cmd.Flags().GetString("server-url")
-	appURL, _ := cmd.Flags().GetString("app-url")
-	port, _ := cmd.Flags().GetInt("port")
-	frontendPort, _ := cmd.Flags().GetInt("frontend-port")
+	serverURL := stringFlagOrDefault(cmd, "server-url", "")
+	appURL := stringFlagOrDefault(cmd, "app-url", "")
+	port := intFlagOrDefault(cmd, "port", 8080)
+	frontendPort := intFlagOrDefault(cmd, "frontend-port", 3000)
 	userProvidedServerURL := serverURL != ""
 
 	// If custom URLs provided, use them; otherwise default to localhost with ports.
@@ -198,7 +163,7 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "Configured for self-hosted server.")
+	fmt.Fprintln(os.Stderr, "Configured for local Origin backend.")
 	fmt.Fprintf(os.Stderr, "  server_url: %s\n", cfg.ServerURL)
 	fmt.Fprintf(os.Stderr, "  app_url:    %s\n", cfg.AppURL)
 	printConfigLocation(profile)
@@ -220,7 +185,7 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 	if err := runDaemonBackground(cmd); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "\n✓ Setup complete! Your machine is now connected to Multica.")
+	fmt.Fprintln(os.Stderr, "\n✓ Setup complete! Your machine is now connected to Origin.")
 
 	return nil
 }
@@ -241,6 +206,28 @@ func serverHostIsLocal(serverURL string) bool {
 		return ip.IsLoopback()
 	}
 	return false
+}
+
+func stringFlagOrDefault(cmd *cobra.Command, name, fallback string) string {
+	if cmd.Flags().Lookup(name) == nil {
+		return fallback
+	}
+	value, err := cmd.Flags().GetString(name)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func intFlagOrDefault(cmd *cobra.Command, name string, fallback int) int {
+	if cmd.Flags().Lookup(name) == nil {
+		return fallback
+	}
+	value, err := cmd.Flags().GetInt(name)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 // promptAppURL asks the user for the frontend URL interactively. We can't

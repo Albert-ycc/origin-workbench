@@ -1,47 +1,46 @@
 # Repository Guidelines
 
-This file provides guidance to AI agents when working with code in this repository.
+This file is a concise pointer for AI agents working in this repository.
+The detailed engineering rules live in [`CLAUDE.md`](CLAUDE.md); read it before
+editing.
 
-> **Single source of truth:** This file is a concise pointer document.
-> All authoritative architecture, coding rules, commands, and conventions
-> live in **CLAUDE.md** at the project root. Read that file first.
+## Product Context
 
-## Quick Reference
+Origin is a single-user local AI Agent workbench forked from Multica.
+Desktop is the supported product shell. The old upstream Web frontend,
+workspace invitation flow, cloud onboarding, and multi-user SaaS concepts are
+not part of the Origin user path.
 
-### Architecture
+## Architecture
 
-Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packages.
+- `server/` — Go backend (Chi router, sqlc, gorilla/websocket).
+- `apps/desktop/` — Electron desktop app and primary UI shell.
+- `packages/core/` — Headless business logic, API client, stores, query hooks.
+- `packages/ui/` — Atomic UI components and design tokens.
+- `packages/views/` — Shared business pages/components used by Desktop.
+- `packages/tsconfig/` — Shared TypeScript config.
 
-- `server/` — Go backend (Chi router, sqlc, gorilla/websocket)
-- `apps/web/` — Next.js frontend (App Router)
-- `apps/desktop/` — Electron desktop app
-- `packages/core/` — Headless business logic (Zustand stores, React Query hooks, API client)
-- `packages/ui/` — Atomic UI components (shadcn/Base UI, zero business logic)
-- `packages/views/` — Shared business pages/components
-- `packages/tsconfig/` — Shared TypeScript config
+## Hard Boundaries
 
-### State Management (critical)
+- `packages/core/`: no `react-dom`, no localStorage, no `process.env`, no UI libraries.
+- `packages/ui/`: no `@multica/core` imports.
+- `packages/views/`: no `next/*`, no `react-router-dom`; route through the navigation adapter.
+- `apps/desktop/src/renderer/src/platform/`: desktop router wiring belongs here.
 
-- **React Query** owns all server state (issues, members, agents, inbox, workspace list)
-- **Zustand** owns all client state (current workspace selection, view filters, drafts, modals)
-- All Zustand stores live in `packages/core/` — never in `packages/views/` or app directories
-- WS events invalidate React Query — never write directly to stores
-
-### Package Boundaries (hard rules)
-
-- `packages/core/` — zero react-dom, zero localStorage, zero process.env
-- `packages/ui/` — zero `@multica/core` imports
-- `packages/views/` — zero `next/*`, zero `react-router-dom`, use `NavigationAdapter` for routing
-- `apps/web/platform/` — only place for Next.js APIs
-
-### Commands
+## Common Commands
 
 ```bash
-make dev              # Auto-setup + start everything
-pnpm typecheck        # TypeScript check
-pnpm test             # TS unit tests (Vitest)
-make test             # Go tests
-make check            # Full verification pipeline
+make selfhost                         # Build/start local PostgreSQL + backend
+pnpm dev:desktop                      # Run the desktop shell
+pnpm --filter @multica/desktop typecheck
+pnpm --filter @multica/views typecheck
+pnpm --filter @multica/core typecheck
+cd server && go test ./...
 ```
 
-See CLAUDE.md for the complete command reference.
+## Safety
+
+- Keep diffs small and scoped.
+- Do not reintroduce `apps/web`, cloud login, member invitations, or upstream
+  release/update URLs unless the user explicitly asks for a compatibility task.
+- Do not touch secrets or print `.env` values.

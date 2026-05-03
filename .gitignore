@@ -58,3 +58,8 @@ server/server
 data/
 .kilo
 .idea
+
+# Origin fork additions
+docs-private/
+apps/desktop/dist-local/
+apps/desktop/index-*.js

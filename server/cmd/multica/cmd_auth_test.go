@@ -56,8 +56,8 @@ func TestResolveCallbackBinding(t *testing.T) {
 	}{
 		{
 			name:         "public app URL stays on loopback",
-			appURL:       "https://multica.ai",
-			serverURL:    "https://api.multica.ai",
+			appURL:       "https://origin.example",
+			serverURL:    "https://api.origin.example",
 			detect:       failing,
 			wantCallback: "localhost",
 			wantBind:     "127.0.0.1",
@@ -97,8 +97,8 @@ func TestResolveCallbackBinding(t *testing.T) {
 		{
 			name:         "--callback-host flag overrides everything",
 			flagHost:     "cli.internal.example",
-			appURL:       "https://multica.ai",
-			serverURL:    "https://api.multica.ai",
+			appURL:       "https://origin.example",
+			serverURL:    "https://api.origin.example",
 			detect:       fixed("10.0.0.5"),
 			wantCallback: "cli.internal.example",
 			wantBind:     "0.0.0.0",
