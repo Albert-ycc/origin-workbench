@@ -62,17 +62,22 @@ var reservedSlugs = map[string]bool{
 	"members":       true,
 
 	// Dashboard / workspace route segments
-	"issues":     true,
-	"projects":   true,
-	"autopilots": true,
-	"agents":     true,
-	"inbox":      true,
-	"my-issues":  true,
-	"runtimes":   true,
-	"skills":     true,
-	"settings":   true,
-	"workspaces": true, // global /workspaces/new workspace creation page
-	"teams":      true, // reserved for future team management routes
+	"workbench":    true,
+	"ideas":        true,
+	"councils":     true,
+	"issues":       true,
+	"missions":     true,
+	"explorations": true,
+	"projects":     true,
+	"autopilots":   true,
+	"agents":       true,
+	"inbox":        true,
+	"my-issues":    true,
+	"runtimes":     true,
+	"skills":       true,
+	"settings":     true,
+	"workspaces":   true, // global /workspaces/new workspace creation page
+	"teams":        true, // reserved for future team management routes
 
 	// API / integration prefixes. `api` above already covers /api/*; these
 	// guard against future top-level API alias routes (e.g. /v1, /graphql)

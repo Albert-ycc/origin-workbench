@@ -4,9 +4,9 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, AgentActivityBucket } from "../types";
 import { agentListOptions } from "../workspace/queries";
-import { agentActivity30dOptions } from "./queries";
+import { agentActivity365dOptions } from "./queries";
 
-const DAYS = 30;
+const DAYS = 365;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** One day's tally for the sparkline. */
@@ -17,9 +17,9 @@ export interface ActivityBucket {
 
 export interface AgentActivity {
   /**
-   * 30 daily buckets, oldest → newest. Days with no activity are
+   * 365 daily buckets, oldest → newest. Days with no activity are
    * zero-filled. Each surface picks how much of the tail to render: the
-   * Agents list uses 7, the agent detail uses all 30. Reading is the
+   * Agents list uses 7, the agent detail uses all 365. Reading is the
    * caller's job (see `summarizeActivityWindow` for the standard
    * tail-slice + roll-up).
    */
@@ -35,7 +35,7 @@ export interface AgentActivity {
 
 /**
  * Window-sized roll-up of an agent's activity series. Both the Agents
- * list (windowDays=7) and the detail "Last 30 days" panel (windowDays=30)
+ * list (windowDays=7) and the detail panel (windowDays=30/365)
  * read through this so the totals can never drift from the bars they
  * label.
  */
@@ -77,7 +77,7 @@ export function useWorkspaceActivityMap(wsId: string | undefined): {
     enabled: !!wsId,
   });
   const { data: buckets, isPending: bucketsPending } = useQuery({
-    ...agentActivity30dOptions(wsId ?? ""),
+    ...agentActivity365dOptions(wsId ?? ""),
     enabled: !!wsId,
   });
 
@@ -119,7 +119,7 @@ export function buildActivityMap(
 
 /**
  * Pure derivation: filter the workspace-wide buckets to one agent and
- * normalise to a fixed 30-element series ending at `now`. Exported for
+ * normalise to a fixed 365-element series ending at `now`. Exported for
  * unit-testing and direct reuse on surfaces that already have the
  * workspace-wide buckets in hand.
  */

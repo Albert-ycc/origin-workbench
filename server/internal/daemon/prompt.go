@@ -101,6 +101,48 @@ func buildCommentPrompt(task Task) string {
 // buildChatPrompt constructs a prompt for interactive chat tasks.
 func buildChatPrompt(task Task) string {
 	var b strings.Builder
+	if task.TeamID != "" {
+		b.WriteString("You are running as a local coding agent inside a Multica team group chat.\n\n")
+		if task.TeamName != "" {
+			fmt.Fprintf(&b, "Team: %s\n", task.TeamName)
+		}
+		if task.Agent != nil && task.Agent.Name != "" {
+			fmt.Fprintf(&b, "You are currently acting as: %s\n", task.Agent.Name)
+		}
+		if task.TeamCaptainAgentID != "" {
+			fmt.Fprintf(&b, "Team captain agent ID: %s\n", task.TeamCaptainAgentID)
+		}
+		if len(task.TeamMembers) > 0 {
+			b.WriteString("\nTeam roster:\n")
+			for _, member := range task.TeamMembers {
+				name := member.Name
+				if name == "" {
+					name = member.AgentID
+				}
+				role := member.Role
+				if role == "" {
+					role = "member"
+				}
+				fmt.Fprintf(&b, "- %s (%s, agent_id=%s)\n", name, role, member.AgentID)
+			}
+		}
+		b.WriteString("\nCollaboration rules:\n")
+		b.WriteString("- Treat this as a group chat. Answer visibly in the room, but think like the team captain when you are the captain.\n")
+		b.WriteString("- If the user writes `@全体`, summarize the coordination plan and create concrete follow-up work for the appropriate members when there is executable work.\n")
+		b.WriteString("- If the user writes `@成员名`, treat it as a delegation request to that member. For concrete work, run `multica issue create --assignee \"<member name>\"` with a focused title and description.\n")
+		b.WriteString("- Plain prose does not create real work. Only `multica issue create` with `--assignee` creates a durable task for another agent.\n")
+		b.WriteString("- Do not invent members. Use the roster names above for assignee matching.\n\n")
+		if task.TeamDelegation != nil && strings.TrimSpace(task.TeamDelegation.Instruction) != "" {
+			source := task.TeamDelegation.SourceAgentName
+			if source == "" {
+				source = "the team captain"
+			}
+			fmt.Fprintf(&b, "Delegation from %s:\n%s\n\n", source, task.TeamDelegation.Instruction)
+			b.WriteString("You are the delegated member for this turn. Do the work requested of you, then reply back to the group chat with your findings, decisions, blockers, or handoff notes.\n\n")
+		}
+		fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
+		return b.String()
+	}
 	b.WriteString("You are running as a chat assistant for a Multica workspace.\n")
 	b.WriteString("A user is chatting with you directly. Respond to their message.\n\n")
 	fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)

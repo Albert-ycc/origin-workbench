@@ -48,27 +48,27 @@ const fullHistoryAgent: Agent = {
   owner_id: null,
   skills: [],
   // Older than the window so daysSinceCreated saturates at DAYS.
-  created_at: new Date(NOW - 100 * DAY).toISOString(),
+  created_at: new Date(NOW - 500 * DAY).toISOString(),
   updated_at: new Date(NOW).toISOString(),
   archived_at: null,
   archived_by: null,
 };
 
 describe("deriveAgentActivity", () => {
-  it("places buckets in oldest→newest slots across 30 days", () => {
+  it("places buckets in oldest→newest slots across 365 days", () => {
     const buckets = [
-      bucket("a1", 29, 1), // slot 0
-      bucket("a1", 0, 5), // slot 29
+      bucket("a1", 364, 1), // slot 0
+      bucket("a1", 0, 5), // slot 364
     ];
     const result = deriveAgentActivity(
       buckets,
       fullHistoryAgent.created_at,
       NOW,
     );
-    expect(result.buckets).toHaveLength(30);
+    expect(result.buckets).toHaveLength(365);
     expect(result.buckets[0]).toEqual({ total: 1, failed: 0 });
-    expect(result.buckets[29]).toEqual({ total: 5, failed: 0 });
-    expect(result.daysSinceCreated).toBe(30);
+    expect(result.buckets[364]).toEqual({ total: 5, failed: 0 });
+    expect(result.daysSinceCreated).toBe(365);
   });
 
   it("clamps daysSinceCreated for young agents", () => {
@@ -83,12 +83,12 @@ describe("deriveAgentActivity", () => {
     expect(result.daysSinceCreated).toBe(0);
     // Today's bucket still records — pre-life days simply look like zero
     // days, which is on purpose.
-    expect(result.buckets[29]).toEqual({ total: 1, failed: 0 });
+    expect(result.buckets[364]).toEqual({ total: 1, failed: 0 });
   });
 
-  it("ignores buckets older than the 30-day window", () => {
+  it("ignores buckets older than the 365-day window", () => {
     const result = deriveAgentActivity(
-      [bucket("a1", 60, 99)],
+      [bucket("a1", 400, 99)],
       fullHistoryAgent.created_at,
       NOW,
     );
@@ -103,7 +103,7 @@ describe("deriveAgentActivity", () => {
       fullHistoryAgent.created_at,
       NOW,
     );
-    expect(result.buckets).toHaveLength(30);
+    expect(result.buckets).toHaveLength(365);
     expect(result.buckets.every((b) => b.total === 0 && b.failed === 0)).toBe(
       true,
     );
@@ -112,7 +112,7 @@ describe("deriveAgentActivity", () => {
 
 describe("summarizeActivityWindow", () => {
   it("rolls up totals across the trailing N buckets", () => {
-    // 5 runs total over the 30-day series.
+    // 5 runs total over the 365-day series.
     const result = deriveAgentActivity(
       [
         bucket("a1", 25, 1), // outside 7d, inside 30d
@@ -148,7 +148,7 @@ describe("summarizeActivityWindow", () => {
       NOW,
     );
     const summary = summarizeActivityWindow(result, 1000);
-    expect(summary.buckets).toHaveLength(30);
+    expect(summary.buckets).toHaveLength(365);
     expect(summary.totalRuns).toBe(2);
   });
 
@@ -186,7 +186,7 @@ describe("buildActivityMap", () => {
     const agents: Agent[] = [fullHistoryAgent];
     const map = buildActivityMap(agents, [], NOW);
     const a = map.get("a1");
-    expect(a?.buckets).toHaveLength(30);
+    expect(a?.buckets).toHaveLength(365);
     expect(summarizeActivityWindow(a, 30).totalRuns).toBe(0);
   });
 });

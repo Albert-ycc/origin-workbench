@@ -19,6 +19,7 @@ SELECT cs.*,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2 AND cs.status = 'active'
+  AND cs.team_id IS NULL
 ORDER BY cs.updated_at DESC;
 
 -- name: ListAllChatSessionsByCreator :many
@@ -26,6 +27,7 @@ SELECT cs.*,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2
+  AND cs.team_id IS NULL
 ORDER BY cs.updated_at DESC;
 
 -- name: UpdateChatSessionTitle :one
@@ -54,8 +56,8 @@ UPDATE chat_session SET updated_at = now()
 WHERE id = $1;
 
 -- name: CreateChatMessage :one
-INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms)
-VALUES ($1, $2, $3, sqlc.narg(task_id), sqlc.narg(failure_reason), sqlc.narg(elapsed_ms))
+INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms, sender_agent_id)
+VALUES ($1, $2, $3, sqlc.narg(task_id), sqlc.narg(failure_reason), sqlc.narg(elapsed_ms), sqlc.narg(sender_agent_id))
 RETURNING *;
 
 -- name: ListChatMessages :many
@@ -68,8 +70,8 @@ SELECT * FROM chat_message
 WHERE id = $1;
 
 -- name: CreateChatTask :one
-INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, chat_session_id)
-VALUES ($1, $2, NULL, 'queued', $3, $4)
+INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, chat_session_id, context)
+VALUES ($1, $2, NULL, 'queued', $3, $4, sqlc.narg('context'))
 RETURNING *;
 
 -- name: GetLastChatTaskSession :one
@@ -105,6 +107,7 @@ FROM agent_task_queue atq
 JOIN chat_session cs ON cs.id = atq.chat_session_id
 WHERE cs.workspace_id = $1
   AND cs.creator_id = $2
+  AND cs.team_id IS NULL
   AND atq.status IN ('queued', 'dispatched', 'running')
 ORDER BY atq.created_at DESC;
 

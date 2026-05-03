@@ -614,6 +614,211 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
+// =====================
+// Origin local sign-in (no email, no verification code)
+// =====================
+//
+// Origin runs as a strictly local single-user workbench. Email/verification
+// code is dead weight in that mode — the user is the only operator on this
+// machine and there is no third party to verify against. LocalSignIn lets the
+// frontend trade `{ name, avatar_url }` directly for a JWT.
+//
+// Behaviour:
+//   - Looks up an existing user whose email is the synthetic local placeholder
+//     `<sanitized-name>@local.origin`.
+//   - If found, refreshes name/avatar (lets the user rename or change their
+//     avatar without going through Settings) and returns a token.
+//   - If not found, creates the user with the placeholder email (the legacy
+//     `email TEXT UNIQUE NOT NULL` column is preserved untouched so we don't
+//     have to migrate every downstream join).
+//   - Bypasses checkSignupAllowed: ALLOW_SIGNUP is meaningful for hosted SaaS,
+//     not for `localhost:8080` running on the user's own laptop.
+
+type LocalSignInRequest struct {
+	Name      string  `json:"name"`
+	AvatarURL *string `json:"avatar_url"`
+}
+
+const localEmailDomain = "@local.origin"
+
+// sanitizeNameForEmail converts an arbitrary display name (Chinese, spaces,
+// emoji, ...) into something that fits in the local-part of an RFC 5321 email
+// while still being deterministic for lookup. Anything outside [a-z0-9._-] is
+// replaced with `-`; runs of dashes collapse; we lowercase. Empty result falls
+// back to a stable bucket so that pure-Chinese names still hash to a single
+// account on the same machine (e.g. "李雷" -> "user").
+func sanitizeNameForEmail(name string) string {
+	lowered := strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	prevDash := false
+	for _, r := range lowered {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_':
+			b.WriteRune(r)
+			prevDash = false
+		case r == '-' || r == ' ':
+			if !prevDash && b.Len() > 0 {
+				b.WriteRune('-')
+				prevDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-._")
+	if out == "" {
+		// Pure non-ASCII display names (e.g. Chinese) collapse to "user" so
+		// the *first* such sign-in claims the slot and subsequent sign-ins
+		// with the same display name reuse the account. Different Chinese
+		// names on the same machine therefore share an account — that is
+		// the correct semantics for a single-user local workbench.
+		return "user"
+	}
+	if len(out) > 48 {
+		out = out[:48]
+	}
+	return out
+}
+
+func (h *Handler) LocalSignIn(w http.ResponseWriter, r *http.Request) {
+	var req LocalSignInRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	displayName := strings.TrimSpace(req.Name)
+	if displayName == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if utf8RuneCount(displayName) > 32 {
+		writeError(w, http.StatusBadRequest, "name is too long")
+		return
+	}
+
+	ctx := r.Context()
+	syntheticEmail := sanitizeNameForEmail(displayName) + localEmailDomain
+
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start local sign-in")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := h.Queries.WithTx(tx)
+
+	user, err := qtx.GetUserByEmail(ctx, syntheticEmail)
+	isNew := isNotFound(err)
+	if err != nil && !isNew {
+		writeError(w, http.StatusInternalServerError, "failed to lookup user")
+		return
+	}
+
+	var avatarParam pgtype.Text
+	if req.AvatarURL != nil {
+		trimmed := strings.TrimSpace(*req.AvatarURL)
+		avatarParam = pgtype.Text{String: trimmed, Valid: trimmed != ""}
+	}
+
+	if isNew {
+		created, err := qtx.CreateUser(ctx, db.CreateUserParams{
+			Name:      displayName,
+			Email:     syntheticEmail,
+			AvatarUrl: avatarParam,
+		})
+		if err != nil {
+			slog.Error("local sign-in: failed to create user", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to create user")
+			return
+		}
+		user = created
+	} else {
+		// Refresh name + avatar on every sign-in so the user can rename /
+		// re-pick avatar without going through Settings.
+		updated, err := qtx.UpdateUser(ctx, db.UpdateUserParams{
+			ID:        user.ID,
+			Name:      displayName,
+			AvatarUrl: avatarParam,
+		})
+		if err == nil {
+			user = updated
+		}
+	}
+
+	ws, err := qtx.GetWorkspaceBySlug(ctx, "Fairy")
+	if err != nil {
+		if !isNotFound(err) {
+			writeError(w, http.StatusInternalServerError, "failed to lookup local workspace")
+			return
+		}
+		ws, err = qtx.CreateWorkspace(ctx, db.CreateWorkspaceParams{
+			Name:        "Fairy",
+			Slug:        "Fairy",
+			Description: pgtype.Text{},
+			Context:     pgtype.Text{},
+			IssuePrefix: "FAI",
+		})
+		if err != nil {
+			if !isUniqueViolation(err) {
+				writeError(w, http.StatusInternalServerError, "failed to create local workspace")
+				return
+			}
+			ws, err = qtx.GetWorkspaceBySlug(ctx, "Fairy")
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to load local workspace")
+				return
+			}
+		}
+	}
+
+	if _, err := qtx.CreateMember(ctx, db.CreateMemberParams{
+		WorkspaceID: ws.ID,
+		UserID:      user.ID,
+		Role:        "owner",
+	}); err != nil && !isUniqueViolation(err) {
+		writeError(w, http.StatusInternalServerError, "failed to join local workspace")
+		return
+	}
+
+	onboarded, err := qtx.MarkUserOnboarded(ctx, user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to mark user onboarded")
+		return
+	}
+	user = onboarded
+
+	if err := tx.Commit(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to finish local sign-in")
+		return
+	}
+
+	tokenString, err := h.issueJWT(user)
+	if err != nil {
+		slog.Warn("local sign-in: failed to issue JWT", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+
+	if err := auth.SetAuthCookies(w, tokenString); err != nil {
+		slog.Warn("local sign-in: failed to set auth cookies", "error", err)
+	}
+
+	slog.Info("local sign-in", "user_id", uuidToString(user.ID), "workspace_id", uuidToString(ws.ID), "is_new", isNew)
+	writeJSON(w, http.StatusOK, LoginResponse{
+		Token: tokenString,
+		User:  userToResponse(user),
+	})
+}
+
+// utf8RuneCount counts visible characters (so "alice" -> 6, "李雷" -> 3)
+// to bound display name length consistently across encodings.
+func utf8RuneCount(s string) int {
+	n := 0
+	for range s {
+		n++
+	}
+	return n
+}
+
 func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {

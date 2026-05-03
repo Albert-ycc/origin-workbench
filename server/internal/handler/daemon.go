@@ -1019,6 +1019,37 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+			if cs.TeamID.Valid {
+				if team, err := h.Queries.GetTeam(r.Context(), cs.TeamID); err == nil {
+					resp.TeamID = uuidToString(team.ID)
+					resp.TeamName = team.Name
+					resp.TeamCaptainAgentID = uuidToString(team.CaptainAgentID)
+					members, err := h.Queries.ListTeamMembers(r.Context(), team.ID)
+					if err == nil {
+						resp.TeamMembers = make([]TeamTaskMemberData, 0, len(members))
+						for _, member := range members {
+							name := ""
+							if agent, err := h.Queries.GetAgent(r.Context(), member.AgentID); err == nil {
+								name = agent.Name
+							}
+							resp.TeamMembers = append(resp.TeamMembers, TeamTaskMemberData{
+								AgentID: uuidToString(member.AgentID),
+								Name:    name,
+								Role:    member.Role,
+							})
+						}
+					}
+				}
+			}
+			if len(task.Context) > 0 {
+				var delegation service.TeamDelegationContext
+				if json.Unmarshal(task.Context, &delegation) == nil && delegation.Type == service.TeamDelegationContextType {
+					resp.TeamDelegation = &delegation
+					if strings.TrimSpace(delegation.Instruction) != "" {
+						resp.ChatMessage = delegation.Instruction
+					}
+				}
+			}
 		}
 	}
 
@@ -1056,7 +1087,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 	// prompt come from the task's context JSONB. Resolve workspace from
 	// there so the isolation check below has something to compare.
 	hasQuickCreate := false
-	if task.Context != nil && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutopilotRunID.Valid {
+	if len(task.Context) > 0 && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutopilotRunID.Valid {
 		var qc service.QuickCreateContext
 		if json.Unmarshal(task.Context, &qc) == nil && qc.Type == service.QuickCreateContextType {
 			hasQuickCreate = true

@@ -63,7 +63,12 @@ export const RESERVED_SLUGS = new Set([
   // Dashboard / workspace route segments. Reserving the segment name
   // prevents `/{slug}/{view}` from being visually ambiguous (e.g. a
   // workspace named "issues" makes `/issues/abc` mean two things).
+  "workbench",
+  "ideas",
+  "councils",
   "issues",
+  "missions",
+  "explorations",
   "projects",
   "autopilots",
   "agents",

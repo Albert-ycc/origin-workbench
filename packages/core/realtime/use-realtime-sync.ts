@@ -13,12 +13,17 @@ import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
+import { missionKeys } from "../missions/queries";
+import { teamKeys } from "../teams/queries";
 import { runtimeKeys } from "../runtimes/queries";
 import {
   agentTaskSnapshotKeys,
   agentActivityKeys,
   agentRunCountsKeys,
   agentTasksKeys,
+  agentMemoryKeys,
+  agentSkillCandidateKeys,
+  agentEventKeys,
 } from "../agents/queries";
 import {
   onIssueCreated,
@@ -59,6 +64,10 @@ import type {
   ChatDonePayload,
   ChatPendingTask,
   InvitationCreatedPayload,
+  TeamMessageCreatedPayload,
+  AgentMemoryCreatedPayload,
+  AgentSkillCandidateCreatedPayload,
+  AgentEventCreatedPayload,
 } from "../types";
 
 const chatWsLogger = createLogger("chat.ws");
@@ -153,6 +162,14 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
       },
+      mission: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: missionKeys.all(wsId) });
+      },
+      team: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: teamKeys.all(wsId) });
+      },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the
       // workspace-wide agent-task-snapshot query so per-agent presence
@@ -168,7 +185,7 @@ export function useRealtimeSync(
         // here keeps the WS-handler shape uniform; the resulting refetch
         // is cheap.) Both the list (trailing 7d slice) and the detail
         // panel read off this single cache.
-        qc.invalidateQueries({ queryKey: agentActivityKeys.last30d(wsId) });
+        qc.invalidateQueries({ queryKey: agentActivityKeys.last365d(wsId) });
         // 30-day run count likewise increments per task lifecycle event.
         qc.invalidateQueries({ queryKey: agentRunCountsKeys.last30d(wsId) });
         // Per-agent task list (Activity tab "Recent work"). Prefix match
@@ -212,6 +229,7 @@ export function useRealtimeSync(
       // every message would flood the network. Specific chat handlers below
       // still receive it via ws.on() (a separate subscription channel).
       "task:message",
+      "team:message_created",
       // task:completed / task:failed deliberately NOT here. They go through
       // both the task-prefix invalidate (refreshes the agent-task-snapshot
       // cache) AND the chat-specific ws.on() handlers below. The two
@@ -625,6 +643,139 @@ export function useRealtimeSync(
       invalidateSessionLists();
     });
 
+    const unsubTeamMessageCreated = ws.on("team:message_created", (p) => {
+      const payload = p as TeamMessageCreatedPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.team_id) return;
+      if (payload.message) {
+        qc.setQueryData<{ messages: typeof payload.message[]; next_cursor?: string | null }>(
+          teamKeys.messages(wsId, payload.team_id),
+          (old) => {
+            const current = old ?? { messages: [], next_cursor: null };
+            if (current.messages.some((m) => m.id === payload.message!.id)) {
+              return current;
+            }
+            return {
+              ...current,
+              messages: [...current.messages, payload.message!].sort(
+                (a, b) =>
+                  new Date(a.created_at).getTime() -
+                  new Date(b.created_at).getTime(),
+              ),
+            };
+          },
+        );
+      } else {
+        qc.invalidateQueries({ queryKey: teamKeys.messages(wsId, payload.team_id) });
+      }
+    });
+
+    const unsubAgentMemoryCreated = ws.on("agent:memory_created", (p) => {
+      const payload = p as AgentMemoryCreatedPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.agent_id) return;
+      if (payload.memory) {
+        qc.setQueryData<{ memories: typeof payload.memory[] }>(
+          agentMemoryKeys.detail(wsId, payload.agent_id),
+          (old) => {
+            const current = old ?? { memories: [] };
+            if (current.memories.some((m) => m.id === payload.memory!.id)) {
+              return current;
+            }
+            return { memories: [payload.memory!, ...current.memories] };
+          },
+        );
+      } else {
+        qc.invalidateQueries({
+          queryKey: agentMemoryKeys.detail(wsId, payload.agent_id),
+        });
+      }
+    });
+
+    const handleAgentMemoryChanged = (p: unknown) => {
+      const payload = p as AgentMemoryCreatedPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.agent_id) return;
+      if (!payload.memory) {
+        qc.invalidateQueries({
+          queryKey: agentMemoryKeys.detail(wsId, payload.agent_id),
+        });
+        return;
+      }
+      qc.setQueryData<{ memories: typeof payload.memory[] }>(
+        agentMemoryKeys.detail(wsId, payload.agent_id),
+        (old) => {
+          const current = old ?? { memories: [] };
+          if (payload.memory!.status === "rejected") {
+            return {
+              memories: current.memories.filter((m) => m.id !== payload.memory!.id),
+            };
+          }
+          if (current.memories.some((m) => m.id === payload.memory!.id)) {
+            return {
+              memories: current.memories.map((m) =>
+                m.id === payload.memory!.id ? payload.memory! : m,
+              ),
+            };
+          }
+          return { memories: [payload.memory!, ...current.memories] };
+        },
+      );
+    };
+
+    const unsubAgentMemoryConfirmed = ws.on("agent:memory_confirmed", handleAgentMemoryChanged);
+    const unsubAgentMemoryRejected = ws.on("agent:memory_rejected", handleAgentMemoryChanged);
+
+    const handleAgentSkillCandidateChanged = (p: unknown) => {
+      const payload = p as AgentSkillCandidateCreatedPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.agent_id) return;
+      if (!payload.candidate) {
+        qc.invalidateQueries({
+          queryKey: agentSkillCandidateKeys.detail(wsId, payload.agent_id),
+        });
+        return;
+      }
+      qc.setQueryData<{ candidates: typeof payload.candidate[] }>(
+        agentSkillCandidateKeys.detail(wsId, payload.agent_id),
+        (old) => {
+          const current = old ?? { candidates: [] };
+          if (payload.candidate!.status === "rejected") {
+            return {
+              candidates: current.candidates.filter(
+                (c) => c.id !== payload.candidate!.id,
+              ),
+            };
+          }
+          if (current.candidates.some((c) => c.id === payload.candidate!.id)) {
+            return {
+              candidates: current.candidates.map((c) =>
+                c.id === payload.candidate!.id ? payload.candidate! : c,
+              ),
+            };
+          }
+          return { candidates: [payload.candidate!, ...current.candidates] };
+        },
+      );
+      if (payload.candidate.status === "confirmed") {
+        qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+        qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
+      }
+    };
+
+    const unsubAgentSkillCandidateCreated = ws.on("agent:skill_candidate_created", handleAgentSkillCandidateChanged);
+    const unsubAgentSkillCandidateConfirmed = ws.on("agent:skill_candidate_confirmed", handleAgentSkillCandidateChanged);
+    const unsubAgentSkillCandidateRejected = ws.on("agent:skill_candidate_rejected", handleAgentSkillCandidateChanged);
+
+    const unsubAgentEventCreated = ws.on("agent:event_created", (p) => {
+      const payload = p as AgentEventCreatedPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.agent_id) return;
+      qc.invalidateQueries({
+        queryKey: agentEventKeys.detail(wsId, payload.agent_id),
+      });
+    });
+
     return () => {
       unsubAny();
       unsubIssueUpdated();
@@ -658,6 +809,14 @@ export function useRealtimeSync(
       unsubTaskCompleted();
       unsubTaskFailed();
       unsubChatSessionRead();
+      unsubTeamMessageCreated();
+      unsubAgentMemoryCreated();
+      unsubAgentMemoryConfirmed();
+      unsubAgentMemoryRejected();
+      unsubAgentSkillCandidateCreated();
+      unsubAgentSkillCandidateConfirmed();
+      unsubAgentSkillCandidateRejected();
+      unsubAgentEventCreated();
       timers.forEach(clearTimeout);
       timers.clear();
     };

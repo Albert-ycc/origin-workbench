@@ -51,6 +51,82 @@ export interface AgentRunCount {
   run_count: number;
 }
 
+export interface AgentMemory {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  ref_type: string;
+  ref_id: string | null;
+  status: "candidate" | "confirmed" | "rejected";
+  confirmed_at: string | null;
+  confirmed_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentSkillCandidate {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  name: string;
+  description: string;
+  content: string;
+  config: Record<string, unknown>;
+  ref_type: string;
+  ref_id: string | null;
+  status: "candidate" | "confirmed" | "rejected";
+  skill_id: string | null;
+  confirmed_at: string | null;
+  confirmed_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentEvent {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ListAgentMemoriesResponse {
+  memories: AgentMemory[];
+}
+
+export interface ListAgentEventsResponse {
+  events: AgentEvent[];
+}
+
+export interface ListAgentSkillCandidatesResponse {
+  candidates: AgentSkillCandidate[];
+}
+
+export interface CreateAgentMemoryRequest {
+  kind: string;
+  title: string;
+  body?: string;
+  ref_type?: string;
+  ref_id?: string | null;
+  status?: "candidate" | "confirmed";
+}
+
+export interface CreateAgentSkillCandidateRequest {
+  name: string;
+  description?: string;
+  content?: string;
+  config?: Record<string, unknown>;
+  ref_type?: string;
+  ref_id?: string | null;
+  status?: "candidate" | "confirmed";
+}
+
 export interface AgentTask {
   id: string;
   agent_id: string;

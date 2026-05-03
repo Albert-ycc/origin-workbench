@@ -144,4 +144,149 @@ describe("ApiClient", () => {
     expect(headers["X-Client-Version"]).toBeUndefined();
     expect(headers["X-Client-OS"]).toBeUndefined();
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 1 落地的是 /api/ideas（与 mission/team 等对象同级命名空间）。
+  // 下面这条 baseline 是 Codex v1.1 全量预测试，覆盖 Council / Exploration /
+  // ToolBinding / UserProfile 等还没实现的对象，Phase 2-4 实现后激活并对齐
+  // 端点路径（确认走 /api/origin/* 还是 /api/* 平铺）。
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it("issues HTTP contract for Origin Idea endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ ideas: [], total: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listIdeas("active");
+    await client.listIdeas("archived");
+    await client.getIdea("idea-1");
+    await client.createIdea({
+      title: "PRD 养鱼",
+      description: "先收进想法池",
+      nurturer_agent_id: "agent-1",
+      tags: ["prd"],
+    });
+    await client.updateIdea("idea-1", { title: "PRD 养鱼 v2", tags: ["prd", "v2"] });
+    await client.archiveIdea("idea-1");
+    await client.deleteIdea("idea-1");
+    await client.createIdeaNote("idea-1", { summary: "新视角", kind: "new_angle" });
+    await client.deleteIdeaNote("idea-1", "note-1");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+      body: init?.body,
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/ideas", method: "GET" },
+      { url: "https://api.example.test/api/ideas?status=archived", method: "GET" },
+      { url: "https://api.example.test/api/ideas/idea-1", method: "GET" },
+      {
+        url: "https://api.example.test/api/ideas",
+        method: "POST",
+        body: JSON.stringify({
+          title: "PRD 养鱼",
+          description: "先收进想法池",
+          nurturer_agent_id: "agent-1",
+          tags: ["prd"],
+        }),
+      },
+      {
+        url: "https://api.example.test/api/ideas/idea-1",
+        method: "PATCH",
+        body: JSON.stringify({ title: "PRD 养鱼 v2", tags: ["prd", "v2"] }),
+      },
+      { url: "https://api.example.test/api/ideas/idea-1/archive", method: "POST" },
+      { url: "https://api.example.test/api/ideas/idea-1", method: "DELETE" },
+      {
+        url: "https://api.example.test/api/ideas/idea-1/notes",
+        method: "POST",
+        body: JSON.stringify({ summary: "新视角", kind: "new_angle" }),
+      },
+      { url: "https://api.example.test/api/ideas/idea-1/notes/note-1", method: "DELETE" },
+    ]);
+  });
+
+  it("issues HTTP contract for Origin Council Session endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ sessions: [], total: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listCouncilSessions("active");
+    await client.listCouncilSessions("archived");
+    await client.getCouncilSession("c-1");
+    await client.createCouncilSession({
+      topic: "营养库 schema 三选一",
+      activity_level: "concise",
+      participant_agent_ids: ["agent-1", "agent-2"],
+    });
+    await client.updateCouncilSession("c-1", {
+      summary: "已对齐方向",
+      activity_level: "lively",
+    });
+    await client.adjournCouncilSession("c-1", { conclusion: "采用方案 B" });
+    await client.archiveCouncilSession("c-1");
+    await client.deleteCouncilSession("c-1");
+    await client.addCouncilParticipant("c-1", { agent_id: "agent-3", role: "member" });
+    await client.removeCouncilParticipant("c-1", "agent-3");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+      body: init?.body,
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/council-sessions", method: "GET" },
+      { url: "https://api.example.test/api/council-sessions?status=archived", method: "GET" },
+      { url: "https://api.example.test/api/council-sessions/c-1", method: "GET" },
+      {
+        url: "https://api.example.test/api/council-sessions",
+        method: "POST",
+        body: JSON.stringify({
+          topic: "营养库 schema 三选一",
+          activity_level: "concise",
+          participant_agent_ids: ["agent-1", "agent-2"],
+        }),
+      },
+      {
+        url: "https://api.example.test/api/council-sessions/c-1",
+        method: "PATCH",
+        body: JSON.stringify({ summary: "已对齐方向", activity_level: "lively" }),
+      },
+      {
+        url: "https://api.example.test/api/council-sessions/c-1/adjourn",
+        method: "POST",
+        body: JSON.stringify({ conclusion: "采用方案 B" }),
+      },
+      { url: "https://api.example.test/api/council-sessions/c-1/archive", method: "POST" },
+      { url: "https://api.example.test/api/council-sessions/c-1", method: "DELETE" },
+      {
+        url: "https://api.example.test/api/council-sessions/c-1/participants",
+        method: "POST",
+        body: JSON.stringify({ agent_id: "agent-3", role: "member" }),
+      },
+      {
+        url: "https://api.example.test/api/council-sessions/c-1/participants/agent-3",
+        method: "DELETE",
+      },
+    ]);
+  });
 });

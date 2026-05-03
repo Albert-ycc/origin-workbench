@@ -20,6 +20,7 @@ export interface AuthState {
   initialize: () => Promise<void>;
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
+  localSignIn: (name: string, avatarUrl?: string | null) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
@@ -82,6 +83,20 @@ export function createAuthStore(options: AuthStoreOptions) {
       const { token, user } = await api.verifyCode(email, code);
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
+        storage.setItem("multica_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user });
+      return user;
+    },
+
+    // Origin local sign-in: name + optional avatar, no email roundtrip.
+    // Used by the desktop / single-user workbench mode.
+    localSignIn: async (name: string, avatarUrl?: string | null) => {
+      const { token, user } = await api.localSignIn(name, avatarUrl);
+      if (!cookieAuth) {
         storage.setItem("multica_token", token);
         api.setToken(token);
       }

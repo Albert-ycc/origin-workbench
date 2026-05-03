@@ -5,13 +5,21 @@ describe("paths.workspace(slug)", () => {
   const ws = paths.workspace("acme");
 
   it("builds dashboard paths with slug prefix", () => {
+    expect(ws.root()).toBe("/acme/workbench");
+    expect(ws.workbench()).toBe("/acme/workbench");
+    expect(ws.ideas()).toBe("/acme/ideas");
+    expect(ws.councils()).toBe("/acme/councils");
     expect(ws.issues()).toBe("/acme/issues");
+    expect(ws.missions()).toBe("/acme/missions");
+    expect(ws.explorations()).toBe("/acme/explorations");
     expect(ws.issueDetail("abc-123")).toBe("/acme/issues/abc-123");
     expect(ws.projects()).toBe("/acme/projects");
     expect(ws.projectDetail("p1")).toBe("/acme/projects/p1");
     expect(ws.autopilots()).toBe("/acme/autopilots");
     expect(ws.autopilotDetail("a1")).toBe("/acme/autopilots/a1");
     expect(ws.agents()).toBe("/acme/agents");
+    expect(ws.teams()).toBe("/acme/teams");
+    expect(ws.teamDetail("tm_1")).toBe("/acme/teams/tm_1");
     expect(ws.inbox()).toBe("/acme/inbox");
     expect(ws.myIssues()).toBe("/acme/my-issues");
     expect(ws.runtimes()).toBe("/acme/runtimes");

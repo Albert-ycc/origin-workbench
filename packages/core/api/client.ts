@@ -15,6 +15,13 @@ import type {
   AgentTask,
   AgentActivityBucket,
   AgentRunCount,
+  AgentMemory,
+  AgentSkillCandidate,
+  CreateAgentMemoryRequest,
+  CreateAgentSkillCandidateRequest,
+  ListAgentMemoriesResponse,
+  ListAgentSkillCandidatesResponse,
+  ListAgentEventsResponse,
   AgentRuntime,
   InboxItem,
   IssueSubscriber,
@@ -78,6 +85,36 @@ import type {
   ListAutopilotsResponse,
   GetAutopilotResponse,
   ListAutopilotRunsResponse,
+  Team,
+  TeamMessage,
+  CreateTeamRequest,
+  UpdateTeamRequest,
+  AddTeamMemberRequest,
+  PostTeamMessageRequest,
+  ListTeamsResponse,
+  ListTeamMessagesResponse,
+  Mission,
+  MissionDetail,
+  CreateMissionRequest,
+  UpdateMissionRequest,
+  ListMissionsResponse,
+  Idea,
+  IdeaDetail,
+  IdeaNurtureNote,
+  CreateIdeaRequest,
+  UpdateIdeaRequest,
+  CreateIdeaNoteRequest,
+  ListIdeasResponse,
+  CouncilSession,
+  CouncilSessionDetail,
+  CouncilSessionParticipant,
+  CreateCouncilSessionRequest,
+  UpdateCouncilSessionRequest,
+  AdjournCouncilSessionRequest,
+  AddCouncilParticipantRequest,
+  ListCouncilSessionsResponse,
+  UserProfile,
+  UpsertUserProfileRequest,
   NotificationPreferenceResponse,
   NotificationPreferences,
 } from "../types";
@@ -298,6 +335,16 @@ export class ApiClient {
     return this.fetch("/auth/verify-code", {
       method: "POST",
       body: JSON.stringify({ email, code }),
+    });
+  }
+
+  // Origin local sign-in: trade {name, avatar_url} directly for a JWT.
+  // No email, no verification code — used by the desktop / single-user
+  // workbench mode where the operator is the only person on the box.
+  async localSignIn(name: string, avatarUrl?: string | null): Promise<LoginResponse> {
+    return this.fetch("/auth/local-signin", {
+      method: "POST",
+      body: JSON.stringify({ name, avatar_url: avatarUrl ?? null }),
     });
   }
 
@@ -720,17 +767,69 @@ export class ApiClient {
     return this.fetch(`/api/agent-task-snapshot`);
   }
 
-  // Per-agent daily activity for the last 30 days, anchored on
+  // Per-agent daily activity for the last 365 days, anchored on
   // completed_at. One workspace-wide fetch backs both the Agents-list
-  // sparkline (uses trailing 7 buckets) and the agent detail "Last 30
-  // days" panel (uses all 30).
-  async getWorkspaceAgentActivity30d(): Promise<AgentActivityBucket[]> {
-    return this.fetch(`/api/agent-activity-30d`);
+  // sparkline (uses trailing 7 buckets) and the agent detail year heatmap.
+  async getWorkspaceAgentActivity365d(): Promise<AgentActivityBucket[]> {
+    return this.fetch(`/api/agent-activity-365d`);
   }
 
   // Per-agent 30-day total run count for the Agents-list RUNS column.
   async getWorkspaceAgentRunCounts(): Promise<AgentRunCount[]> {
     return this.fetch(`/api/agent-run-counts`);
+  }
+
+  async listAgentMemories(agentId: string, limit = 20, status: "active" | "all" | "candidate" | "confirmed" | "rejected" = "active"): Promise<ListAgentMemoriesResponse> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (status !== "active") params.set("status", status);
+    return this.fetch(`/api/agents/${agentId}/memories?${params.toString()}`);
+  }
+
+  async createAgentMemory(agentId: string, data: CreateAgentMemoryRequest): Promise<AgentMemory> {
+    return this.fetch(`/api/agents/${agentId}/memories`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async confirmAgentMemory(agentId: string, memoryId: string): Promise<AgentMemory> {
+    return this.fetch(`/api/agents/${agentId}/memories/${memoryId}/confirm`, { method: "POST" });
+  }
+
+  async rejectAgentMemory(agentId: string, memoryId: string): Promise<AgentMemory> {
+    return this.fetch(`/api/agents/${agentId}/memories/${memoryId}/reject`, { method: "POST" });
+  }
+
+  async listAgentSkillCandidates(
+    agentId: string,
+    limit = 20,
+    status: "active" | "all" | "candidate" | "confirmed" | "rejected" = "active",
+  ): Promise<ListAgentSkillCandidatesResponse> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (status !== "active") params.set("status", status);
+    return this.fetch(`/api/agents/${agentId}/skill-candidates?${params.toString()}`);
+  }
+
+  async createAgentSkillCandidate(
+    agentId: string,
+    data: CreateAgentSkillCandidateRequest,
+  ): Promise<AgentSkillCandidate> {
+    return this.fetch(`/api/agents/${agentId}/skill-candidates`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async confirmAgentSkillCandidate(agentId: string, candidateId: string): Promise<AgentSkillCandidate> {
+    return this.fetch(`/api/agents/${agentId}/skill-candidates/${candidateId}/confirm`, { method: "POST" });
+  }
+
+  async rejectAgentSkillCandidate(agentId: string, candidateId: string): Promise<AgentSkillCandidate> {
+    return this.fetch(`/api/agents/${agentId}/skill-candidates/${candidateId}/reject`, { method: "POST" });
+  }
+
+  async listAgentEvents(agentId: string, limit = 50): Promise<ListAgentEventsResponse> {
+    return this.fetch(`/api/agents/${agentId}/events?limit=${limit}`);
   }
 
   async getActiveTasksForIssue(issueId: string): Promise<{ tasks: AgentTask[] }> {
@@ -1226,5 +1325,207 @@ export class ApiClient {
 
   async deleteAutopilotTrigger(autopilotId: string, triggerId: string): Promise<void> {
     await this.fetch(`/api/autopilots/${autopilotId}/triggers/${triggerId}`, { method: "DELETE" });
+  }
+
+  // ── Teams ────────────────────────────────────────────────────────────────
+
+  async listTeams(status: "active" | "archived" = "active"): Promise<ListTeamsResponse> {
+    const query = status === "archived" ? "?status=archived" : "";
+    return this.fetch(`/api/teams${query}`);
+  }
+
+  async getTeam(id: string): Promise<Team> {
+    return this.fetch(`/api/teams/${id}`);
+  }
+
+  async createTeam(data: CreateTeamRequest): Promise<Team> {
+    return this.fetch("/api/teams", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTeam(id: string, data: UpdateTeamRequest): Promise<Team> {
+    return this.fetch(`/api/teams/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTeam(id: string): Promise<void> {
+    await this.fetch(`/api/teams/${id}`, { method: "DELETE" });
+  }
+
+  async archiveTeam(id: string): Promise<Team> {
+    return this.fetch(`/api/teams/${id}/archive`, { method: "POST" });
+  }
+
+  async restoreTeam(id: string): Promise<Team> {
+    return this.fetch(`/api/teams/${id}/restore`, { method: "POST" });
+  }
+
+  async addTeamMember(teamId: string, data: AddTeamMemberRequest): Promise<Team> {
+    return this.fetch(`/api/teams/${teamId}/members`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeTeamMember(teamId: string, agentId: string): Promise<Team> {
+    return this.fetch(`/api/teams/${teamId}/members/${agentId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async listTeamMessages(teamId: string, opts?: { limit?: number; before?: string }): Promise<ListTeamMessagesResponse> {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
+    const query = params.toString();
+    return this.fetch(`/api/teams/${teamId}/messages${query ? `?${query}` : ""}`);
+  }
+
+  async postTeamMessage(teamId: string, data: PostTeamMessageRequest): Promise<TeamMessage> {
+    return this.fetch(`/api/teams/${teamId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ── Missions ─────────────────────────────────────────────────────────────
+
+  async listMissions(status: "active" | "archived" = "active"): Promise<ListMissionsResponse> {
+    const query = status === "archived" ? "?status=archived" : "";
+    return this.fetch(`/api/missions${query}`);
+  }
+
+  async getMission(id: string): Promise<MissionDetail> {
+    return this.fetch(`/api/missions/${id}`);
+  }
+
+  async createMission(data: CreateMissionRequest): Promise<MissionDetail> {
+    return this.fetch("/api/missions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateMission(id: string, data: UpdateMissionRequest): Promise<Mission> {
+    return this.fetch(`/api/missions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveMission(id: string): Promise<Mission> {
+    return this.fetch(`/api/missions/${id}/archive`, { method: "POST" });
+  }
+
+  // ── Ideas (Origin idea pool) ─────────────────────────────────────────────
+
+  async listIdeas(status: "active" | "archived" = "active"): Promise<ListIdeasResponse> {
+    const query = status === "archived" ? "?status=archived" : "";
+    return this.fetch(`/api/ideas${query}`);
+  }
+
+  async getIdea(id: string): Promise<IdeaDetail> {
+    return this.fetch(`/api/ideas/${id}`);
+  }
+
+  async createIdea(data: CreateIdeaRequest): Promise<IdeaDetail> {
+    return this.fetch("/api/ideas", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateIdea(id: string, data: UpdateIdeaRequest): Promise<Idea> {
+    return this.fetch(`/api/ideas/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveIdea(id: string): Promise<Idea> {
+    return this.fetch(`/api/ideas/${id}/archive`, { method: "POST" });
+  }
+
+  async deleteIdea(id: string): Promise<void> {
+    await this.fetch(`/api/ideas/${id}`, { method: "DELETE" });
+  }
+
+  async createIdeaNote(ideaId: string, data: CreateIdeaNoteRequest): Promise<IdeaNurtureNote> {
+    return this.fetch(`/api/ideas/${ideaId}/notes`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteIdeaNote(ideaId: string, noteId: string): Promise<void> {
+    await this.fetch(`/api/ideas/${ideaId}/notes/${noteId}`, { method: "DELETE" });
+  }
+
+  // ── Council Sessions (Origin on-demand multi-agent rooms) ────────────────
+
+  async listCouncilSessions(status: "active" | "archived" = "active"): Promise<ListCouncilSessionsResponse> {
+    const query = status === "archived" ? "?status=archived" : "";
+    return this.fetch(`/api/council-sessions${query}`);
+  }
+
+  async getCouncilSession(id: string): Promise<CouncilSessionDetail> {
+    return this.fetch(`/api/council-sessions/${id}`);
+  }
+
+  async createCouncilSession(data: CreateCouncilSessionRequest): Promise<CouncilSessionDetail> {
+    return this.fetch("/api/council-sessions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCouncilSession(id: string, data: UpdateCouncilSessionRequest): Promise<CouncilSession> {
+    return this.fetch(`/api/council-sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async adjournCouncilSession(id: string, data: AdjournCouncilSessionRequest = {}): Promise<CouncilSession> {
+    return this.fetch(`/api/council-sessions/${id}/adjourn`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveCouncilSession(id: string): Promise<CouncilSession> {
+    return this.fetch(`/api/council-sessions/${id}/archive`, { method: "POST" });
+  }
+
+  async deleteCouncilSession(id: string): Promise<void> {
+    await this.fetch(`/api/council-sessions/${id}`, { method: "DELETE" });
+  }
+
+  async addCouncilParticipant(sessionId: string, data: AddCouncilParticipantRequest): Promise<CouncilSessionParticipant> {
+    return this.fetch(`/api/council-sessions/${sessionId}/participants`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeCouncilParticipant(sessionId: string, agentId: string): Promise<void> {
+    await this.fetch(`/api/council-sessions/${sessionId}/participants/${agentId}`, { method: "DELETE" });
+  }
+
+  // ── User Profile (Origin §14.10) ─────────────────────────────────────────
+
+  async getUserProfile(): Promise<UserProfile> {
+    return this.fetch("/api/user-profile");
+  }
+
+  async upsertUserProfile(data: UpsertUserProfileRequest): Promise<UserProfile> {
+    return this.fetch("/api/user-profile", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
   }
 }

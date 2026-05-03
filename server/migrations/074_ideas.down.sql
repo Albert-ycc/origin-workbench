@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS idea_nurture_note;
+DROP TABLE IF EXISTS idea;

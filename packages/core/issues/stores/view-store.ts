@@ -29,21 +29,21 @@ export interface ActorFilterValue {
 }
 
 export const SORT_OPTIONS: { value: SortField; label: string }[] = [
-  { value: "position", label: "Manual" },
-  { value: "priority", label: "Priority" },
-  { value: "due_date", label: "Due date" },
-  { value: "created_at", label: "Created date" },
-  { value: "title", label: "Title" },
+  { value: "position", label: "手动排序" },
+  { value: "priority", label: "优先级" },
+  { value: "due_date", label: "截止时间" },
+  { value: "created_at", label: "创建时间" },
+  { value: "title", label: "标题" },
 ];
 
 export const CARD_PROPERTY_OPTIONS: { key: keyof CardProperties; label: string }[] = [
-  { key: "priority", label: "Priority" },
-  { key: "description", label: "Description" },
-  { key: "assignee", label: "Assignee" },
-  { key: "dueDate", label: "Due date" },
-  { key: "project", label: "Project" },
-  { key: "labels", label: "Labels" },
-  { key: "childProgress", label: "Sub-issue progress" },
+  { key: "priority", label: "优先级" },
+  { key: "description", label: "描述" },
+  { key: "assignee", label: "负责人" },
+  { key: "dueDate", label: "截止时间" },
+  { key: "project", label: "项目" },
+  { key: "labels", label: "标签" },
+  { key: "childProgress", label: "子任务进度" },
 ];
 
 export interface IssueViewState {

@@ -1,11 +1,12 @@
 import type { Issue, IssueReaction } from "./issue";
-import type { Agent } from "./agent";
+import type { Agent, AgentMemory, AgentSkillCandidate } from "./agent";
 import type { InboxItem } from "./inbox";
 import type { Comment, Reaction } from "./comment";
 import type { TimelineEntry } from "./activity";
 import type { Workspace, MemberWithUser, Invitation } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
+import type { TeamMessage } from "./team";
 
 // WebSocket event types (matching Go server protocol/events.go)
 export type WSEventType =
@@ -19,6 +20,13 @@ export type WSEventType =
   | "agent:created"
   | "agent:archived"
   | "agent:restored"
+  | "agent:memory_created"
+  | "agent:memory_confirmed"
+  | "agent:memory_rejected"
+  | "agent:skill_candidate_created"
+  | "agent:skill_candidate_confirmed"
+  | "agent:skill_candidate_rejected"
+  | "agent:event_created"
   | "task:queued"
   | "task:dispatch"
   | "task:progress"
@@ -64,7 +72,17 @@ export type WSEventType =
   | "invitation:created"
   | "invitation:accepted"
   | "invitation:declined"
-  | "invitation:revoked";
+  | "invitation:revoked"
+  | "mission:created"
+  | "mission:updated"
+  | "mission:archived"
+  | "team:created"
+  | "team:updated"
+  | "team:archived"
+  | "team:deleted"
+  | "team:member_added"
+  | "team:member_removed"
+  | "team:message_created";
 
 export interface WSMessage<T = unknown> {
   type: WSEventType;
@@ -103,6 +121,20 @@ export interface AgentArchivedPayload {
 
 export interface AgentRestoredPayload {
   agent: Agent;
+}
+
+export interface AgentMemoryCreatedPayload {
+  agent_id: string;
+  memory?: AgentMemory;
+}
+
+export interface AgentSkillCandidateCreatedPayload {
+  agent_id: string;
+  candidate?: AgentSkillCandidate;
+}
+
+export interface AgentEventCreatedPayload {
+  agent_id: string;
 }
 
 export interface InboxNewPayload {
@@ -310,4 +342,9 @@ export interface InvitationDeclinedPayload {
 export interface InvitationRevokedPayload {
   invitation_id: string;
   invitee_email: string;
+}
+
+export interface TeamMessageCreatedPayload {
+  team_id: string;
+  message?: TeamMessage;
 }

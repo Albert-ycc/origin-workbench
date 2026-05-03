@@ -355,14 +355,13 @@ WHERE a.workspace_id = $1
   AND atq.created_at > now() - INTERVAL '30 days'
 GROUP BY atq.agent_id;
 
--- name: GetWorkspaceAgentActivity30d :many
--- Returns per-agent daily activity buckets for the last 30 days. Single
+-- name: GetWorkspaceAgentActivity365d :many
+-- Returns per-agent daily activity buckets for the last 365 days. Single
 -- workspace-wide read backs both surfaces:
 --   - Agents list ACTIVITY column — uses only the trailing 7 buckets
---   - Agent detail "Last 30 days" panel — uses the full 30
--- 30 days contains 7 days, so one fetch + a client-side .slice(-7) wins
--- over fetching twice. Days with no completion produce no row; the
--- front-end zero-fills.
+--   - Agent detail journal — uses the full 365-day year grid
+-- One fetch + a client-side .slice(-N) wins over fetching twice. Days with no
+-- completion produce no row; the front-end zero-fills.
 --
 -- Anchored on completed_at (not created_at) because the sparkline answers
 -- "what did this agent produce?" not "what was queued at it?". A task that's
@@ -378,7 +377,7 @@ FROM agent_task_queue atq
 JOIN agent a ON a.id = atq.agent_id
 WHERE a.workspace_id = $1
   AND atq.completed_at IS NOT NULL
-  AND atq.completed_at > now() - INTERVAL '30 days'
+  AND atq.completed_at > now() - INTERVAL '365 days'
 GROUP BY atq.agent_id, bucket
 ORDER BY atq.agent_id, bucket;
 

@@ -155,6 +155,10 @@ func (h *Handler) loadChatSessionForUser(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusForbidden, "not your chat session")
 		return db.ChatSession{}, false
 	}
+	if session.TeamID.Valid {
+		writeError(w, http.StatusNotFound, "chat session not found")
+		return db.ChatSession{}, false
+	}
 	return session, true
 }
 

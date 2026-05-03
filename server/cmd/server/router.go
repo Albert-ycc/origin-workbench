@@ -195,6 +195,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Auth (public)
 	r.Post("/auth/send-code", h.SendCode)
 	r.Post("/auth/verify-code", h.VerifyCode)
+	r.Post("/auth/local-signin", h.LocalSignIn)
 	r.Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/logout", h.Logout)
 
@@ -379,6 +380,53 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
+			// Missions (Origin product-level work objects)
+			r.Route("/api/missions", func(r chi.Router) {
+				r.Get("/", h.ListMissions)
+				r.Post("/", h.CreateMission)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetMission)
+					r.Patch("/", h.UpdateMission)
+					r.Post("/archive", h.ArchiveMission)
+				})
+			})
+
+			// User Profile (Origin §14.10): single-row per (workspace, user)
+			r.Route("/api/user-profile", func(r chi.Router) {
+				r.Get("/", h.GetUserProfile)
+				r.Put("/", h.UpsertUserProfile)
+			})
+
+			// Council Sessions (Origin on-demand multi-agent rooms)
+			r.Route("/api/council-sessions", func(r chi.Router) {
+				r.Get("/", h.ListCouncilSessions)
+				r.Post("/", h.CreateCouncilSession)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetCouncilSession)
+					r.Patch("/", h.UpdateCouncilSession)
+					r.Delete("/", h.DeleteCouncilSession)
+					r.Post("/adjourn", h.AdjournCouncilSession)
+					r.Post("/archive", h.ArchiveCouncilSession)
+					r.Post("/participants", h.AddCouncilSessionParticipant)
+					r.Delete("/participants/{agentId}", h.RemoveCouncilSessionParticipant)
+				})
+			})
+
+			// Ideas (Origin idea pool — lightweight pre-Mission incubation layer)
+			r.Route("/api/ideas", func(r chi.Router) {
+				r.Get("/", h.ListIdeas)
+				r.Post("/", h.CreateIdea)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetIdea)
+					r.Patch("/", h.UpdateIdea)
+					r.Delete("/", h.DeleteIdea)
+					r.Post("/archive", h.ArchiveIdea)
+					r.Get("/notes", h.ListIdeaNotes)
+					r.Post("/notes", h.CreateIdeaNote)
+					r.Delete("/notes/{noteId}", h.DeleteIdeaNote)
+				})
+			})
+
 			// Pins
 			r.Route("/api/pins", func(r chi.Router) {
 				r.Get("/", h.ListPins)
@@ -412,6 +460,32 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/tasks", h.ListAgentTasks)
 					r.Get("/skills", h.ListAgentSkills)
 					r.Put("/skills", h.SetAgentSkills)
+					r.Get("/memories", h.ListAgentMemories)
+					r.Post("/memories", h.CreateAgentMemory)
+					r.Post("/memories/{memoryId}/confirm", h.ConfirmAgentMemory)
+					r.Post("/memories/{memoryId}/reject", h.RejectAgentMemory)
+					r.Get("/skill-candidates", h.ListAgentSkillCandidates)
+					r.Post("/skill-candidates", h.CreateAgentSkillCandidate)
+					r.Post("/skill-candidates/{candidateId}/confirm", h.ConfirmAgentSkillCandidate)
+					r.Post("/skill-candidates/{candidateId}/reject", h.RejectAgentSkillCandidate)
+					r.Get("/events", h.ListAgentEvents)
+				})
+			})
+
+			// Teams (Phase 2: agent group + group chat)
+			r.Route("/api/teams", func(r chi.Router) {
+				r.Get("/", h.ListTeams)
+				r.Post("/", h.CreateTeam)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetTeam)
+					r.Patch("/", h.UpdateTeam)
+					r.Delete("/", h.DeleteTeam)
+					r.Post("/archive", h.ArchiveTeam)
+					r.Post("/restore", h.RestoreTeam)
+					r.Post("/members", h.AddTeamMember)
+					r.Delete("/members/{memberId}", h.RemoveTeamMember)
+					r.Get("/messages", h.ListTeamMessages)
+					r.Post("/messages", h.PostTeamMessage)
 				})
 			})
 
@@ -463,10 +537,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// every active task + each agent's most recent terminal task.
 			r.Get("/api/agent-task-snapshot", h.ListWorkspaceAgentTaskSnapshot)
 
-			// Workspace-wide daily agent activity (last 30d, anchored on
+			// Workspace-wide daily agent activity (last 365d, anchored on
 			// completed_at). Backs the Agents-list sparkline (trailing 7d
-			// slice) AND the agent detail "Last 30 days" panel.
-			r.Get("/api/agent-activity-30d", h.GetWorkspaceAgentActivity30d)
+			// slice) AND the agent detail year heatmap.
+			r.Get("/api/agent-activity-365d", h.GetWorkspaceAgentActivity365d)
 
 			// Workspace-wide 30-day run counts per agent for the Agents-list RUNS column.
 			r.Get("/api/agent-run-counts", h.GetWorkspaceAgentRunCounts)

@@ -1,0 +1,135 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../api";
+import { useWorkspaceId } from "../hooks";
+import { ideaKeys } from "./queries";
+import type {
+  CreateIdeaRequest,
+  CreateIdeaNoteRequest,
+  Idea,
+  IdeaDetail,
+  IdeaNurtureNote,
+  ListIdeasResponse,
+  UpdateIdeaRequest,
+} from "../types";
+
+export function useCreateIdea() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (data: CreateIdeaRequest) => api.createIdea(data),
+    onSuccess: (detail) => {
+      qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId), (old) =>
+        old && !old.ideas.some((i) => i.id === detail.idea.id)
+          ? { ...old, ideas: [detail.idea, ...old.ideas], total: old.total + 1 }
+          : old,
+      );
+      qc.setQueryData<IdeaDetail>(ideaKeys.detail(wsId, detail.idea.id), detail);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ideaKeys.list(wsId) });
+    },
+  });
+}
+
+export function useUpdateIdea() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & UpdateIdeaRequest) =>
+      api.updateIdea(id, data),
+    onSuccess: (idea) => {
+      patchIdeaCaches(qc, wsId, idea);
+    },
+    onSettled: (_data, _error, vars) => {
+      qc.invalidateQueries({ queryKey: ideaKeys.detail(wsId, vars.id) });
+      qc.invalidateQueries({ queryKey: ideaKeys.list(wsId) });
+    },
+  });
+}
+
+export function useArchiveIdea() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (id: string) => api.archiveIdea(id),
+    onSuccess: (idea) => {
+      qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId), (old) =>
+        old
+          ? {
+              ...old,
+              ideas: old.ideas.filter((i) => i.id !== idea.id),
+              total: Math.max(0, old.total - 1),
+            }
+          : old,
+      );
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
+    },
+  });
+}
+
+export function useDeleteIdea() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteIdea(id),
+    onSuccess: (_data, id) => {
+      qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId), (old) =>
+        old
+          ? {
+              ...old,
+              ideas: old.ideas.filter((i) => i.id !== id),
+              total: Math.max(0, old.total - 1),
+            }
+          : old,
+      );
+      qc.removeQueries({ queryKey: ideaKeys.detail(wsId, id) });
+    },
+  });
+}
+
+export function useCreateIdeaNote() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ ideaId, ...data }: { ideaId: string } & CreateIdeaNoteRequest) =>
+      api.createIdeaNote(ideaId, data),
+    onSuccess: (note: IdeaNurtureNote, vars) => {
+      qc.setQueryData<IdeaDetail>(ideaKeys.detail(wsId, vars.ideaId), (old) =>
+        old ? { ...old, notes: [note, ...old.notes] } : old,
+      );
+      qc.invalidateQueries({ queryKey: ideaKeys.detail(wsId, vars.ideaId) });
+      qc.invalidateQueries({ queryKey: ideaKeys.list(wsId) });
+    },
+  });
+}
+
+export function useDeleteIdeaNote() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ ideaId, noteId }: { ideaId: string; noteId: string }) =>
+      api.deleteIdeaNote(ideaId, noteId),
+    onSuccess: (_data, vars) => {
+      qc.setQueryData<IdeaDetail>(ideaKeys.detail(wsId, vars.ideaId), (old) =>
+        old
+          ? { ...old, notes: old.notes.filter((n) => n.id !== vars.noteId) }
+          : old,
+      );
+    },
+  });
+}
+
+function patchIdeaCaches(
+  qc: ReturnType<typeof useQueryClient>,
+  wsId: string,
+  idea: Idea,
+) {
+  qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId), (old) =>
+    old
+      ? { ...old, ideas: old.ideas.map((i) => (i.id === idea.id ? idea : i)) }
+      : old,
+  );
+  qc.setQueryData<IdeaDetail>(ideaKeys.detail(wsId, idea.id), (old) =>
+    old ? { ...old, idea } : old,
+  );
+}

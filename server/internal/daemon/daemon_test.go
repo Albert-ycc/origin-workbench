@@ -166,6 +166,74 @@ func TestBuildPromptAutopilotRunOnly(t *testing.T) {
 	}
 }
 
+func TestBuildPromptTeamChatIncludesRosterAndMentionDelegationRules(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildPrompt(Task{
+		ChatSessionID:      "chat-1",
+		ChatMessage:        "@前端开发工程师 请评估这个交互",
+		TeamID:             "team-1",
+		TeamName:           "系统开发项目团队",
+		TeamCaptainAgentID: "captain-1",
+		Agent:              &AgentData{ID: "captain-1", Name: "产品经理"},
+		TeamMembers: []TeamMemberData{
+			{AgentID: "captain-1", Name: "产品经理", Role: "captain"},
+			{AgentID: "agent-frontend", Name: "前端开发工程师", Role: "member"},
+			{AgentID: "agent-backend", Name: "后端开发工程师", Role: "member"},
+		},
+	})
+
+	for _, want := range []string{
+		"team group chat",
+		"系统开发项目团队",
+		"产品经理",
+		"前端开发工程师",
+		"@全体",
+		"@成员名",
+		"multica issue create",
+		"--assignee",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("team chat prompt missing %q\n---\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "chatting with you directly") {
+		t.Fatalf("team chat prompt should not use direct-chat framing\n---\n%s", prompt)
+	}
+}
+
+func TestBuildPromptTeamDelegatedMemberIncludesCaptainInstruction(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildPrompt(Task{
+		ChatSessionID:      "chat-1",
+		ChatMessage:        "@前端开发工程师 请评估这个交互",
+		TeamID:             "team-1",
+		TeamName:           "系统开发项目团队",
+		TeamCaptainAgentID: "captain-1",
+		Agent:              &AgentData{ID: "agent-frontend", Name: "前端开发工程师"},
+		TeamDelegation: &TeamDelegationData{
+			Type:            "team_delegation",
+			SourceAgentID:   "captain-1",
+			SourceAgentName: "产品经理",
+			TargetAgentID:   "agent-frontend",
+			TargetAgentName: "前端开发工程师",
+			Instruction:     "@前端开发工程师 请负责验证新建团队的群聊体验，并把结论回到群里。",
+		},
+	})
+
+	for _, want := range []string{
+		"Delegation from 产品经理",
+		"请负责验证新建团队的群聊体验",
+		"delegated member",
+		"reply back to the group chat",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("team delegation prompt missing %q\n---\n%s", want, prompt)
+		}
+	}
+}
+
 func TestBuildPromptCommentTriggered(t *testing.T) {
 	t.Parallel()
 

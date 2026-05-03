@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -38,6 +39,12 @@ type TaskService struct {
 
 type TaskWakeupNotifier interface {
 	NotifyTaskAvailable(runtimeID, taskID string)
+}
+
+type skillCandidate struct {
+	Name        string
+	Description string
+	Content     string
 }
 
 // triggerSummaryMaxLen caps the snapshot length so the row stays cheap to
@@ -217,6 +224,23 @@ type QuickCreateContext struct {
 // QuickCreateContextType marks a task as a quick-create job.
 const QuickCreateContextType = "quick_create"
 
+// TeamDelegationContext is stored on a team member chat task when the
+// captain delegates work by mentioning that member in the group chat.
+type TeamDelegationContext struct {
+	Type            string `json:"type"`
+	TeamID          string `json:"team_id"`
+	ChatSessionID   string `json:"chat_session_id"`
+	SourceAgentID   string `json:"source_agent_id"`
+	SourceAgentName string `json:"source_agent_name"`
+	TargetAgentID   string `json:"target_agent_id"`
+	TargetAgentName string `json:"target_agent_name"`
+	SourceMessageID string `json:"source_message_id"`
+	Instruction     string `json:"instruction"`
+}
+
+// TeamDelegationContextType marks a chat task as captain-delegated team work.
+const TeamDelegationContextType = "team_delegation"
+
 // EnqueueQuickCreateTask creates a queued task that has no issue / chat /
 // autopilot link — the user's natural-language prompt is stored in the
 // task's context JSONB and the agent is expected to translate it into a
@@ -274,7 +298,19 @@ func (s *TaskService) EnqueueQuickCreateTask(ctx context.Context, workspaceID, r
 // EnqueueChatTask creates a queued task for a chat session.
 // Unlike issue tasks, chat tasks have no issue_id.
 func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSession) (db.AgentTaskQueue, error) {
-	agent, err := s.Queries.GetAgent(ctx, chatSession.AgentID)
+	if !chatSession.AgentID.Valid {
+		return db.AgentTaskQueue{}, fmt.Errorf("chat session has no agent — call EnqueueChatTaskForAgent for team sessions")
+	}
+	return s.EnqueueChatTaskForAgent(ctx, chatSession, chatSession.AgentID)
+}
+
+// EnqueueChatTaskForAgent enqueues a chat task on a specific agent. It exists
+// because team chat sessions have agent_id IS NULL (the captain is recorded
+// in the team table, not on the session). Callers in that path resolve the
+// captain agent themselves and pass it in. Daemon protocol is unchanged: the
+// task carries agent_id like any other chat task.
+func (s *TaskService) EnqueueChatTaskForAgent(ctx context.Context, chatSession db.ChatSession, agentID pgtype.UUID, taskContexts ...[]byte) (db.AgentTaskQueue, error) {
+	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("load agent: %w", err)
@@ -286,18 +322,28 @@ func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSe
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
+	var taskContext []byte
+	if len(taskContexts) > 0 && len(taskContexts[0]) > 0 {
+		taskContext = taskContexts[0]
+	}
 	task, err := s.Queries.CreateChatTask(ctx, db.CreateChatTaskParams{
-		AgentID:       chatSession.AgentID,
+		AgentID:       agentID,
 		RuntimeID:     agent.RuntimeID,
 		Priority:      2, // medium priority for chat
 		ChatSessionID: chatSession.ID,
+		Context:       taskContext,
 	})
 	if err != nil {
 		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("create chat task: %w", err)
 	}
 
-	slog.Info("chat task enqueued", "task_id", util.UUIDToString(task.ID), "chat_session_id", util.UUIDToString(chatSession.ID), "agent_id", util.UUIDToString(chatSession.AgentID))
+	slog.Info("chat task enqueued",
+		"task_id", util.UUIDToString(task.ID),
+		"chat_session_id", util.UUIDToString(chatSession.ID),
+		"agent_id", util.UUIDToString(agentID),
+		"team_session", chatSession.TeamID.Valid,
+	)
 	// See EnqueueTaskForIssue for ordering rationale.
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
 	s.notifyTaskAvailable(task)
@@ -697,13 +743,20 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 			// agent stdout becomes a real newline so the chat panel renders
 			// paragraph breaks instead of one wall of prose.
 			body := util.UnescapeBackslashEscapes(payload.Output)
-			if _, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
+			message, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
 				ChatSessionID: task.ChatSessionID,
 				Role:          "assistant",
 				Content:       redact.Text(body),
 				TaskID:        task.ID,
 				ElapsedMs:     computeChatElapsedMs(task),
-			}); err != nil {
+				// For team sessions the daemon hands us back an assistant reply
+				// without knowing it ran inside a group chat — we tag it with
+				// the agent that ran the task so the UI can attribute the
+				// message in a multi-agent timeline. 1:1 sessions leave this
+				// NULL because session.agent_id is already authoritative.
+				SenderAgentID: s.senderAgentForChatSession(ctx, task),
+			})
+			if err != nil {
 				slog.Error("failed to save assistant chat message", "task_id", util.UUIDToString(task.ID), "error", err)
 			} else {
 				// Event-driven unread: stamp unread_since on the first unread
@@ -713,10 +766,14 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 				if err := s.Queries.SetUnreadSinceIfNull(ctx, task.ChatSessionID); err != nil {
 					slog.Warn("failed to set unread_since", "chat_session_id", util.UUIDToString(task.ChatSessionID), "error", err)
 				}
+				s.handleTeamAssistantMessage(ctx, task, message)
 			}
 		}
 		s.broadcastChatDone(ctx, task)
+		s.broadcastTeamMessageIfTeamSession(ctx, task)
 	}
+
+	s.syncMissionTaskCompleted(ctx, task, result)
 
 	// Reconcile agent status
 	s.ReconcileAgentStatus(ctx, task.AgentID)
@@ -818,6 +875,7 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			TaskID:        pgtype.UUID{Bytes: task.ID.Bytes, Valid: true},
 			FailureReason: pgtype.Text{String: failureReason, Valid: failureReason != ""},
 			ElapsedMs:     computeChatElapsedMs(task),
+			SenderAgentID: s.senderAgentForChatSession(ctx, task),
 		}); err != nil {
 			slog.Error("failed to save failure chat message",
 				"task_id", util.UUIDToString(task.ID),
@@ -828,6 +886,11 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 				"chat_session_id", util.UUIDToString(task.ChatSessionID),
 				"error", err)
 		}
+		s.broadcastTeamMessageIfTeamSession(ctx, task)
+	}
+
+	if retried == nil {
+		s.syncMissionTaskFailed(ctx, task, errMsg)
 	}
 
 	// Quick-create tasks: push a failure inbox notification to the
@@ -1169,6 +1232,31 @@ type AgentSkillFileData struct {
 // "Failed after 12s". Uses created_at — not started_at — because users
 // experience total wait time, including queue + dispatch, not just the
 // daemon's actual run time.
+// senderAgentForChatSession returns the agent UUID to attribute an assistant
+// message to, but only for team-mode sessions. 1:1 sessions return an
+// invalid (NULL) UUID so existing single-agent chat behaviour is preserved.
+//
+// Implementation: load the chat_session, check team_id. Cheap because each
+// completion only does one lookup, and chat_session is small.
+func (s *TaskService) senderAgentForChatSession(ctx context.Context, task db.AgentTaskQueue) pgtype.UUID {
+	if !task.ChatSessionID.Valid || !task.AgentID.Valid {
+		return pgtype.UUID{}
+	}
+	session, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
+	if err != nil {
+		// Don't fail the completion just because we can't decide attribution —
+		// fall back to NULL like a 1:1 session would.
+		slog.Warn("sender_agent_id lookup failed",
+			"chat_session_id", util.UUIDToString(task.ChatSessionID),
+			"error", err)
+		return pgtype.UUID{}
+	}
+	if !session.TeamID.Valid {
+		return pgtype.UUID{}
+	}
+	return task.AgentID
+}
+
 func computeChatElapsedMs(task db.AgentTaskQueue) pgtype.Int8 {
 	if !task.CompletedAt.Valid || !task.CreatedAt.Valid {
 		return pgtype.Int8{}
@@ -1333,6 +1421,862 @@ func (s *TaskService) broadcastChatDone(ctx context.Context, task db.AgentTaskQu
 			TaskID:        util.UUIDToString(task.ID),
 		},
 	})
+}
+
+// broadcastTeamMessageIfTeamSession fires a workspace-wide team:message_created
+// event when a chat task that belongs to a team session lands an assistant
+// row. Payload includes the message so the frontend can append it without
+// refetching the whole room; missing message falls back to invalidate.
+//
+// 1:1 sessions short-circuit (returns immediately) — those flow through
+// chat:* events and don't need a team broadcast.
+func (s *TaskService) broadcastTeamMessageIfTeamSession(ctx context.Context, task db.AgentTaskQueue) {
+	if !task.ChatSessionID.Valid {
+		return
+	}
+	session, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
+	if err != nil || !session.TeamID.Valid {
+		return
+	}
+	message, err := s.Queries.GetLatestTeamChatMessageForTask(ctx, db.GetLatestTeamChatMessageForTaskParams{
+		TeamID: session.TeamID,
+		TaskID: task.ID,
+	})
+	if err != nil {
+		slog.Warn("failed to load latest team task message",
+			"task_id", util.UUIDToString(task.ID),
+			"team_id", util.UUIDToString(session.TeamID),
+			"error", err)
+	}
+	payload := map[string]any{
+		"team_id": util.UUIDToString(session.TeamID),
+	}
+	if err == nil {
+		payload["message"] = map[string]any{
+			"id":              util.UUIDToString(message.ID),
+			"chat_session_id": util.UUIDToString(message.ChatSessionID),
+			"team_id":         util.UUIDToString(session.TeamID),
+			"role":            message.Role,
+			"content":         message.Content,
+			"sender_agent_id": util.UUIDToPtr(message.SenderAgentID),
+			"created_at":      util.TimestampToString(message.CreatedAt),
+		}
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventTeamMessageCreated,
+		WorkspaceID: util.UUIDToString(session.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     util.UUIDToString(task.AgentID),
+		Payload:     payload,
+	})
+}
+
+type teamRosterAgent struct {
+	ID   pgtype.UUID
+	Name string
+	Role string
+}
+
+type memoryCandidate struct {
+	Kind  string
+	Title string
+	Body  string
+}
+
+func (s *TaskService) handleTeamAssistantMessage(ctx context.Context, task db.AgentTaskQueue, message db.ChatMessage) {
+	session, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
+	if err != nil || !session.TeamID.Valid {
+		return
+	}
+	team, err := s.Queries.GetTeam(ctx, session.TeamID)
+	if err != nil {
+		return
+	}
+	roster := s.loadTeamRosterAgents(ctx, team.ID)
+	if uuidEqual(task.AgentID, team.CaptainAgentID) {
+		s.delegateTeamMentions(ctx, session, team, roster, task.AgentID, message)
+	}
+	s.extractTeamMemories(ctx, session, team, task.AgentID, message)
+}
+
+func (s *TaskService) loadTeamRosterAgents(ctx context.Context, teamID pgtype.UUID) []teamRosterAgent {
+	members, err := s.Queries.ListTeamMembers(ctx, teamID)
+	if err != nil {
+		return nil
+	}
+	out := make([]teamRosterAgent, 0, len(members))
+	for _, member := range members {
+		agent, err := s.Queries.GetAgent(ctx, member.AgentID)
+		if err != nil {
+			continue
+		}
+		out = append(out, teamRosterAgent{ID: member.AgentID, Name: agent.Name, Role: member.Role})
+	}
+	return out
+}
+
+func (s *TaskService) delegateTeamMentions(ctx context.Context, session db.ChatSession, team db.Team, roster []teamRosterAgent, sourceAgentID pgtype.UUID, sourceMessage db.ChatMessage) {
+	content := sourceMessage.Content
+	targets := mentionedTeamAgents(roster, sourceAgentID, content)
+	if len(targets) == 0 {
+		return
+	}
+
+	activeMission, hasMission := s.activeMissionForTeamSession(ctx, session, team)
+	sourceAgentName := ""
+	for _, member := range roster {
+		if uuidEqual(member.ID, sourceAgentID) {
+			sourceAgentName = member.Name
+			break
+		}
+	}
+	var delegated []string
+	var failed []string
+	for _, target := range targets {
+		taskContext, _ := json.Marshal(TeamDelegationContext{
+			Type:            TeamDelegationContextType,
+			TeamID:          util.UUIDToString(team.ID),
+			ChatSessionID:   util.UUIDToString(session.ID),
+			SourceAgentID:   util.UUIDToString(sourceAgentID),
+			SourceAgentName: sourceAgentName,
+			TargetAgentID:   util.UUIDToString(target.ID),
+			TargetAgentName: target.Name,
+			SourceMessageID: util.UUIDToString(sourceMessage.ID),
+			Instruction:     content,
+		})
+		task, err := s.EnqueueChatTaskForAgent(ctx, session, target.ID, taskContext)
+		if err != nil {
+			failed = append(failed, target.Name)
+			slog.Warn("team delegation failed",
+				"team_id", util.UUIDToString(team.ID),
+				"source_agent_id", util.UUIDToString(sourceAgentID),
+				"target_agent_id", util.UUIDToString(target.ID),
+				"error", err)
+			continue
+		}
+		delegated = append(delegated, target.Name)
+		payload, _ := json.Marshal(map[string]any{
+			"team_id":         util.UUIDToString(team.ID),
+			"chat_session_id": util.UUIDToString(session.ID),
+			"source_agent_id": util.UUIDToString(sourceAgentID),
+			"target_agent_id": util.UUIDToString(target.ID),
+			"task_id":         util.UUIDToString(task.ID),
+		})
+		if hasMission {
+			s.createMissionDelegation(ctx, activeMission, team, target, sourceAgentID, sourceMessage, task)
+		}
+		if _, err := s.Queries.CreateAgentEvent(ctx, db.CreateAgentEventParams{
+			WorkspaceID: team.WorkspaceID,
+			AgentID:     target.ID,
+			Kind:        "team_task_delegated",
+			Title:       "团队负责人分派了群聊任务",
+			Body:        truncateForSummary(content, triggerSummaryMaxLen),
+			Payload:     payload,
+		}); err != nil {
+			slog.Warn("failed to create team delegation event",
+				"team_id", util.UUIDToString(team.ID),
+				"target_agent_id", util.UUIDToString(target.ID),
+				"error", err)
+		} else {
+			s.publishAgentEvent(ctx, team.WorkspaceID, target.ID)
+		}
+	}
+
+	body := ""
+	if len(delegated) > 0 {
+		body = "负责人已分派给 " + strings.Join(delegated, "、") + "。"
+	}
+	if len(failed) > 0 {
+		if body != "" {
+			body += " "
+		}
+		body += "以下成员暂时无法接管：" + strings.Join(failed, "、") + "。"
+	}
+	s.createTeamSystemMessage(ctx, session, team.ID, body)
+}
+
+func (s *TaskService) activeMissionForTeamSession(ctx context.Context, session db.ChatSession, team db.Team) (db.Mission, bool) {
+	if !session.ID.Valid || !team.ID.Valid {
+		return db.Mission{}, false
+	}
+	mission, err := s.Queries.GetActiveMissionByTeamChatSession(ctx, db.GetActiveMissionByTeamChatSessionParams{
+		TeamID:        team.ID,
+		ChatSessionID: session.ID,
+	})
+	if err != nil {
+		return db.Mission{}, false
+	}
+	return mission, true
+}
+
+func (s *TaskService) createMissionDelegation(ctx context.Context, mission db.Mission, team db.Team, target teamRosterAgent, sourceAgentID pgtype.UUID, sourceMessage db.ChatMessage, task db.AgentTaskQueue) {
+	title := delegationPlanTitle(sourceMessage.Content, target.Name)
+	body := truncateForSummary(sourceMessage.Content, triggerSummaryMaxLen)
+	sortOrder := int32(time.Now().Unix())
+	planItem, err := s.Queries.CreateMissionPlanItem(ctx, db.CreateMissionPlanItemParams{
+		MissionID:       mission.ID,
+		Title:           title,
+		Description:     body,
+		Phase:           "execute",
+		Status:          "in_progress",
+		Priority:        "medium",
+		RiskLevel:       mission.RiskLevel,
+		SortOrder:       sortOrder,
+		AssignedAgentID: target.ID,
+	})
+	if err != nil {
+		slog.Warn("failed to create mission delegation plan item",
+			"mission_id", util.UUIDToString(mission.ID),
+			"target_agent_id", util.UUIDToString(target.ID),
+			"error", err)
+		return
+	}
+	assignment, err := s.Queries.CreateMissionAssignment(ctx, db.CreateMissionAssignmentParams{
+		MissionID:  mission.ID,
+		PlanItemID: planItem.ID,
+		AgentID:    target.ID,
+		Status:     "dispatched",
+		RiskLevel:  mission.RiskLevel,
+		TaskID:     task.ID,
+		Output:     "",
+	})
+	if err != nil {
+		slog.Warn("failed to create mission delegation assignment",
+			"mission_id", util.UUIDToString(mission.ID),
+			"target_agent_id", util.UUIDToString(target.ID),
+			"task_id", util.UUIDToString(task.ID),
+			"error", err)
+		return
+	}
+	if _, err := s.Queries.CreateMissionEvent(ctx, db.CreateMissionEventParams{
+		MissionID:   mission.ID,
+		WorkspaceID: mission.WorkspaceID,
+		ActorType:   "agent",
+		ActorID:     sourceAgentID,
+		Kind:        "member_delegated",
+		Title:       "负责人派工给 " + target.Name,
+		Body:        body,
+		Payload: eventPayload(map[string]any{
+			"team_id":           util.UUIDToString(team.ID),
+			"chat_session_id":   util.UUIDToString(sourceMessage.ChatSessionID),
+			"source_agent_id":   util.UUIDToString(sourceAgentID),
+			"target_agent_id":   util.UUIDToString(target.ID),
+			"source_message_id": util.UUIDToString(sourceMessage.ID),
+			"plan_item_id":      util.UUIDToString(planItem.ID),
+			"assignment_id":     util.UUIDToString(assignment.ID),
+			"task_id":           util.UUIDToString(task.ID),
+		}),
+	}); err != nil {
+		slog.Warn("failed to create mission delegation event",
+			"mission_id", util.UUIDToString(mission.ID),
+			"target_agent_id", util.UUIDToString(target.ID),
+			"error", err)
+		return
+	}
+	s.publishMissionUpdated(ctx, mission.WorkspaceID, mission.ID)
+}
+
+func delegationPlanTitle(content, targetName string) string {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return targetName + " 执行负责人分派任务"
+	}
+	text = strings.ReplaceAll(text, "@"+targetName, "")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return targetName + " 执行负责人分派任务"
+	}
+	return targetName + " · " + truncateForSummary(text, 42)
+}
+
+func (s *TaskService) createTeamSystemMessage(ctx context.Context, session db.ChatSession, teamID pgtype.UUID, content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	message, err := s.Queries.CreateTeamChatMessage(ctx, db.CreateTeamChatMessageParams{
+		ChatSessionID: session.ID,
+		Role:          "assistant",
+		Content:       content,
+	})
+	if err != nil {
+		slog.Warn("failed to create team system message", "team_id", util.UUIDToString(teamID), "error", err)
+		return
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventTeamMessageCreated,
+		WorkspaceID: util.UUIDToString(session.WorkspaceID),
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"team_id": util.UUIDToString(teamID),
+			"message": map[string]any{
+				"id":              util.UUIDToString(message.ID),
+				"chat_session_id": util.UUIDToString(message.ChatSessionID),
+				"team_id":         util.UUIDToString(teamID),
+				"role":            message.Role,
+				"content":         message.Content,
+				"sender_agent_id": util.UUIDToPtr(message.SenderAgentID),
+				"created_at":      util.TimestampToString(message.CreatedAt),
+			},
+		},
+	})
+}
+
+func (s *TaskService) syncMissionTaskCompleted(ctx context.Context, task db.AgentTaskQueue, result []byte) {
+	output := missionTaskOutput(result)
+	if err := s.Queries.UpdateMissionAssignmentByTask(ctx, db.UpdateMissionAssignmentByTaskParams{
+		TaskID: task.ID,
+		Status: "completed",
+		Output: pgtype.Text{String: output, Valid: strings.TrimSpace(output) != ""},
+	}); err != nil {
+		slog.Debug("mission assignment completion sync skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+		return
+	}
+	if err := s.Queries.UpdateMissionPlanItemByTask(ctx, db.UpdateMissionPlanItemByTaskParams{
+		TaskID: task.ID,
+		Status: "done",
+	}); err != nil {
+		slog.Debug("mission plan completion sync skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	}
+	if err := s.Queries.UpdateMissionByTask(ctx, db.UpdateMissionByTaskParams{
+		TaskID: task.ID,
+		Status: "executing",
+	}); err != nil {
+		slog.Debug("mission completion sync skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	}
+	if err := s.Queries.CreateMissionEventForTask(ctx, db.CreateMissionEventForTaskParams{
+		TaskID:    task.ID,
+		ActorType: "agent",
+		ActorID:   task.AgentID,
+		Kind:      "assignment_completed",
+		Title:     "成员完成执行",
+		Body:      truncateForSummary(output, triggerSummaryMaxLen),
+		Payload: eventPayload(map[string]any{
+			"task_id":  util.UUIDToString(task.ID),
+			"agent_id": util.UUIDToString(task.AgentID),
+		}),
+	}); err != nil {
+		slog.Debug("mission completion event skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	}
+	s.recordMissionAgentCompletion(ctx, task, output, false)
+}
+
+func (s *TaskService) syncMissionTaskFailed(ctx context.Context, task db.AgentTaskQueue, errMsg string) {
+	body := strings.TrimSpace(errMsg)
+	if body == "" {
+		body = "成员执行失败，等待负责人或用户处理。"
+	}
+	if err := s.Queries.UpdateMissionAssignmentByTask(ctx, db.UpdateMissionAssignmentByTaskParams{
+		TaskID: task.ID,
+		Status: "failed",
+		Output: pgtype.Text{String: body, Valid: true},
+	}); err != nil {
+		slog.Debug("mission assignment failure sync skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+		return
+	}
+	if err := s.Queries.UpdateMissionPlanItemByTask(ctx, db.UpdateMissionPlanItemByTaskParams{
+		TaskID: task.ID,
+		Status: "blocked",
+	}); err != nil {
+		slog.Debug("mission plan failure sync skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	}
+	if err := s.Queries.UpdateMissionByTask(ctx, db.UpdateMissionByTaskParams{
+		TaskID: task.ID,
+		Status: "blocked",
+	}); err != nil {
+		slog.Debug("mission failure sync skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	}
+	if err := s.Queries.CreateMissionEventForTask(ctx, db.CreateMissionEventForTaskParams{
+		TaskID:    task.ID,
+		ActorType: "agent",
+		ActorID:   task.AgentID,
+		Kind:      "assignment_failed",
+		Title:     "成员执行受阻",
+		Body:      truncateForSummary(body, triggerSummaryMaxLen),
+		Payload: eventPayload(map[string]any{
+			"task_id":  util.UUIDToString(task.ID),
+			"agent_id": util.UUIDToString(task.AgentID),
+		}),
+	}); err != nil {
+		slog.Debug("mission failure event skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	}
+	s.recordMissionAgentCompletion(ctx, task, body, true)
+}
+
+func (s *TaskService) recordMissionAgentCompletion(ctx context.Context, task db.AgentTaskQueue, body string, failed bool) {
+	assignment, mission, ok := s.loadMissionAssignmentForTask(ctx, task.ID)
+	if !ok {
+		return
+	}
+	title := "Mission 子任务已完成"
+	kind := "mission_assignment_completed"
+	if failed {
+		title = "Mission 子任务执行受阻"
+		kind = "mission_assignment_failed"
+	}
+	payload := eventPayload(map[string]any{
+		"mission_id":    util.UUIDToString(mission.ID),
+		"assignment_id": util.UUIDToString(assignment.ID),
+		"task_id":       util.UUIDToString(task.ID),
+	})
+	if _, err := s.Queries.CreateAgentEvent(ctx, db.CreateAgentEventParams{
+		WorkspaceID: mission.WorkspaceID,
+		AgentID:     task.AgentID,
+		Kind:        kind,
+		Title:       title,
+		Body:        truncateForSummary(body, triggerSummaryMaxLen),
+		Payload:     payload,
+	}); err != nil {
+		slog.Debug("mission agent event skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+	} else {
+		s.publishAgentEvent(ctx, mission.WorkspaceID, task.AgentID)
+	}
+	if !failed && strings.TrimSpace(body) != "" {
+		memory, err := s.Queries.CreateAgentMemory(ctx, db.CreateAgentMemoryParams{
+			WorkspaceID: mission.WorkspaceID,
+			AgentID:     task.AgentID,
+			Kind:        "mission_reflection",
+			Title:       "Mission 复盘候选：" + mission.Title,
+			Body:        truncateForSummary(body, triggerSummaryMaxLen),
+			RefType:     "mission_assignment",
+			RefID:       assignment.ID,
+			Status:      "candidate",
+		})
+		if err != nil {
+			slog.Debug("mission reflection memory skipped", "task_id", util.UUIDToString(task.ID), "error", err)
+		} else {
+			s.publishAgentMemory(ctx, memory)
+		}
+		s.createSkillCandidatesFromContent(ctx, mission.WorkspaceID, task.AgentID, body, "mission_assignment", assignment.ID)
+	}
+	s.publishMissionUpdated(ctx, mission.WorkspaceID, mission.ID)
+}
+
+func (s *TaskService) loadMissionAssignmentForTask(ctx context.Context, taskID pgtype.UUID) (db.MissionAssignment, db.Mission, bool) {
+	if !taskID.Valid {
+		return db.MissionAssignment{}, db.Mission{}, false
+	}
+	mission, err := s.Queries.GetMissionByTask(ctx, taskID)
+	if err != nil {
+		return db.MissionAssignment{}, db.Mission{}, false
+	}
+	assignment, err := s.Queries.GetMissionAssignmentByTask(ctx, taskID)
+	if err != nil {
+		return db.MissionAssignment{}, db.Mission{}, false
+	}
+	return assignment, mission, true
+}
+
+func (s *TaskService) publishMissionUpdated(ctx context.Context, workspaceID, missionID pgtype.UUID) {
+	if !workspaceID.Valid || !missionID.Valid || s.Bus == nil {
+		return
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventMissionUpdated,
+		WorkspaceID: util.UUIDToString(workspaceID),
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"mission_id": util.UUIDToString(missionID),
+		},
+	})
+}
+
+func missionTaskOutput(result []byte) string {
+	var payload protocol.TaskCompletedPayload
+	if err := json.Unmarshal(result, &payload); err == nil && strings.TrimSpace(payload.Output) != "" {
+		return util.UnescapeBackslashEscapes(payload.Output)
+	}
+	return strings.TrimSpace(string(result))
+}
+
+func eventPayload(value map[string]any) []byte {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return []byte("{}")
+	}
+	return payload
+}
+
+func (s *TaskService) extractTeamMemories(ctx context.Context, session db.ChatSession, team db.Team, agentID pgtype.UUID, message db.ChatMessage) {
+	candidates := parseMemoryCandidates(message.Content)
+	created := 0
+	for _, candidate := range candidates {
+		memory, err := s.Queries.CreateAgentMemory(ctx, db.CreateAgentMemoryParams{
+			WorkspaceID: team.WorkspaceID,
+			AgentID:     agentID,
+			Kind:        candidate.Kind,
+			Title:       candidate.Title,
+			Body:        candidate.Body,
+			RefType:     "team_message",
+			RefID:       message.ID,
+			Status:      "candidate",
+		})
+		if err != nil {
+			slog.Warn("failed to create team memory",
+				"team_id", util.UUIDToString(team.ID),
+				"agent_id", util.UUIDToString(agentID),
+				"kind", candidate.Kind,
+				"error", err)
+			continue
+		}
+		created++
+		payload, _ := json.Marshal(map[string]any{
+			"memory_id":       util.UUIDToString(memory.ID),
+			"team_id":         util.UUIDToString(team.ID),
+			"chat_session_id": util.UUIDToString(session.ID),
+			"message_id":      util.UUIDToString(message.ID),
+			"kind":            candidate.Kind,
+		})
+		if _, err := s.Queries.CreateAgentEvent(ctx, db.CreateAgentEventParams{
+			WorkspaceID: team.WorkspaceID,
+			AgentID:     agentID,
+			Kind:        "memory_candidate_created",
+			Title:       "生成了新的记忆候选",
+			Body:        candidate.Title,
+			Payload:     payload,
+		}); err != nil {
+			slog.Warn("failed to create memory event",
+				"team_id", util.UUIDToString(team.ID),
+				"agent_id", util.UUIDToString(agentID),
+				"error", err)
+		} else {
+			s.publishAgentEvent(ctx, team.WorkspaceID, agentID)
+		}
+		s.publishAgentMemory(ctx, memory)
+	}
+	if created == 1 {
+		s.createTeamSystemMessage(ctx, session, team.ID, "已生成 1 条智能体记忆候选，等待确认。")
+	} else if created > 1 {
+		s.createTeamSystemMessage(ctx, session, team.ID, fmt.Sprintf("已生成 %d 条智能体记忆候选，等待确认。", created))
+	}
+
+	skillCount := s.createSkillCandidatesFromContent(ctx, team.WorkspaceID, agentID, message.Content, "team_message", message.ID)
+	if skillCount == 1 {
+		s.createTeamSystemMessage(ctx, session, team.ID, "已生成 1 条技能候选，等待确认后沉淀到能力池。")
+	} else if skillCount > 1 {
+		s.createTeamSystemMessage(ctx, session, team.ID, fmt.Sprintf("已生成 %d 条技能候选，等待确认后沉淀到能力池。", skillCount))
+	}
+}
+
+func (s *TaskService) createSkillCandidatesFromContent(ctx context.Context, workspaceID, agentID pgtype.UUID, content, refType string, refID pgtype.UUID) int {
+	candidates := parseSkillCandidates(content)
+	created := 0
+	for _, candidate := range candidates {
+		row, err := s.Queries.CreateAgentSkillCandidate(ctx, db.CreateAgentSkillCandidateParams{
+			WorkspaceID: workspaceID,
+			AgentID:     agentID,
+			Name:        candidate.Name,
+			Description: candidate.Description,
+			Content:     candidate.Content,
+			Config:      []byte("{}"),
+			RefType:     refType,
+			RefID:       refID,
+			Status:      "candidate",
+		})
+		if err != nil {
+			slog.Warn("failed to create skill candidate",
+				"agent_id", util.UUIDToString(agentID),
+				"name", candidate.Name,
+				"error", err)
+			continue
+		}
+		created++
+		payload, _ := json.Marshal(map[string]any{
+			"candidate_id": util.UUIDToString(row.ID),
+			"ref_type":     refType,
+			"ref_id":       util.UUIDToString(refID),
+		})
+		if _, err := s.Queries.CreateAgentEvent(ctx, db.CreateAgentEventParams{
+			WorkspaceID: workspaceID,
+			AgentID:     agentID,
+			Kind:        "skill_candidate_created",
+			Title:       "生成了新的技能候选",
+			Body:        candidate.Name,
+			Payload:     payload,
+		}); err != nil {
+			slog.Warn("failed to create skill candidate event",
+				"agent_id", util.UUIDToString(agentID),
+				"candidate_id", util.UUIDToString(row.ID),
+				"error", err)
+		} else {
+			s.publishAgentEvent(ctx, workspaceID, agentID)
+		}
+		s.publishAgentSkillCandidate(ctx, row)
+	}
+	return created
+}
+
+func (s *TaskService) publishAgentMemory(ctx context.Context, memory db.AgentMemory) {
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventAgentMemoryCreated,
+		WorkspaceID: util.UUIDToString(memory.WorkspaceID),
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"agent_id": util.UUIDToString(memory.AgentID),
+			"memory": map[string]any{
+				"id":                   util.UUIDToString(memory.ID),
+				"workspace_id":         util.UUIDToString(memory.WorkspaceID),
+				"agent_id":             util.UUIDToString(memory.AgentID),
+				"kind":                 memory.Kind,
+				"title":                memory.Title,
+				"body":                 memory.Body,
+				"ref_type":             memory.RefType,
+				"ref_id":               util.UUIDToPtr(memory.RefID),
+				"status":               memory.Status,
+				"confirmed_at":         util.TimestampToPtr(memory.ConfirmedAt),
+				"confirmed_by_user_id": util.UUIDToPtr(memory.ConfirmedByUserID),
+				"created_at":           util.TimestampToString(memory.CreatedAt),
+				"updated_at":           util.TimestampToString(memory.UpdatedAt),
+			},
+		},
+	})
+}
+
+func (s *TaskService) publishAgentSkillCandidate(ctx context.Context, candidate db.AgentSkillCandidate) {
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventAgentSkillCandidateCreated,
+		WorkspaceID: util.UUIDToString(candidate.WorkspaceID),
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"agent_id": util.UUIDToString(candidate.AgentID),
+			"candidate": map[string]any{
+				"id":                   util.UUIDToString(candidate.ID),
+				"workspace_id":         util.UUIDToString(candidate.WorkspaceID),
+				"agent_id":             util.UUIDToString(candidate.AgentID),
+				"name":                 candidate.Name,
+				"description":          candidate.Description,
+				"content":              candidate.Content,
+				"config":               json.RawMessage(candidate.Config),
+				"ref_type":             candidate.RefType,
+				"ref_id":               util.UUIDToPtr(candidate.RefID),
+				"status":               candidate.Status,
+				"skill_id":             util.UUIDToPtr(candidate.SkillID),
+				"confirmed_at":         util.TimestampToPtr(candidate.ConfirmedAt),
+				"confirmed_by_user_id": util.UUIDToPtr(candidate.ConfirmedByUserID),
+				"created_at":           util.TimestampToString(candidate.CreatedAt),
+				"updated_at":           util.TimestampToString(candidate.UpdatedAt),
+			},
+		},
+	})
+}
+
+func (s *TaskService) publishAgentEvent(ctx context.Context, workspaceID, agentID pgtype.UUID) {
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventAgentEventCreated,
+		WorkspaceID: util.UUIDToString(workspaceID),
+		ActorType:   "system",
+		ActorID:     "",
+		Payload: map[string]any{
+			"agent_id": util.UUIDToString(agentID),
+		},
+	})
+}
+
+func mentionedTeamAgents(roster []teamRosterAgent, sourceAgentID pgtype.UUID, content string) []teamRosterAgent {
+	tokens := extractAtTokens(content)
+	if len(tokens) == 0 {
+		return nil
+	}
+	all := false
+	selected := map[string]teamRosterAgent{}
+	for _, token := range tokens {
+		if token == "全体" || strings.EqualFold(token, "all") || strings.EqualFold(token, "everyone") {
+			all = true
+			continue
+		}
+		for _, member := range roster {
+			if uuidEqual(member.ID, sourceAgentID) {
+				continue
+			}
+			if teamMentionMatches(token, member.Name) {
+				selected[util.UUIDToString(member.ID)] = member
+			}
+		}
+	}
+	if all {
+		for _, member := range roster {
+			if uuidEqual(member.ID, sourceAgentID) {
+				continue
+			}
+			selected[util.UUIDToString(member.ID)] = member
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	out := make([]teamRosterAgent, 0, len(selected))
+	for _, member := range roster {
+		if row, ok := selected[util.UUIDToString(member.ID)]; ok {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func extractAtTokens(content string) []string {
+	rs := []rune(content)
+	var tokens []string
+	for i := 0; i < len(rs); i++ {
+		if rs[i] != '@' {
+			continue
+		}
+		j := i + 1
+		for j < len(rs) {
+			r := rs[j]
+			if unicode.IsSpace(r) || strings.ContainsRune("，。,.!！?？:：;；()（）[]【】<>《》\"'“”‘’", r) {
+				break
+			}
+			j++
+		}
+		token := strings.TrimSpace(string(rs[i+1 : j]))
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+		i = j
+	}
+	return tokens
+}
+
+func teamMentionMatches(token, name string) bool {
+	token = strings.TrimSpace(strings.ToLower(token))
+	name = strings.TrimSpace(strings.ToLower(name))
+	if token == "" || name == "" {
+		return false
+	}
+	return token == name || strings.Contains(name, token) || strings.Contains(token, name)
+}
+
+func parseMemoryCandidates(content string) []memoryCandidate {
+	lines := strings.Split(content, "\n")
+	var out []memoryCandidate
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimLeft(line, "-*0123456789.、 "))
+		if line == "" {
+			continue
+		}
+		kind, body, ok := splitMemoryLine(line)
+		if !ok {
+			continue
+		}
+		body = strings.TrimSpace(body)
+		if body == "" {
+			continue
+		}
+		out = append(out, memoryCandidate{
+			Kind:  kind,
+			Title: memoryTitle(kind, body),
+			Body:  body,
+		})
+	}
+	return out
+}
+
+func parseSkillCandidates(content string) []skillCandidate {
+	lines := strings.Split(content, "\n")
+	var out []skillCandidate
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimLeft(line, "-*0123456789.、 "))
+		if line == "" {
+			continue
+		}
+		raw, ok := splitSkillLine(line)
+		if !ok {
+			continue
+		}
+		name, description := splitSkillNameDescription(raw)
+		if name == "" {
+			continue
+		}
+		out = append(out, skillCandidate{
+			Name:        name,
+			Description: description,
+			Content:     skillCandidateContent(name, description),
+		})
+	}
+	return out
+}
+
+func splitSkillLine(line string) (string, bool) {
+	for _, prefix := range []string{"技能：", "技能:", "技能候选：", "技能候选:", "沉淀技能：", "沉淀技能:"} {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix)), true
+		}
+	}
+	return "", false
+}
+
+func splitSkillNameDescription(raw string) (string, string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+	for _, sep := range []string{"——", " -- ", " - ", "：", ":"} {
+		if idx := strings.Index(raw, sep); idx > 0 {
+			name := strings.TrimSpace(raw[:idx])
+			description := strings.TrimSpace(raw[idx+len(sep):])
+			return truncateForSummary(name, 80), description
+		}
+	}
+	return truncateForSummary(raw, 80), ""
+}
+
+func skillCandidateContent(name, description string) string {
+	if strings.TrimSpace(description) == "" {
+		return "## 使用场景\n\n" + name + "\n"
+	}
+	return "## 使用场景\n\n" + description + "\n"
+}
+
+func splitMemoryLine(line string) (string, string, bool) {
+	prefixes := []struct {
+		prefix string
+		kind   string
+	}{
+		{"决策：", "decision"},
+		{"决策:", "decision"},
+		{"记住：", "preference"},
+		{"记住:", "preference"},
+		{"偏好：", "preference"},
+		{"偏好:", "preference"},
+		{"项目知识：", "project"},
+		{"项目知识:", "project"},
+		{"知识：", "project"},
+		{"知识:", "project"},
+		{"问题：", "problem"},
+		{"问题:", "problem"},
+		{"踩坑：", "problem"},
+		{"踩坑:", "problem"},
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(line, p.prefix) {
+			return p.kind, strings.TrimPrefix(line, p.prefix), true
+		}
+	}
+	return "", "", false
+}
+
+func memoryTitle(kind, body string) string {
+	prefix := map[string]string{
+		"decision":   "重要决策",
+		"preference": "用户偏好",
+		"project":    "项目知识",
+		"problem":    "最近问题",
+	}[kind]
+	if prefix == "" {
+		prefix = "团队记忆"
+	}
+	summary := truncateForSummary(body, 36)
+	if summary == "" {
+		return prefix
+	}
+	return prefix + "：" + summary
+}
+
+func uuidEqual(a, b pgtype.UUID) bool {
+	return a.Valid && b.Valid && a.Bytes == b.Bytes
 }
 
 func (s *TaskService) broadcastIssueUpdated(issue db.Issue) {

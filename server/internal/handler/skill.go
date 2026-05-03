@@ -1269,6 +1269,11 @@ func (h *Handler) SetAgentSkills(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	beforeRows, _ := h.Queries.ListAgentSkills(r.Context(), agent.ID)
+	before := make(map[string]struct{}, len(beforeRows))
+	for _, s := range beforeRows {
+		before[uuidToString(s.ID)] = struct{}{}
+	}
 
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
@@ -1309,6 +1314,18 @@ func (h *Handler) SetAgentSkills(w http.ResponseWriter, r *http.Request) {
 	resp := make([]SkillResponse, len(skills))
 	for i, s := range skills {
 		resp[i] = skillToResponse(s)
+		if _, existed := before[uuidToString(s.ID)]; !existed {
+			if _, err := h.Queries.CreateAgentEvent(r.Context(), db.CreateAgentEventParams{
+				WorkspaceID: agent.WorkspaceID,
+				AgentID:     agent.ID,
+				Kind:        "skill_attached",
+				Title:       s.Name,
+				Body:        s.Description,
+				Payload:     []byte("{}"),
+			}); err != nil {
+				slog.Warn("failed to record agent skill event", "agent_id", uuidToString(agent.ID), "skill_id", uuidToString(s.ID), "error", err)
+			}
+		}
 	}
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(agent.WorkspaceID))
 	h.publish(protocol.EventAgentStatus, uuidToString(agent.WorkspaceID), actorType, actorID, map[string]any{"agent_id": uuidToString(agent.ID), "skills": resp})

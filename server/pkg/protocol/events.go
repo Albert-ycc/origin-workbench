@@ -17,18 +17,25 @@ const (
 	EventIssueReactionRemoved = "issue_reaction:removed"
 
 	// Agent events
-	EventAgentStatus   = "agent:status"
-	EventAgentCreated  = "agent:created"
-	EventAgentArchived = "agent:archived"
-	EventAgentRestored = "agent:restored"
+	EventAgentStatus                  = "agent:status"
+	EventAgentCreated                 = "agent:created"
+	EventAgentArchived                = "agent:archived"
+	EventAgentRestored                = "agent:restored"
+	EventAgentMemoryCreated           = "agent:memory_created"
+	EventAgentMemoryConfirmed         = "agent:memory_confirmed"
+	EventAgentMemoryRejected          = "agent:memory_rejected"
+	EventAgentSkillCandidateCreated   = "agent:skill_candidate_created"
+	EventAgentSkillCandidateConfirmed = "agent:skill_candidate_confirmed"
+	EventAgentSkillCandidateRejected  = "agent:skill_candidate_rejected"
+	EventAgentEventCreated            = "agent:event_created"
 
 	// Task events (server <-> daemon).
 	// Each event maps to a status transition on agent_task_queue. Front-end
 	// subscribes by `task:` prefix and invalidates the workspace task
 	// snapshot, so the granularity here is "what does the user want to see
 	// change" — not "every internal status flip".
-	EventTaskQueued    = "task:queued"    // ∅ → queued (enqueue / retry create)
-	EventTaskDispatch  = "task:dispatch"  // queued → dispatched (daemon claim)
+	EventTaskQueued    = "task:queued"   // ∅ → queued (enqueue / retry create)
+	EventTaskDispatch  = "task:dispatch" // queued → dispatched (daemon claim)
 	EventTaskProgress  = "task:progress"
 	EventTaskCompleted = "task:completed" // running → completed
 	EventTaskFailed    = "task:failed"    // running → failed
@@ -92,12 +99,44 @@ const (
 	EventInvitationDeclined = "invitation:declined"
 	EventInvitationRevoked  = "invitation:revoked"
 
+	// Mission events
+	EventMissionCreated  = "mission:created"
+	EventMissionUpdated  = "mission:updated"
+	EventMissionArchived = "mission:archived"
+
+	// Idea events (Origin idea pool)
+	EventIdeaCreated  = "idea:created"
+	EventIdeaUpdated  = "idea:updated"
+	EventIdeaArchived = "idea:archived"
+	EventIdeaDeleted  = "idea:deleted"
+	EventIdeaPromoted = "idea:promoted"
+	EventIdeaNoteAdded   = "idea:note_added"
+	EventIdeaNoteDeleted = "idea:note_deleted"
+
+	// Council Session events (Origin on-demand multi-agent room)
+	EventCouncilCreated            = "council:created"
+	EventCouncilUpdated            = "council:updated"
+	EventCouncilAdjourned          = "council:adjourned"
+	EventCouncilArchived           = "council:archived"
+	EventCouncilDeleted            = "council:deleted"
+	EventCouncilParticipantJoined = "council:participant_joined"
+	EventCouncilParticipantLeft   = "council:participant_left"
+
 	// Autopilot events
 	EventAutopilotCreated  = "autopilot:created"
 	EventAutopilotUpdated  = "autopilot:updated"
 	EventAutopilotDeleted  = "autopilot:deleted"
 	EventAutopilotRunStart = "autopilot:run_start"
 	EventAutopilotRunDone  = "autopilot:run_done"
+
+	// Team events
+	EventTeamCreated        = "team:created"
+	EventTeamUpdated        = "team:updated"
+	EventTeamArchived       = "team:archived"
+	EventTeamDeleted        = "team:deleted"
+	EventTeamMemberAdded    = "team:member_added"
+	EventTeamMemberRemoved  = "team:member_removed"
+	EventTeamMessageCreated = "team:message_created"
 
 	// Daemon events
 	EventDaemonHeartbeat     = "daemon:heartbeat"
