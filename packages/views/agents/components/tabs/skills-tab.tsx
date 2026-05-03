@@ -42,7 +42,7 @@ export function SkillsTab({
       await api.setAgentSkills(agent.id, { skill_ids: newIds });
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to remove skill");
+      toast.error(e instanceof Error ? e.message : "移除技能失败");
     } finally {
       setRemoving(false);
     }
@@ -52,8 +52,7 @@ export function SkillsTab({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Workspace skills assigned to this agent. Local runtime skills are
-          always available automatically.
+          分配给这个智能体的工作区技能。本地运行环境里的技能会自动可用。
         </p>
         <Button
           variant="outline"
@@ -63,14 +62,14 @@ export function SkillsTab({
           className="shrink-0"
         >
           <Plus className="h-3 w-3" />
-          Add skill
+          添加技能
         </Button>
       </div>
 
       <div className="flex items-start gap-2 rounded-md border border-info/20 bg-info/5 px-3 py-2.5">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
         <p className="text-xs text-muted-foreground">
-          Importing creates a workspace copy that your team can edit and reuse.
+          导入会创建一份工作区副本，团队可以编辑和复用。
         </p>
       </div>
 
@@ -78,10 +77,10 @@ export function SkillsTab({
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12">
           <FileText className="h-8 w-8 text-muted-foreground/40" />
           <p className="mt-3 text-sm text-muted-foreground">
-            No skills assigned
+            暂未分配技能
           </p>
           <p className="mt-1 max-w-xs text-center text-xs text-muted-foreground">
-            Add workspace skills to share team knowledge with this agent.
+            添加工作区技能，把团队知识交给这个智能体使用。
           </p>
           {availableCount > 0 && (
             <Button
@@ -90,7 +89,7 @@ export function SkillsTab({
               className="mt-3"
             >
               <Plus className="h-3 w-3" />
-              Add skill
+              添加技能
             </Button>
           )}
         </div>

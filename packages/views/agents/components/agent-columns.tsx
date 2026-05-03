@@ -73,14 +73,14 @@ export function createAgentColumns({
   return [
     {
       id: "agent",
-      header: "Agent",
+      header: "智能体",
       size: COL_WIDTHS.agent,
       meta: { grow: true },
       cell: ({ row }) => <AgentNameCell row={row.original} />,
     },
     {
       id: "status",
-      header: "Status",
+      header: "状态",
       size: COL_WIDTHS.status,
       cell: ({ row }) => {
         if (row.original.agent.archived_at) {
@@ -91,7 +91,7 @@ export function createAgentColumns({
     },
     {
       id: "workload",
-      header: "Workload",
+      header: "工作负载",
       size: COL_WIDTHS.workload,
       cell: ({ row }) => {
         if (row.original.agent.archived_at) {
@@ -102,20 +102,20 @@ export function createAgentColumns({
     },
     {
       id: "runtime",
-      header: "Runtime",
+      header: "运行环境",
       size: COL_WIDTHS.runtime,
       meta: { grow: true },
       cell: ({ row }) => <RuntimeCell row={row.original} />,
     },
     {
       id: "activity",
-      header: "Activity (7d)",
+      header: "7 天动态",
       size: COL_WIDTHS.activity,
       cell: ({ row }) => <ActivityCell row={row.original} />,
     },
     {
       id: "runs",
-      header: () => <div className="text-right">Runs</div>,
+      header: () => <div className="text-right">运行次数</div>,
       size: COL_WIDTHS.runs,
       cell: ({ row }) => (
         <div className="text-right font-mono text-xs tabular-nums text-muted-foreground">
@@ -190,7 +190,7 @@ function AgentNameCell({ row }: { row: AgentRow }) {
           )}
           {isOwnedByMe && !ownerIdToShow && (
             <span className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">
-              You
+              你
             </span>
           )}
           {ownerIdToShow && (
@@ -202,7 +202,7 @@ function AgentNameCell({ row }: { row: AgentRow }) {
           )}
           {isArchived && (
             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              Archived
+              已归档
             </span>
           )}
         </div>
@@ -213,7 +213,7 @@ function AgentNameCell({ row }: { row: AgentRow }) {
               : "italic text-muted-foreground/50"
           }`}
         >
-          {agent.description || "No description"}
+          {agent.description || "暂无描述"}
         </div>
       </div>
     </div>
@@ -298,7 +298,7 @@ function RuntimeCell({ row }: { row: AgentRow }) {
   const { agent, runtime } = row;
   const isCloud = agent.runtime_mode === "cloud";
   const RuntimeIcon = isCloud ? Cloud : Monitor;
-  const runtimeLabel = runtime?.name ?? (isCloud ? "Cloud" : "Local");
+  const runtimeLabel = runtime?.name ?? (isCloud ? "云端" : "本地");
 
   return (
     <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -352,18 +352,20 @@ function ActivityTooltipBody({ activity }: { activity: AgentActivity }) {
 
   const isPartial = daysSinceCreated < 7;
   const headerText = isPartial
-    ? `Created ${daysSinceCreated === 0 ? "today" : `${daysSinceCreated} day${daysSinceCreated === 1 ? "" : "s"} ago`}`
-    : "Last 7 days";
+    ? daysSinceCreated === 0
+      ? "今天创建"
+      : `${daysSinceCreated} 天前创建`
+    : "最近 7 天";
 
   let bodyText: string;
   if (totalRuns === 0) {
-    bodyText = "No activity";
+    bodyText = "暂无动态";
   } else {
     const failedFragment =
       totalFailed > 0
-        ? ` · ${totalFailed} failed (${Math.round((totalFailed / totalRuns) * 100)}%)`
+        ? ` · ${totalFailed} 次失败（${Math.round((totalFailed / totalRuns) * 100)}%）`
         : "";
-    bodyText = `${totalRuns} run${totalRuns === 1 ? "" : "s"}${failedFragment}`;
+    bodyText = `${totalRuns} 次运行${failedFragment}`;
   }
 
   return (

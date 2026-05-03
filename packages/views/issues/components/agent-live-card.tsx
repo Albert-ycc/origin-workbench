@@ -234,7 +234,7 @@ function SingleAgentLiveCard({ task, items, issueId, agentName }: SingleAgentLiv
     try {
       await api.cancelTask(issueId, task.id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to cancel task");
+      toast.error(e instanceof Error ? e.message : "取消任务失败");
       setCancelling(false);
     }
   }, [task.id, issueId, cancelling]);
@@ -265,16 +265,16 @@ function SingleAgentLiveCard({ task, items, issueId, agentName }: SingleAgentLiv
             agentName={agentName}
             items={items}
             isLive
-            title="View transcript"
+            title="查看执行记录"
           />
           <button
             onClick={handleCancel}
             disabled={cancelling}
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-            title="Stop agent"
+            title="停止智能体"
           >
             {cancelling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
-            <span>Stop</span>
+            <span>停止</span>
           </button>
         </div>
       </div>

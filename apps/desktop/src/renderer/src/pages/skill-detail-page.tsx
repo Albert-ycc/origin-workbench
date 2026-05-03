@@ -10,7 +10,7 @@ export function SkillDetailPage() {
   const wsId = useWorkspaceId();
   const { data: skill } = useQuery(skillDetailOptions(wsId, id ?? ""));
 
-  useDocumentTitle(skill?.name ?? "Skill");
+  useDocumentTitle(skill?.name ?? "技能");
 
   if (!id) return null;
   return <SharedSkillDetailPage skillId={id} />;

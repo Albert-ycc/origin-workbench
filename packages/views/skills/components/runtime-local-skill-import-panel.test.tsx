@@ -123,7 +123,7 @@ describe("RuntimeLocalSkillImportPanel", () => {
     ).toBeInTheDocument();
 
     const importButton = screen.getByRole("button", {
-      name: /Import to Workspace/i,
+      name: /导入到工作区/i,
     });
     await waitFor(
       () => {

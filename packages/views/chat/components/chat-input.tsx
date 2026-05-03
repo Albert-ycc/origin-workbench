@@ -89,12 +89,12 @@ export function ChatInput({
   };
 
   const placeholder = noAgent
-    ? "Create an agent to start chatting"
+    ? "创建智能体后即可开始对话"
     : disabled
-      ? "This session is archived"
+      ? "这个会话已归档"
       : agentName
-        ? `Tell ${agentName} what to do…`
-        : "Tell me what to do…";
+        ? `告诉 ${agentName} 要做什么…`
+        : "告诉我你想做什么…";
 
   return (
     <div

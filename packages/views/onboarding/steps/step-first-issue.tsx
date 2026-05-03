@@ -55,7 +55,7 @@ export function StepFirstIssue({
         onFinishedRef.current();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to finish onboarding",
+          err instanceof Error ? err.message : "完成引导失败",
         );
       }
     })();
@@ -69,8 +69,8 @@ export function StepFirstIssue({
       await completeOnboarding(completionPathRef.current);
       onFinishedRef.current();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Retry failed");
-      toast.error(err instanceof Error ? err.message : "Retry failed");
+      setError(err instanceof Error ? err.message : "重试失败");
+      toast.error(err instanceof Error ? err.message : "重试失败");
     } finally {
       setRetrying(false);
     }
@@ -84,13 +84,13 @@ export function StepFirstIssue({
         </div>
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Something went wrong
+            出错了
           </h1>
           <p className="text-sm text-muted-foreground">{error}</p>
         </div>
         <Button onClick={retry} disabled={retrying}>
           {retrying && <Loader2 className="h-4 w-4 animate-spin" />}
-          Retry
+          重试
         </Button>
       </div>
     );

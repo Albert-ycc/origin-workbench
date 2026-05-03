@@ -61,20 +61,20 @@ export function createSkillColumns(): ColumnDef<SkillRow>[] {
   return [
     {
       id: "name",
-      header: "Name",
+      header: "名称",
       size: COL_WIDTHS.name,
       meta: { grow: true },
       cell: ({ row }) => <SkillNameCell row={row.original} />,
     },
     {
       id: "usedBy",
-      header: "Used by",
+      header: "使用方",
       size: COL_WIDTHS.usedBy,
       cell: ({ row }) => <AgentAssignees agents={row.original.agents} />,
     },
     {
       id: "source",
-      header: "Source · Added by",
+      header: "来源 · 添加者",
       size: COL_WIDTHS.source,
       meta: { grow: true },
       cell: ({ row }) => (
@@ -87,7 +87,7 @@ export function createSkillColumns(): ColumnDef<SkillRow>[] {
     },
     {
       id: "updated",
-      header: "Updated",
+      header: "更新时间",
       size: COL_WIDTHS.updated,
       cell: ({ row }) => (
         <span className="whitespace-nowrap text-xs text-muted-foreground">
@@ -128,7 +128,7 @@ function SkillNameCell({ row }: { row: SkillRow }) {
               }
             />
             <TooltipContent>
-              Read-only — only creator or admin can edit
+              只读：仅创建者或管理员可编辑
             </TooltipContent>
           </Tooltip>
         )}
@@ -149,7 +149,7 @@ function SkillNameCell({ row }: { row: SkillRow }) {
             : "italic text-muted-foreground/50"
         }`}
       >
-        {skill.description || "No description"}
+        {skill.description || "暂无描述"}
       </div>
     </div>
   );
@@ -157,7 +157,7 @@ function SkillNameCell({ row }: { row: SkillRow }) {
 
 function AgentAssignees({ agents }: { agents: Agent[] }) {
   if (agents.length === 0) {
-    return <span className="text-xs text-muted-foreground/70">— unused</span>;
+    return <span className="text-xs text-muted-foreground/70">— 未使用</span>;
   }
   const visible = agents.slice(0, 3);
   const extra = agents.length - visible.length;
@@ -202,20 +202,20 @@ function SourceCell({
   const origin = readOrigin(skill);
 
   let icon = <Pencil className="h-3 w-3 shrink-0" />;
-  let label = "Created manually";
+  let label = "手动创建";
   if (origin.type === "runtime_local") {
     icon = <HardDrive className="h-3 w-3 shrink-0" />;
     label = runtime
-      ? `From ${runtime.name}`
+      ? `来自 ${runtime.name}`
       : origin.provider
-        ? `From ${origin.provider} runtime`
-        : "From a runtime";
+        ? `来自 ${origin.provider} 运行环境`
+        : "来自运行环境";
   } else if (origin.type === "clawhub") {
     icon = <Download className="h-3 w-3 shrink-0" />;
-    label = "From ClawHub";
+    label = "来自 ClawHub";
   } else if (origin.type === "skills_sh") {
     icon = <Download className="h-3 w-3 shrink-0" />;
-    label = "From Skills.sh";
+    label = "来自 Skills.sh";
   }
 
   return (
@@ -232,7 +232,7 @@ function SourceCell({
             avatarUrl={creator.avatar_url}
             size={14}
           />
-          <span className="truncate">by {creator.name}</span>
+          <span className="truncate">由 {creator.name} 添加</span>
         </div>
       )}
     </div>

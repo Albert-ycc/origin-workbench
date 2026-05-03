@@ -10,7 +10,7 @@ export function IssueDetailPage() {
   const wsId = useWorkspaceId();
   const { data: issue } = useQuery(issueDetailOptions(wsId, id!));
 
-  useDocumentTitle(issue ? `${issue.identifier}: ${issue.title}` : "Issue");
+  useDocumentTitle(issue ? `${issue.identifier}: ${issue.title}` : "任务");
 
   if (!id) return null;
   return <IssueDetail issueId={id} />;

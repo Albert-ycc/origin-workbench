@@ -130,10 +130,10 @@ export function StepWorkspace({
         onError: (error) => {
           if (isWorkspaceSlugConflict(error)) {
             setSlugServerError(WORKSPACE_SLUG_CONFLICT_ERROR);
-            toast.error("Choose a different workspace URL");
+            toast.error("请换一个工作区 URL");
             return;
           }
-          toast.error("Failed to create workspace");
+          toast.error("创建工作区失败");
         },
       },
     );
@@ -153,31 +153,31 @@ export function StepWorkspace({
   let onContinue: () => void;
 
   if (existingActive && reusing) {
-    hint = `Opening ${reusing.name}.`;
-    continueLabel = `Open ${reusing.name}`;
+    hint = `正在打开 ${reusing.name}。`;
+    continueLabel = `打开 ${reusing.name}`;
     continueDisabled = isCreating;
     onContinue = () => onCreated(reusing);
   } else if (creatingActive) {
     if (isCreating) {
-      hint = `Creating ${name.trim() || "your workspace"}…`;
-      continueLabel = "Creating…";
+      hint = `正在创建 ${name.trim() || "你的工作区"}…`;
+      continueLabel = "创建中…";
       continueDisabled = true;
       onContinue = () => {};
     } else if (canCreate) {
-      hint = `Creating ${name.trim()}.`;
-      continueLabel = `Create ${name.trim()}`;
+      hint = `将创建 ${name.trim()}。`;
+      continueLabel = `创建 ${name.trim()}`;
       continueDisabled = false;
       onContinue = handleCreate;
     } else {
-      hint = "Name your workspace to create it.";
-      continueLabel = "Create workspace";
+      hint = "填写工作区名称后即可创建。";
+      continueLabel = "创建工作区";
       continueDisabled = true;
       onContinue = () => {};
     }
   } else {
     // Resume path, nothing picked yet.
-    hint = "Pick your workspace or start a new one.";
-    continueLabel = "Continue";
+    hint = "选择已有工作区，或新建一个。";
+    continueLabel = "继续";
     continueDisabled = true;
     onContinue = () => {};
   }
@@ -189,7 +189,7 @@ export function StepWorkspace({
           htmlFor="ws-name"
           className="text-xs font-medium text-muted-foreground"
         >
-          Workspace name
+          工作区名称
         </Label>
         <Input
           id="ws-name"
@@ -197,7 +197,7 @@ export function StepWorkspace({
           type="text"
           value={name}
           onChange={(e) => handleNameChange(e.target.value)}
-          placeholder="Acme Inc, My Lab, Side Projects…"
+          placeholder="我的团队、实验室、个人项目…"
           onKeyDown={(e) => e.key === "Enter" && handleCreate()}
         />
       </div>
@@ -226,14 +226,14 @@ export function StepWorkspace({
       </div>
       <div className="flex flex-col gap-1.5">
         <div className="text-xs font-medium text-muted-foreground">
-          Issue prefix
+          任务前缀
         </div>
         <div className="text-sm leading-[1.55] text-muted-foreground">
-          Issues will look like{" "}
+          任务编号会类似{" "}
           <span className="font-mono text-foreground">
             {issuePrefix(slug)}-123
           </span>
-          . You can change this later in settings.
+          。之后可以在设置里修改。
         </div>
       </div>
     </div>
@@ -253,7 +253,7 @@ export function StepWorkspace({
               className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back
+              返回
             </button>
           ) : (
             <span aria-hidden className="w-0" />
@@ -270,17 +270,17 @@ export function StepWorkspace({
         >
           <div className="mx-auto w-full max-w-[620px] px-6 py-10 sm:px-10 md:px-14 lg:px-0 lg:py-14">
             <div className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              {reusing ? "Pick up or start fresh" : "Your first workspace"}
+              {reusing ? "继续已有工作区，或重新开始" : "你的第一个工作区"}
             </div>
             <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
               {reusing
-                ? `Continue with ${reusing.name}, or start another.`
-                : "Name your workspace."}
+                ? `继续使用 ${reusing.name}，或再创建一个。`
+                : "给你的工作区起个名字。"}
             </h1>
             <p className="mt-4 text-[15.5px] leading-[1.55] text-foreground/80">
               {reusing
-                ? "Resume setup with the workspace you already have, or create a new one alongside it — you can belong to any number of workspaces."
-                : "A workspace is where your issues, agents, and projects live. You can invite teammates or spin up more workspaces later."}
+                ? "继续配置已有工作区，或创建一个新的独立工作区。你可以同时属于多个工作区。"
+                : "工作区会承载你的任务、智能体和项目。之后可以邀请队友，也可以创建更多工作区。"}
             </p>
 
             <div className="mt-10">
@@ -413,10 +413,10 @@ function CreateNewWorkspaceCard({
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="truncate text-[14.5px] font-medium text-foreground">
-            Create a new workspace
+            新建工作区
           </div>
           <div className="truncate text-xs text-muted-foreground">
-            Start fresh — a separate space for a different side of your work.
+            从头开始，为另一条工作线准备独立空间。
           </div>
         </div>
         <RadioMark selected={selected} />
@@ -430,19 +430,19 @@ function CreateWorkspaceSide() {
   return (
     <div className="flex flex-col gap-6">
       <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        What lives inside a workspace
+        工作区里有什么
       </div>
 
       <WorkspacePreviewCard name="Your workspace" slug="workspace" />
 
       <div className="mt-2 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        Things you&apos;ll do here
+        你可以在这里做什么
       </div>
       <div className="flex flex-col gap-3.5">
-        <PerkRow>Assign issues to agents like you would a teammate</PerkRow>
-        <PerkRow>Chat with any agent without creating an issue</PerkRow>
-        <PerkRow>Invite teammates — they see only this workspace</PerkRow>
-        <PerkRow>Switch to other workspaces anytime from the top-left</PerkRow>
+        <PerkRow>像分配给队友一样，把任务分配给智能体</PerkRow>
+        <PerkRow>无需创建任务，也能和任意智能体对话</PerkRow>
+        <PerkRow>邀请队友，他们只会看到这个工作区</PerkRow>
+        <PerkRow>可随时从左上角切换到其他工作区</PerkRow>
       </div>
     </div>
   );
@@ -452,20 +452,20 @@ function ExistingWorkspaceSide({ workspace }: { workspace: Workspace }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        Your workspace
+        你的工作区
       </div>
 
       <WorkspacePreviewCard name={workspace.name} slug={workspace.slug} />
 
       <div className="mt-2 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        What&apos;s next
+        下一步
       </div>
       <div className="flex flex-col gap-3.5">
         <PerkRow>
-          Connect a runtime so your agents have somewhere to run
+          连接运行环境，让智能体有地方执行任务
         </PerkRow>
-        <PerkRow>Create your first agent matched to your role</PerkRow>
-        <PerkRow>Watch it pick up a starter task and reply</PerkRow>
+        <PerkRow>创建第一个匹配你角色的智能体</PerkRow>
+        <PerkRow>看它接手入门任务并回复</PerkRow>
       </div>
     </div>
   );
@@ -506,44 +506,44 @@ function WorkspacePreviewCard({
       <div className="flex flex-col">
         <EntityRow
           icon={<Inbox className="h-4 w-4" />}
-          label="Inbox"
-          meta="your notifications"
+          label="收件箱"
+          meta="你的通知"
         />
         <EntityRow
           icon={<ListTodo className="h-4 w-4" />}
-          label="Issues"
-          meta="shared task board"
+          label="任务"
+          meta="共享任务板"
         />
         <EntityRow
           icon={<Bot className="h-4 w-4" />}
-          label="Agents"
-          meta="your AI teammates"
+          label="智能体"
+          meta="你的 AI 队友"
         />
         <EntityRow
           icon={<FolderKanban className="h-4 w-4" />}
-          label="Projects"
-          meta="group related issues"
+          label="项目"
+          meta="组织相关任务"
         />
         <EntityRow
           icon={<Zap className="h-4 w-4" />}
-          label="Autopilot"
-          meta="scheduled automation"
+          label="自动巡航"
+          meta="定时自动化"
         />
         <EntityRow
           icon={<Monitor className="h-4 w-4" />}
-          label="Runtimes"
-          meta="where agents run"
+          label="运行环境"
+          meta="智能体运行位置"
         />
         <EntityRow
           icon={<BookOpenText className="h-4 w-4" />}
-          label="Skills"
-          meta="reusable playbooks"
+          label="技能"
+          meta="可复用流程"
         />
         <EntityRow
           dim
           icon={<MoreHorizontal className="h-4 w-4" />}
-          label="And more"
-          meta="and more"
+          label="更多"
+          meta="更多"
         />
       </div>
     </div>

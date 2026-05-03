@@ -104,16 +104,16 @@ export function EnvTab({
     const keys = envEntries.filter((e) => e.key.trim()).map((e) => e.key.trim());
     const uniqueKeys = new Set(keys);
     if (uniqueKeys.size < keys.length) {
-      toast.error("Duplicate environment variable keys");
+      toast.error("环境变量键名重复");
       return;
     }
 
     setSaving(true);
     try {
       await onSave({ custom_env: currentEnvMap });
-      toast.success("Environment variables saved");
+      toast.success("环境变量已保存");
     } catch {
-      toast.error("Failed to save environment variables");
+      toast.error("保存环境变量失败");
     } finally {
       setSaving(false);
     }
@@ -123,8 +123,7 @@ export function EnvTab({
     return (
       <div className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          Injected into the agent process at launch. Values are hidden — only
-          the agent owner or workspace admin can view and edit them.
+          启动时注入到智能体进程。变量值已隐藏，只有智能体所有者或工作区管理员可以查看和编辑。
         </p>
         {envEntries.length > 0 ? (
           <div className="space-y-2">
@@ -149,7 +148,7 @@ export function EnvTab({
           </div>
         ) : (
           <p className="text-xs italic text-muted-foreground">
-            No environment variables configured.
+            暂未配置环境变量。
           </p>
         )}
       </div>
@@ -160,7 +159,7 @@ export function EnvTab({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Injected into the agent process at launch (e.g.{" "}
+          启动时注入到智能体进程（例如{" "}
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
             ANTHROPIC_API_KEY
           </code>
@@ -178,7 +177,7 @@ export function EnvTab({
           className="shrink-0"
         >
           <Plus className="h-3 w-3" />
-          Add
+          添加
         </Button>
       </div>
 
@@ -199,14 +198,14 @@ export function EnvTab({
                   onChange={(e) =>
                     updateEnvEntry(index, "value", e.target.value)
                   }
-                  placeholder="value"
+                  placeholder="变量值"
                   className="pr-8 font-mono text-xs"
                 />
                 <button
                   type="button"
                   onClick={() => toggleEnvVisibility(index)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label={entry.visible ? "Hide value" : "Show value"}
+                  aria-label={entry.visible ? "隐藏变量值" : "显示变量值"}
                 >
                   {entry.visible ? (
                     <EyeOff className="h-3.5 w-3.5" />
@@ -220,7 +219,7 @@ export function EnvTab({
                 size="icon-sm"
                 onClick={() => removeEnvEntry(index)}
                 className="text-muted-foreground hover:text-destructive"
-                aria-label="Remove variable"
+                aria-label="移除变量"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -231,7 +230,7 @@ export function EnvTab({
 
       <div className="flex items-center justify-end gap-3">
         {dirty && (
-          <span className="text-xs text-muted-foreground">Unsaved changes</span>
+          <span className="text-xs text-muted-foreground">有未保存的修改</span>
         )}
         <Button onClick={handleSave} disabled={!dirty || saving} size="sm">
           {saving ? (
@@ -239,7 +238,7 @@ export function EnvTab({
           ) : (
             <Save className="h-3.5 w-3.5" />
           )}
-          Save
+          保存
         </Button>
       </div>
     </div>

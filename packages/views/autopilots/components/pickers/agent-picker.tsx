@@ -7,9 +7,11 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
+  AvatarNamePickerEmpty,
+  AvatarNamePickerItem,
+} from "../../../common/actor-picker/avatar-name-picker";
+import {
   PropertyPicker,
-  PickerItem,
-  PickerEmpty,
 } from "../../../issues/components/pickers/property-picker";
 
 export function AgentPicker({
@@ -44,7 +46,7 @@ export function AgentPicker({
       width="w-56"
       align={align}
       searchable
-      searchPlaceholder="Filter agents..."
+      searchPlaceholder="筛选智能体..."
       onSearchChange={setFilter}
       triggerRender={triggerRender}
       trigger={
@@ -58,7 +60,7 @@ export function AgentPicker({
             ) : (
               <>
                 <Bot className="size-3" />
-                <span>Select agent</span>
+                <span>选择智能体</span>
               </>
             )}
           </>
@@ -66,20 +68,21 @@ export function AgentPicker({
       }
     >
       {filteredAgents.length === 0 ? (
-        <PickerEmpty />
+        <AvatarNamePickerEmpty />
       ) : (
         filteredAgents.map((a) => (
-          <PickerItem
+          <AvatarNamePickerItem
             key={a.id}
+            actorType="agent"
+            actorId={a.id}
+            label={a.name}
+            description={a.description}
             selected={a.id === agentId}
-            onClick={() => {
+            onSelect={() => {
               onChange(a.id);
               setOpen(false);
             }}
-          >
-            <ActorAvatar actorType="agent" actorId={a.id} size={16} showStatusDot />
-            <span className="truncate">{a.name}</span>
-          </PickerItem>
+          />
         ))
       )}
     </PropertyPicker>

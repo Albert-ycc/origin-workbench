@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, Loader2, Save } from "lucide-react";
+import { Camera, Loader2, LogOut, Save } from "lucide-react";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import { Button } from "@multica/ui/components/ui/button";
@@ -10,10 +10,13 @@ import { toast } from "sonner";
 import { useAuthStore } from "@multica/core/auth";
 import { api } from "@multica/core/api";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
+import { useLogout } from "../../auth";
+import { resolveUserAvatarUrl } from "../../common/default-avatar";
 
 export function AccountTab() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const logout = useLogout();
 
   const [profileName, setProfileName] = useState(user?.name ?? "");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -23,13 +26,6 @@ export function AccountTab() {
   useEffect(() => {
     setProfileName(user?.name ?? "");
   }, [user]);
-
-  const initials = (user?.name ?? "")
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -41,9 +37,9 @@ export function AccountTab() {
       if (!result) return;
       const updated = await api.updateMe({ avatar_url: result.link });
       setUser(updated);
-      toast.success("Avatar updated");
+      toast.success("头像已更新");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to upload avatar");
+      toast.error(err instanceof Error ? err.message : "上传头像失败");
     }
   };
 
@@ -52,9 +48,9 @@ export function AccountTab() {
     try {
       const updated = await api.updateMe({ name: profileName });
       setUser(updated);
-      toast.success("Profile updated");
+      toast.success("个人资料已更新");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update profile");
+      toast.error(e instanceof Error ? e.message : "更新个人资料失败");
     } finally {
       setProfileSaving(false);
     }
@@ -63,7 +59,7 @@ export function AccountTab() {
   return (
     <div className="space-y-8">
       <section className="space-y-4">
-        <h2 className="text-sm font-semibold">Profile</h2>
+        <h2 className="text-sm font-semibold">个人资料</h2>
 
         <Card>
           <CardContent className="space-y-4">
@@ -75,17 +71,11 @@ export function AccountTab() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
               >
-                {user?.avatar_url ? (
-                  <img
-                    src={user.avatar_url}
-                    alt={user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">
-                    {initials}
-                  </span>
-                )}
+                <img
+                  src={resolveUserAvatarUrl(user?.avatar_url, user?.name)}
+                  alt={user?.name ?? "本地用户"}
+                  className="h-full w-full object-cover"
+                />
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
                   {uploading ? (
                     <Loader2 className="h-5 w-5 animate-spin text-white" />
@@ -102,12 +92,12 @@ export function AccountTab() {
                 onChange={handleAvatarUpload}
               />
               <div className="text-xs text-muted-foreground">
-                Click to upload avatar
+                点击上传头像
               </div>
             </div>
 
             <div>
-              <Label className="text-xs text-muted-foreground">Name</Label>
+              <Label className="text-xs text-muted-foreground">姓名</Label>
               <Input
                 type="search"
                 value={profileName}
@@ -122,7 +112,27 @@ export function AccountTab() {
                 disabled={profileSaving || !profileName.trim()}
               >
                 <Save className="h-3 w-3" />
-                {profileSaving ? "Updating..." : "Update Profile"}
+                {profileSaving ? "更新中..." : "更新个人资料"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold">会话</h2>
+        <Card>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">退出登录</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  清除当前设备上的登录状态和本地会话缓存。
+                </p>
+              </div>
+              <Button variant="destructive" size="sm" onClick={logout}>
+                <LogOut className="h-3.5 w-3.5" />
+                退出登录
               </Button>
             </div>
           </CardContent>

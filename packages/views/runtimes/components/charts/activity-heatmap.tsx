@@ -9,8 +9,8 @@ import { estimateCost } from "../../utils";
 const HEATMAP_WEEKS = 26;
 const CELL_SIZE = 16;
 const CELL_GAP = 3;
-const DAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
-const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_LABELS = ["", "周一", "", "周三", "", "周五", ""];
+const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 // Cells use the brand-derived chart-1 hue with descending opacity instead
 // of a neutral foreground fade, so the heatmap reads as part of the same
@@ -28,8 +28,8 @@ function fmtMoney(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso + "T00:00:00").toLocaleString("en", {
+function fmtDateZh(iso: string): string {
+  return new Date(iso + "T00:00:00").toLocaleString("zh-CN", {
     month: "short",
     day: "numeric",
   });
@@ -218,14 +218,14 @@ export function ActivityHeatmap({ usage }: { usage: RuntimeUsage[] }) {
               >
                 <title>
                   {c.date}:{" "}
-                  {c.cost > 0 ? `$${c.cost.toFixed(2)}` : "No activity"}
+                  {c.cost > 0 ? `$${c.cost.toFixed(2)}` : "无活动"}
                 </title>
               </rect>
             ))}
           </svg>
         </div>
         <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-          <span>Less</span>
+          <span>少</span>
           {[0, 1, 2, 3, 4].map((level) => (
             <div
               key={level}
@@ -233,7 +233,7 @@ export function ActivityHeatmap({ usage }: { usage: RuntimeUsage[] }) {
               style={{ backgroundColor: getHeatmapColor(level) }}
             />
           ))}
-          <span>More</span>
+          <span>多</span>
         </div>
       </div>
 
@@ -258,21 +258,21 @@ function InsightsRow({ insights }: { insights: Insights }) {
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-3 sm:grid-cols-4">
       <Insight
-        label="Busiest day"
-        value={busiestDay ? fmtDate(busiestDay.date) : "—"}
+        label="最忙的一天"
+        value={busiestDay ? fmtDateZh(busiestDay.date) : "—"}
         sub={busiestDay ? fmtMoney(busiestDay.cost) : null}
       />
       <Insight
-        label="Most active weekday"
+        label="最活跃的工作日"
         value={busyDayName ?? "—"}
-        sub={busyDayName ? `avg ${fmtMoney(busyDayAvg)}` : null}
+        sub={busyDayName ? `平均 ${fmtMoney(busyDayAvg)}` : null}
       />
       <Insight
-        label="Quietest weekday"
+        label="最空闲的工作日"
         value={quietDayName ?? "—"}
-        sub={quietDayName ? `avg ${fmtMoney(quietDayAvg)}` : null}
+        sub={quietDayName ? `平均 ${fmtMoney(quietDayAvg)}` : null}
       />
-      <Insight label={`${windowDays}-day total`} value={fmtMoney(totalCost)} />
+      <Insight label={`${windowDays} 天合计`} value={fmtMoney(totalCost)} />
     </dl>
   );
 }

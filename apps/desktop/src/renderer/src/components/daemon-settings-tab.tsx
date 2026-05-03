@@ -81,15 +81,15 @@ export function DaemonSettingsTab() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold">Daemon</h2>
+      <h2 className="text-lg font-semibold">守护进程</h2>
       <p className="text-sm text-muted-foreground mt-1">
-        Configure how the local agent daemon behaves with the desktop app.
+        配置本地智能体守护进程与桌面应用的协作方式。
       </p>
 
       <div className="mt-6 divide-y">
         <SettingRow
-          label="Auto-start on launch"
-          description="Automatically start the daemon when the app opens and you are logged in."
+          label="启动应用时自动开启"
+          description="应用打开且已登录时，自动启动本地守护进程。"
         >
           <Switch
             checked={prefs.autoStart}
@@ -99,8 +99,8 @@ export function DaemonSettingsTab() {
         </SettingRow>
 
         <SettingRow
-          label="Auto-stop on quit"
-          description="Stop the daemon when the desktop app is closed. Disable this to keep the daemon running in the background."
+          label="退出应用时自动停止"
+          description="桌面应用关闭时停止守护进程。关闭此项可让守护进程在后台继续运行。"
         >
           <Switch
             checked={prefs.autoStop}
@@ -110,13 +110,13 @@ export function DaemonSettingsTab() {
         </SettingRow>
 
         <div className="py-4">
-          <p className="text-sm font-medium">CLI Status</p>
+          <p className="text-sm font-medium">CLI 状态</p>
           <p className="text-sm text-muted-foreground mt-1">
             {cliInstalled === null
-              ? "Checking…"
+              ? "正在检查…"
               : cliInstalled
-                ? "multica CLI is installed and available in PATH."
-                : "multica CLI not found. Install it to enable daemon management."}
+                ? "已安装 multica CLI，并且可在 PATH 中使用。"
+                : "未找到 multica CLI。安装后才能管理本地守护进程。"}
           </p>
           {cliInstalled === false && (
             <Button
@@ -125,11 +125,11 @@ export function DaemonSettingsTab() {
               className="mt-2"
               onClick={() =>
                 window.desktopAPI.openExternal(
-                  "https://github.com/multica-ai/multica#cli-installation",
+                  "https://github.com/Albert-ycc/origin-workbench/blob/main/CLI_INSTALL.md",
                 )
               }
             >
-              Installation Guide
+              安装指南
             </Button>
           )}
         </div>
@@ -139,14 +139,13 @@ export function DaemonSettingsTab() {
           on logs. These fields matter for support tickets and bug reports,
           not for everyday use. */}
       <div className="mt-8">
-        <h3 className="text-sm font-semibold">Diagnostics</h3>
+        <h3 className="text-sm font-semibold">诊断信息</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Identification and connection details. Useful when filing a bug
-          report or investigating why a runtime isn&apos;t showing up.
+          标识和连接详情。用于排查运行环境为什么没有显示，或提交问题反馈。
         </p>
         <div className="mt-3 rounded-lg border bg-muted/20 px-4 py-2">
           <DiagnosticsRow
-            label="State"
+            label="状态"
             value={
               <span className="inline-flex items-center gap-1.5">
                 <span
@@ -160,7 +159,7 @@ export function DaemonSettingsTab() {
             }
           />
           <DiagnosticsRow
-            label="Uptime"
+            label="运行时长"
             value={status.uptime ? formatUptime(status.uptime) : "—"}
           />
           <DiagnosticsRow
@@ -169,25 +168,25 @@ export function DaemonSettingsTab() {
             mono={!!status.pid}
           />
           <DiagnosticsRow
-            label="Daemon ID"
+            label="守护进程 ID"
             value={status.daemonId ?? "—"}
             mono={!!status.daemonId}
           />
           <DiagnosticsRow
-            label="Profile"
-            value={status.profile || "default"}
+            label="配置档"
+            value={status.profile || "默认"}
           />
           <DiagnosticsRow
-            label="Server URL"
+            label="服务地址"
             value={status.serverUrl ?? "—"}
             mono={!!status.serverUrl}
           />
           <DiagnosticsRow
-            label="Device name"
+            label="设备名称"
             value={status.deviceName ?? "—"}
           />
           <DiagnosticsRow
-            label="Workspaces"
+            label="工作区"
             value={
               typeof status.workspaceCount === "number"
                 ? status.workspaceCount

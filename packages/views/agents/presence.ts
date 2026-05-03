@@ -45,19 +45,19 @@ export interface AvailabilityVisual {
 
 export const availabilityConfig: Record<AgentAvailability, AvailabilityVisual> = {
   online: {
-    label: "Online",
+    label: "在线",
     dotClass: "bg-success",
     textClass: "text-success",
     icon: CircleDot,
   },
   unstable: {
-    label: "Unstable",
+    label: "不稳定",
     dotClass: "bg-warning",
     textClass: "text-warning",
     icon: PlugZap,
   },
   offline: {
-    label: "Offline",
+    label: "离线",
     dotClass: "bg-muted-foreground/40",
     textClass: "text-muted-foreground",
     icon: CircleSlash,
@@ -82,7 +82,7 @@ export interface WorkloadVisual {
 
 export const workloadConfig: Record<Workload, WorkloadVisual> = {
   working: {
-    label: "Working",
+    label: "工作中",
     textClass: "text-brand",
     icon: Loader2,
   },
@@ -90,12 +90,12 @@ export const workloadConfig: Record<Workload, WorkloadVisual> = {
     // Amber chip: nothing running but tasks waiting. On an offline runtime
     // this is the "stuck" signal we explicitly surface (replacing the old
     // misleading "Running 0/N +Mq" copy).
-    label: "Queued",
+    label: "排队中",
     textClass: "text-warning",
     icon: Clock,
   },
   idle: {
-    label: "Idle",
+    label: "空闲",
     textClass: "text-muted-foreground",
     icon: AlertCircle,
   },

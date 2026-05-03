@@ -202,7 +202,7 @@ vi.mock("@multica/ui/components/ui/switch", () => ({
     onCheckedChange: (v: boolean) => void;
   }) => (
     <input
-      aria-label="Create another"
+      aria-label="连续创建"
       type="checkbox"
       checked={checked}
       onChange={(e) => onCheckedChange(e.target.checked)}
@@ -213,7 +213,7 @@ vi.mock("@multica/ui/components/ui/switch", () => ({
 vi.mock("@multica/ui/components/common/file-upload-button", () => ({
   FileUploadButton: ({ onSelect }: { onSelect: (file: File) => void }) => (
     <button type="button" onClick={() => onSelect(new File(["test"], "test.txt"))}>
-      Upload file
+      上传文件
     </button>
   ),
 }));
@@ -260,8 +260,8 @@ describe("CreateIssueModal", () => {
 
     renderModal(<CreateIssueModal onClose={onClose} />);
 
-    await user.type(screen.getByPlaceholderText("Issue title"), "  Ship create issue regression coverage  ");
-    await user.click(screen.getByRole("button", { name: "Create Issue" }));
+    await user.type(screen.getByPlaceholderText("任务标题"), "  Ship create issue regression coverage  ");
+    await user.click(screen.getByRole("button", { name: "创建任务" }));
 
     await waitFor(() => {
       expect(mockCreateIssue).toHaveBeenCalledWith({
@@ -288,11 +288,11 @@ describe("CreateIssueModal", () => {
 
     render(renderToast("toast-1"));
 
-    expect(screen.getByText("Issue created")).toBeInTheDocument();
+    expect(screen.getByText("任务已创建")).toBeInTheDocument();
     expect(screen.getByText(/TES-123/)).toBeInTheDocument();
     expect(screen.getByText(/Ship create issue regression coverage/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "View issue" }));
+    await user.click(screen.getByRole("button", { name: "查看任务" }));
 
     expect(mockPush).toHaveBeenCalledWith("/ws-test/issues/issue-123");
     expect(mockToastDismiss).toHaveBeenCalledWith("toast-1");
@@ -305,9 +305,9 @@ describe("CreateIssueModal", () => {
 
     renderModal(<CreateIssueModal onClose={onClose} />);
 
-    await user.type(screen.getByPlaceholderText("Issue title"), "First follow-up issue");
-    await user.type(screen.getByPlaceholderText("Add description..."), "Description to clear");
-    await user.click(screen.getByRole("button", { name: "Create Issue" }));
+    await user.type(screen.getByPlaceholderText("任务标题"), "First follow-up issue");
+    await user.type(screen.getByPlaceholderText("添加描述..."), "Description to clear");
+    await user.click(screen.getByRole("button", { name: "创建任务" }));
 
     await waitFor(() => {
       expect(mockCreateIssue).toHaveBeenCalledWith({
@@ -325,8 +325,8 @@ describe("CreateIssueModal", () => {
     });
 
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByPlaceholderText("Issue title")).toHaveValue("");
-    expect(screen.getByPlaceholderText("Add description...")).toHaveValue("");
+    expect(screen.getByPlaceholderText("任务标题")).toHaveValue("");
+    expect(screen.getByPlaceholderText("添加描述...")).toHaveValue("");
     expect(mockSetDraft).toHaveBeenCalledWith({
       title: "",
       description: "",

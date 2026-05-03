@@ -190,14 +190,14 @@ function FancyView({
 
   const footerHint =
     phase === "found" && selected
-      ? `Selected: ${selected.name}`
+      ? `已选择：${selected.name}`
       : phase === "found"
-        ? "Pick a runtime above to continue."
+        ? "请选择上方运行环境继续。"
         : phase === "scanning"
-          ? "Waiting for the first result…"
+          ? "正在等待第一个结果…"
           : waitlistSubmitted
-            ? "You're on the waitlist — skip to keep exploring."
-            : "Skip to enter your workspace, or join the cloud waitlist above.";
+            ? "你已加入候补名单，可以先跳过继续探索。"
+            : "可以先跳过进入工作区，也可以加入上方的云端候补名单。";
 
   return (
     <div className="animate-onboarding-enter grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_480px]">
@@ -214,7 +214,7 @@ function FancyView({
               className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back
+              返回
             </button>
           ) : (
             <span aria-hidden className="w-0" />
@@ -278,7 +278,7 @@ function FancyView({
             disabled={submitting}
             onClick={handleSkip}
           >
-            Skip for now
+            暂时跳过
           </Button>
           <Button
             size="lg"
@@ -286,7 +286,7 @@ function FancyView({
             onClick={handleContinue}
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Continue
+            继续
             <ArrowRight className="h-4 w-4" />
           </Button>
         </footer>
@@ -312,15 +312,14 @@ function ScanningView() {
   return (
     <div>
       <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
-        Looking for your tools…
+        正在查找你的工具…
       </h1>
       <p className="mt-4 max-w-[560px] text-[15.5px] leading-[1.55] text-muted-foreground">
-        Multica drives local AI coding tools like{" "}
+        Multica 会驱动本机的 AI 编码工具，例如{" "}
         <span className="font-medium text-foreground">Claude Code</span>,{" "}
         <span className="font-medium text-foreground">Codex</span>,{" "}
-        <span className="font-medium text-foreground">Cursor</span>, and
-        others. We&apos;re waiting to hear back from your machine about
-        which ones are installed.
+        <span className="font-medium text-foreground">Cursor</span>
+        等。我们正在等待本机返回已安装的工具信息。
       </p>
       <div className="mt-10 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <SkeletonRuntimeCard />
@@ -344,27 +343,26 @@ function FoundView({
   const total = runtimes.length;
   const statusLabel =
     onlineCount === total
-      ? "all online"
+      ? "全部在线"
       : onlineCount === 0
-        ? "none online"
-        : `${onlineCount} online`;
+        ? "暂无在线"
+        : `${onlineCount} 个在线`;
   const statusTone =
     onlineCount === 0 ? "text-muted-foreground" : "text-success";
 
   return (
     <div>
       <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
-        We found your runtimes.
+        已找到你的运行环境。
       </h1>
       <p className="mt-4 max-w-[560px] text-[15.5px] leading-[1.55] text-muted-foreground">
-        We scanned your machine for AI coding tools you&apos;ve already
-        set up. Pick one for your first agent.
+        我们扫描到了你已配置的 AI 编码工具。请选择一个，作为第一个智能体的执行环境。
       </p>
 
       {/* Summary strip — trust signal ("we really did scan") */}
       <div className="mt-8 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-muted/60 px-4 py-2.5 text-xs">
         <span className="font-semibold text-foreground">
-          {total} runtime{total === 1 ? "" : "s"}
+          {total} 个运行环境
         </span>
         <span className="text-muted-foreground">·</span>
         <span className={cn("flex items-center gap-1", statusTone)}>
@@ -413,29 +411,28 @@ function EmptyView({
   return (
     <div>
       <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
-        No supported tools detected.
+        未检测到支持的工具。
       </h1>
       <p className="mt-4 max-w-[560px] text-[15.5px] leading-[1.55] text-muted-foreground">
-        Multica drives local AI coding tools like{" "}
+        Multica 会驱动本机的 AI 编码工具，例如{" "}
         <span className="font-medium text-foreground">Claude Code</span>,{" "}
         <span className="font-medium text-foreground">Codex</span>,{" "}
-        <span className="font-medium text-foreground">Cursor</span>, and
-        others — we didn&apos;t find any on this machine. Install one and
-        come back, or pick a path below.
+        <span className="font-medium text-foreground">Cursor</span>
+        等。本机暂时没有检测到可用工具。你可以安装后再回来，也可以先选择下面的路径。
       </p>
 
       <div className="mt-10 flex flex-col gap-3.5">
         <EmptyCard
-          title="Skip for now"
-          subtitle="Enter your workspace in read-only mode. Agents can't execute tasks until a runtime connects — but you can still browse, plan, and invite teammates."
-          actionLabel="Skip"
+          title="暂时跳过"
+          subtitle="以只读模式进入工作区。连接运行环境之前，智能体不能执行任务，但你仍然可以浏览、规划和邀请队友。"
+          actionLabel="跳过"
           onAction={onSkip}
         />
 
         <EmptyCard
-          title="Join the cloud runtime waitlist"
-          subtitle="We'll host the runtime for you — no local install, no setup. Not live yet; click to leave your email and get notified."
-          actionLabel={waitlistSubmitted ? "On the waitlist" : "Join waitlist"}
+          title="加入云端运行环境候补名单"
+          subtitle="我们来托管运行环境，无需本地安装和配置。暂未开放，留下邮箱即可收到通知。"
+          actionLabel={waitlistSubmitted ? "已加入名单" : "加入候补"}
           onAction={() => setWaitlistOpen(true)}
         />
       </div>
@@ -446,10 +443,9 @@ function EmptyView({
       >
         <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Join the cloud runtime waitlist</DialogTitle>
+            <DialogTitle>加入云端运行环境候补名单</DialogTitle>
             <DialogDescription>
-              Cloud runtimes aren&apos;t live yet. Leave your email and
-              we&apos;ll email you when they are.
+              云端运行环境暂未开放。留下邮箱，开放后我们会邮件通知你。
             </DialogDescription>
           </DialogHeader>
 
@@ -462,7 +458,7 @@ function EmptyView({
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setWaitlistOpen(false)}>
-              {waitlistSubmitted ? "Close" : "Cancel"}
+              {waitlistSubmitted ? "关闭" : "取消"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -592,4 +588,3 @@ function RadioMark({ selected }: { selected: boolean }) {
     </span>
   );
 }
-

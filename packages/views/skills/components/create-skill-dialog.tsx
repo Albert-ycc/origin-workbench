@@ -75,20 +75,20 @@ function MethodChooser({ onChoose }: { onChoose: (m: Method) => void }) {
     {
       key: "manual",
       icon: Plus,
-      title: "Create manually",
-      desc: "Start from a blank SKILL.md and write your own instructions.",
+      title: "手动创建",
+      desc: "从空白 SKILL.md 开始，编写自己的技能说明。",
     },
     {
       key: "url",
       icon: Download,
-      title: "Import from URL",
-      desc: "Pull a published skill from ClawHub or Skills.sh.",
+      title: "从 URL 导入",
+      desc: "从 ClawHub 或 Skills.sh 拉取已发布的技能。",
     },
     {
       key: "runtime",
       icon: HardDrive,
-      title: "Copy from runtime",
-      desc: "Promote a skill already installed on your local runtime.",
+      title: "从运行环境复制",
+      desc: "把本地运行环境里已安装的技能提升到工作区。",
     },
   ];
   return (
@@ -145,7 +145,7 @@ function ManualForm({
         description: description.trim(),
       });
       seedAfterCreate(qc, wsId, skill);
-      toast.success("Skill created");
+      toast.success("技能已创建");
       onCreated(skill);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create skill");
@@ -165,7 +165,7 @@ function ManualForm({
             htmlFor="create-skill-name"
             className="text-xs text-muted-foreground"
           >
-            Name
+            名称
           </Label>
           <Input
             id="create-skill-name"
@@ -175,13 +175,13 @@ function ManualForm({
               setName(e.target.value);
               setError("");
             }}
-            placeholder="e.g. review-helper"
+            placeholder="例如：review-helper"
             onKeyDown={(e) => {
               if (e.key === "Enter") submit();
             }}
           />
           <p className="text-xs text-muted-foreground">
-            Must be unique within the workspace.
+            在当前工作区内必须唯一。
           </p>
         </div>
 
@@ -191,13 +191,13 @@ function ManualForm({
             className="text-xs text-muted-foreground"
           >
             <Pencil className="h-3 w-3" />
-            Description
+            描述
           </Label>
           <Textarea
             id="create-skill-desc"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="One sentence on when to assign this skill to an agent."
+            placeholder="用一句话说明什么时候把这个技能分配给智能体。"
             rows={3}
             className="resize-none"
           />
@@ -212,7 +212,7 @@ function ManualForm({
             <span>
               {error}
               {isNameConflictError(error) && (
-                <> Try a different name and submit again.</>
+                <> 请换个名称后再提交。</>
               )}
             </span>
           </div>
@@ -227,7 +227,7 @@ function ManualForm({
           onClick={onCancel}
           disabled={loading}
         >
-          Cancel
+          取消
         </Button>
         <Button
           type="button"
@@ -238,10 +238,10 @@ function ManualForm({
           {loading ? (
             <>
               <Loader2 className="h-3 w-3 animate-spin" />
-              Creating…
+              正在创建…
             </>
           ) : (
-            "Create skill"
+            "创建技能"
           )}
         </Button>
       </div>
@@ -317,19 +317,19 @@ function UrlForm({
     try {
       const skill = await api.importSkill({ url: trimmed });
       seedAfterCreate(qc, wsId, skill);
-      toast.success("Skill imported");
+      toast.success("技能已导入");
       onCreated(skill);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Import failed");
+      setError(err instanceof Error ? err.message : "导入失败");
       setLoading(false);
     }
   };
 
   const submittingLabel = (() => {
-    if (!loading) return "Import";
-    if (source === "clawhub") return "Importing from ClawHub…";
-    if (source === "skills.sh") return "Importing from Skills.sh…";
-    return "Importing…";
+    if (!loading) return "导入";
+    if (source === "clawhub") return "正在从 ClawHub 导入…";
+    if (source === "skills.sh") return "正在从 Skills.sh 导入…";
+    return "正在导入…";
   })();
 
   return (
@@ -341,7 +341,7 @@ function UrlForm({
       >
         <div className="space-y-1.5">
           <Label htmlFor="import-url" className="text-xs text-muted-foreground">
-            Skill URL
+            技能 URL
           </Label>
           <Input
             id="import-url"
@@ -361,7 +361,7 @@ function UrlForm({
 
         <div>
           <p className="mb-2 text-xs text-muted-foreground">
-            Supported sources
+            支持的来源
           </p>
           <div className="grid grid-cols-2 gap-2">
             <SourceCard
@@ -390,8 +390,7 @@ function UrlForm({
               {isNameConflictError(error) && (
                 <>
                   {" "}
-                  The imported skill&rsquo;s name already exists — delete the
-                  existing one before retrying.
+                  导入的技能名称已存在，请先删除现有技能再重试。
                 </>
               )}
             </span>
@@ -407,7 +406,7 @@ function UrlForm({
           onClick={onCancel}
           disabled={loading}
         >
-          Cancel
+          取消
         </Button>
         <Button
           type="button"
@@ -437,18 +436,18 @@ function UrlForm({
 // ---------------------------------------------------------------------------
 
 const METHOD_TITLES: Record<Method, string> = {
-  chooser: "New skill",
-  manual: "Create manually",
-  url: "Import from URL",
-  runtime: "Copy from runtime",
+  chooser: "新建技能",
+  manual: "手动创建",
+  url: "从 URL 导入",
+  runtime: "从运行环境复制",
 };
 
 const METHOD_DESCS: Record<Method, string> = {
-  chooser: "Choose how you want to add a skill to this workspace.",
-  manual: "Write a new SKILL.md from scratch.",
-  url: "Fetch a published skill by URL. Files are pulled server-side.",
+  chooser: "选择把技能添加到这个工作区的方式。",
+  manual: "从零编写新的 SKILL.md。",
+  url: "通过 URL 拉取已发布的技能，文件会由服务端获取。",
   runtime:
-    "Scan a local runtime and promote one of its on-disk skills into this workspace.",
+    "扫描本地运行环境，把磁盘上的某个技能复制到当前工作区。",
 };
 
 export function CreateSkillDialog({
@@ -500,13 +499,13 @@ export function CreateSkillDialog({
                       type="button"
                       onClick={() => setMethod("chooser")}
                       className="-ml-1 rounded-sm p-1 text-muted-foreground opacity-70 transition-opacity hover:bg-accent/60 hover:opacity-100"
-                      aria-label="Back to method chooser"
+                      aria-label="返回选择方式"
                     >
                       <ArrowLeft className="h-3.5 w-3.5" />
                     </button>
                   }
                 />
-                <TooltipContent side="bottom">Back</TooltipContent>
+                <TooltipContent side="bottom">返回</TooltipContent>
               </Tooltip>
             )}
             <div className="min-w-0">
@@ -525,13 +524,13 @@ export function CreateSkillDialog({
                   type="button"
                   onClick={onClose}
                   className="rounded-sm p-1 text-muted-foreground opacity-70 transition-opacity hover:bg-accent/60 hover:opacity-100"
-                  aria-label="Close"
+                  aria-label="关闭"
                 >
                   <XIcon className="h-3.5 w-3.5" />
                 </button>
               }
             />
-            <TooltipContent side="bottom">Close</TooltipContent>
+            <TooltipContent side="bottom">关闭</TooltipContent>
           </Tooltip>
         </div>
 

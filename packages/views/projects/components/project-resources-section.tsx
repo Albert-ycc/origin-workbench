@@ -51,9 +51,9 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         resource_type: "github_repo",
         resource_ref: { url },
       });
-      toast.success("Repository attached");
+      toast.success("代码仓库已关联");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to attach";
+      const msg = err instanceof Error ? err.message : "关联失败";
       toast.error(msg);
     }
   };
@@ -61,9 +61,9 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const handleRemove = async (resource: ProjectResource) => {
     try {
       await deleteResource.mutateAsync(resource.id);
-      toast.success("Resource removed");
+      toast.success("资源已移除");
     } catch {
-      toast.error("Failed to remove resource");
+      toast.error("移除资源失败");
     }
   };
 
@@ -73,7 +73,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
         onClick={() => setOpen(!open)}
       >
-        Resources
+        资源
         <ChevronRight
           className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
         />
@@ -82,7 +82,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         <div className="pl-2 space-y-1.5">
           {resources.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              No resources attached.
+              暂无关联资源。
             </p>
           )}
           {resources.map((resource) => (
@@ -101,13 +101,13 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Plus className="size-3" />
-                  Add resource
+                  添加资源
                 </Button>
               }
             />
             <PopoverContent align="start" className="w-72 p-2 space-y-2">
               <div className="text-xs font-medium text-muted-foreground">
-                Attach a GitHub repo
+                关联 GitHub 仓库
               </div>
               {workspace?.repos && workspace.repos.length > 0 && (
                 <div className="space-y-1">
@@ -128,7 +128,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                         <span className="truncate flex-1">{repo.url}</span>
                         {isAttached && (
                           <span className="text-[10px] text-muted-foreground">
-                            attached
+                            已关联
                           </span>
                         )}
                       </button>
@@ -174,7 +174,7 @@ function ResourceRow({
           type="button"
           onClick={onRemove}
           className="opacity-0 group-hover:opacity-100 transition-opacity rounded-sm p-0.5 hover:bg-accent"
-          title="Remove"
+          title="移除"
         >
           <Trash2 className="size-3 text-muted-foreground" />
         </button>
@@ -190,7 +190,7 @@ function ResourceRow({
         type="button"
         onClick={onRemove}
         className="rounded-sm p-0.5 hover:bg-accent"
-        title="Remove"
+        title="移除"
       >
         <Trash2 className="size-3" />
       </button>
@@ -233,7 +233,7 @@ function CustomRepoForm({
         className="h-6 px-2 text-xs"
         disabled={!url.trim() || submitting}
       >
-        Add
+        添加
       </Button>
     </form>
   );

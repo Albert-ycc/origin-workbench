@@ -23,9 +23,9 @@ import type { DailyCostStackData } from "../../utils";
 // blue, "input") → chart-2 (mid) → chart-3 (lightest, "cache write"), so the
 // visual depth maps directly to "primary cost driver → secondary".
 export const costStackConfig = {
-  input: { label: "Input", color: "var(--chart-1)" },
-  output: { label: "Output", color: "var(--chart-2)" },
-  cacheWrite: { label: "Cache write", color: "var(--chart-3)" },
+  input: { label: "输入", color: "var(--chart-1)" },
+  output: { label: "输出", color: "var(--chart-2)" },
+  cacheWrite: { label: "缓存写", color: "var(--chart-3)" },
 } satisfies ChartConfig;
 
 export function DailyCostChart({ data }: { data: DailyCostStackData[] }) {

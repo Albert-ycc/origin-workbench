@@ -11,7 +11,7 @@ export function AgentDetailPage() {
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const agent = agents.find((a) => a.id === id) ?? null;
 
-  useDocumentTitle(agent?.name ?? "Agent");
+  useDocumentTitle(agent?.name ?? "智能体");
 
   if (!id) return null;
   return <SharedAgentDetailPage agentId={id} />;

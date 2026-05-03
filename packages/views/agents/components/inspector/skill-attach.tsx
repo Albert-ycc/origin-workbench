@@ -41,12 +41,12 @@ export function SkillAttach({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Attach a workspace skill"
-        title="Attach a workspace skill"
+        aria-label="关联工作区技能"
+        title="关联工作区技能"
         className="inline-flex cursor-pointer items-center gap-0.5 rounded-md border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70 transition-colors hover:border-muted-foreground/60 hover:bg-accent/50 hover:text-muted-foreground"
       >
         <Plus className="h-2.5 w-2.5" />
-        Attach
+        关联
       </button>
       <SkillAddDialog agent={agent} open={open} onOpenChange={setOpen} />
     </>

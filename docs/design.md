@@ -73,7 +73,7 @@
 | 代码/数据 | Geist Mono (`--font-mono`) | 代码块、ID、时间戳、等宽数据 |
 | 标题 | `--font-heading`（= `--font-sans`） | 页面标题、区块标题 |
 
-字体栈在 `apps/web/app/layout.tsx` 和 `apps/desktop/src/renderer/src/globals.css` 两处声明，修改时需同步。
+字体栈由 `apps/desktop/src/renderer/src/globals.css` 维护；旧 Web 壳已移除，不再需要双端同步。
 
 ### 3.2 字号纪律
 

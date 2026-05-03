@@ -56,22 +56,22 @@ const statusConfig: Record<
   { label: string; icon: typeof Loader2; color: string }
 > = {
   pending: {
-    label: "Waiting for daemon...",
+    label: "正在等待守护进程...",
     icon: Loader2,
     color: "text-muted-foreground",
   },
   running: {
-    label: "Updating...",
+    label: "正在更新...",
     icon: Loader2,
     color: "text-info",
   },
   completed: {
-    label: "Update complete. Daemon is restarting...",
+    label: "更新完成，守护进程正在重启...",
     icon: CheckCircle2,
     color: "text-success",
   },
-  failed: { label: "Update failed", icon: XCircle, color: "text-destructive" },
-  timeout: { label: "Timeout", icon: XCircle, color: "text-warning" },
+  failed: { label: "更新失败", icon: XCircle, color: "text-destructive" },
+  timeout: { label: "超时", icon: XCircle, color: "text-warning" },
 };
 
 interface UpdateSectionProps {
@@ -142,7 +142,7 @@ export function UpdateSection({
             result.status === "failed" ||
             result.status === "timeout"
           ) {
-            setError(result.error ?? "Unknown error");
+            setError(result.error ?? "未知错误");
             setUpdating(false);
             cleanup();
           }
@@ -152,7 +152,7 @@ export function UpdateSection({
       }, 2000);
     } catch {
       setStatus("failed");
-      setError("Failed to initiate update");
+      setError("发起更新失败");
       setUpdating(false);
     }
   };
@@ -169,24 +169,24 @@ export function UpdateSection({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground">CLI Version:</span>
+        <span className="text-xs text-muted-foreground">CLI 版本：</span>
         <span className="text-xs font-mono">
-          {currentVersion ?? "unknown"}
+          {currentVersion ?? "未知"}
         </span>
 
         {isManaged ? (
           <span
             className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-            title="The CLI binary is managed by Multica Desktop — update Desktop to upgrade the CLI."
+            title="CLI 二进制由 Multica 桌面版管理；升级桌面版即可升级 CLI。"
           >
-            Managed by Desktop
+            由桌面版管理
           </span>
         ) : (
           <>
             {!hasUpdate && currentVersion && latestVersion && !status && (
               <span className="inline-flex items-center gap-1 text-xs text-success">
                 <Check className="h-3 w-3" />
-                Latest
+                最新
               </span>
             )}
 
@@ -196,7 +196,7 @@ export function UpdateSection({
                 <span className="text-xs font-mono text-info">
                   {latestVersion}
                 </span>
-                <span className="text-xs text-muted-foreground">available</span>
+                <span className="text-xs text-muted-foreground">可更新</span>
               </>
             )}
 
@@ -208,7 +208,7 @@ export function UpdateSection({
                 disabled={updating}
               >
                 <ArrowUpCircle className="h-3 w-3" />
-                Update
+                更新
               </Button>
             )}
           </>
@@ -240,7 +240,7 @@ export function UpdateSection({
               className="mt-1"
               onClick={handleUpdate}
             >
-              Retry
+              重试
             </Button>
           )}
         </div>

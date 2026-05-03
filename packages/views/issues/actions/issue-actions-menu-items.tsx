@@ -108,7 +108,7 @@ export function IssueActionsMenuItems({
       <P.Sub>
         <P.SubTrigger>
           <StatusIcon status={issue.status} className="h-3.5 w-3.5" />
-          Status
+          状态
         </P.SubTrigger>
         <P.SubContent>
           {ALL_STATUSES.map((s) => (
@@ -127,7 +127,7 @@ export function IssueActionsMenuItems({
       <P.Sub>
         <P.SubTrigger>
           <PriorityIcon priority={issue.priority} />
-          Priority
+          优先级
         </P.SubTrigger>
         <P.SubContent>
           {PRIORITY_ORDER.map((p) => (
@@ -150,7 +150,7 @@ export function IssueActionsMenuItems({
       <P.Sub>
         <P.SubTrigger>
           <UserMinus className="h-3.5 w-3.5" />
-          Assignee
+          负责人
         </P.SubTrigger>
         <P.SubContent>
           <P.Item
@@ -159,7 +159,7 @@ export function IssueActionsMenuItems({
             }
           >
             <UserMinus className="h-3.5 w-3.5 text-muted-foreground" />
-            Unassigned
+            未分配
             {!issue.assignee_type && (
               <span className="ml-auto text-xs text-muted-foreground">✓</span>
             )}
@@ -200,23 +200,23 @@ export function IssueActionsMenuItems({
       <P.Sub>
         <P.SubTrigger>
           <Calendar className="h-3.5 w-3.5" />
-          Due date
+          截止时间
         </P.SubTrigger>
         <P.SubContent>
           <P.Item onClick={() => updateField({ due_date: now().toISOString() })}>
-            Today
+            今天
           </P.Item>
           <P.Item onClick={() => updateField({ due_date: inDays(1) })}>
-            Tomorrow
+            明天
           </P.Item>
           <P.Item onClick={() => updateField({ due_date: inDays(7) })}>
-            Next week
+            下周
           </P.Item>
           {issue.due_date && (
             <>
               <P.Separator />
               <P.Item onClick={() => updateField({ due_date: null })}>
-                Clear date
+                清除日期
               </P.Item>
             </>
           )}
@@ -231,11 +231,11 @@ export function IssueActionsMenuItems({
         ) : (
           <Pin className="h-3.5 w-3.5" />
         )}
-        {isPinned ? "Unpin from sidebar" : "Pin to sidebar"}
+        {isPinned ? "从侧栏取消固定" : "固定到侧栏"}
       </P.Item>
       <P.Item onClick={copyLink}>
         <Link2 className="h-3.5 w-3.5" />
-        Copy link
+        复制链接
       </P.Item>
 
       <P.Separator />
@@ -245,20 +245,20 @@ export function IssueActionsMenuItems({
       <P.Sub>
         <P.SubTrigger>
           <MoreHorizontal className="h-3.5 w-3.5" />
-          More
+          更多
         </P.SubTrigger>
         <P.SubContent>
           <P.Item onClick={openCreateSubIssue}>
             <Plus className="h-3.5 w-3.5" />
-            Create sub-issue
+            创建子任务
           </P.Item>
           <P.Item onClick={openSetParent}>
             <ArrowUp className="h-3.5 w-3.5" />
-            Set parent issue...
+            设置父任务...
           </P.Item>
           <P.Item onClick={openAddChild}>
             <ArrowDown className="h-3.5 w-3.5" />
-            Add sub-issue...
+            添加子任务...
           </P.Item>
         </P.SubContent>
       </P.Sub>
@@ -270,7 +270,7 @@ export function IssueActionsMenuItems({
         onClick={() => openDeleteConfirm({ onDeletedNavigateTo })}
       >
         <Trash2 className="h-3.5 w-3.5" />
-        Delete issue
+        删除任务
       </P.Item>
     </>
   );

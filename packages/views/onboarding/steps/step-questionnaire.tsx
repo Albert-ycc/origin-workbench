@@ -110,7 +110,7 @@ export function StepQuestionnaire({
               className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back
+              返回
             </button>
           ) : (
             <span aria-hidden className="w-0" />
@@ -134,27 +134,27 @@ export function StepQuestionnaire({
         >
           <div className="mx-auto w-full max-w-[620px] px-6 py-10 sm:px-10 md:px-14 lg:px-0 lg:py-14">
             <div className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              Before we start
+              开始之前
             </div>
             <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
-              Three questions to get to know you.
+              三个问题，帮我们了解你。
             </h1>
 
             <div className="mt-10 flex flex-col gap-7">
               <QuestionBlock
                 num={1}
-                question="Who will use this workspace?"
-                ariaLabel="Who will use this workspace?"
+                question="谁会使用这个工作区？"
+                ariaLabel="谁会使用这个工作区？"
               >
                 <OptionCard
                   selected={answers.team_size === "solo"}
                   onSelect={() => setTeamSize("solo")}
-                  label="Just me"
+                  label="只有我"
                 />
                 <OptionCard
                   selected={answers.team_size === "team"}
                   onSelect={() => setTeamSize("team")}
-                  label="My team (2–10 people)"
+                  label="我的团队（2–10 人）"
                 />
                 <OtherOptionCard
                   selected={answers.team_size === "other"}
@@ -163,34 +163,34 @@ export function StepQuestionnaire({
                   onOtherChange={(v) =>
                     setAnswers((a) => ({ ...a, team_size_other: v }))
                   }
-                  placeholder="e.g. a small community I help run"
+                  placeholder="例如：我帮忙运营的小社群"
                 />
               </QuestionBlock>
 
               <QuestionBlock
                 num={2}
-                question="What best describes you?"
-                ariaLabel="What best describes you?"
+                question="哪一项最符合你的角色？"
+                ariaLabel="哪一项最符合你的角色？"
               >
                 <OptionCard
                   selected={answers.role === "developer"}
                   onSelect={() => setRole("developer")}
-                  label="Software developer"
+                  label="软件开发者"
                 />
                 <OptionCard
                   selected={answers.role === "product_lead"}
                   onSelect={() => setRole("product_lead")}
-                  label="Product or project lead"
+                  label="产品或项目负责人"
                 />
                 <OptionCard
                   selected={answers.role === "writer"}
                   onSelect={() => setRole("writer")}
-                  label="Writer or content creator"
+                  label="写作者或内容创作者"
                 />
                 <OptionCard
                   selected={answers.role === "founder"}
                   onSelect={() => setRole("founder")}
-                  label="Founder or operator"
+                  label="创始人或运营者"
                 />
                 <OtherOptionCard
                   selected={answers.role === "other"}
@@ -199,34 +199,34 @@ export function StepQuestionnaire({
                   onOtherChange={(v) =>
                     setAnswers((a) => ({ ...a, role_other: v }))
                   }
-                  placeholder="e.g. researcher, designer, ops lead"
+                  placeholder="例如：研究员、设计师、运营负责人"
                 />
               </QuestionBlock>
 
               <QuestionBlock
                 num={3}
-                question="What do you want to do with Multica?"
-                ariaLabel="What do you want to do with Multica?"
+                question="你希望用 Multica 做什么？"
+                ariaLabel="你希望用 Multica 做什么？"
               >
                 <OptionCard
                   selected={answers.use_case === "coding"}
                   onSelect={() => setUseCase("coding")}
-                  label="Write and ship code"
+                  label="编写并交付代码"
                 />
                 <OptionCard
                   selected={answers.use_case === "planning"}
                   onSelect={() => setUseCase("planning")}
-                  label="Plan and manage projects"
+                  label="规划和管理项目"
                 />
                 <OptionCard
                   selected={answers.use_case === "writing_research"}
                   onSelect={() => setUseCase("writing_research")}
-                  label="Research or write"
+                  label="研究或写作"
                 />
                 <OptionCard
                   selected={answers.use_case === "explore"}
                   onSelect={() => setUseCase("explore")}
-                  label="I'm just exploring for now"
+                  label="我暂时只是看看"
                 />
                 <OtherOptionCard
                   selected={answers.use_case === "other"}
@@ -235,7 +235,7 @@ export function StepQuestionnaire({
                   onOtherChange={(v) =>
                     setAnswers((a) => ({ ...a, use_case_other: v }))
                   }
-                  placeholder="e.g. automate my weekly reports"
+                  placeholder="例如：自动整理我的周报"
                 />
               </QuestionBlock>
             </div>
@@ -248,7 +248,7 @@ export function StepQuestionnaire({
             aria-live="polite"
             className="text-xs tabular-nums text-muted-foreground"
           >
-            {answeredCount} of 3 answered
+            已回答 {answeredCount} / 3
           </span>
           <Button
             size="lg"
@@ -256,7 +256,7 @@ export function StepQuestionnaire({
             onClick={submit}
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Continue
+            继续
             <ArrowRight className="h-4 w-4" />
           </Button>
         </footer>
@@ -304,27 +304,27 @@ function WhyWeAsk() {
     <div className="flex max-w-[380px] flex-col gap-8">
       <section className="flex flex-col gap-4">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          Why three questions
+          为什么问这三个问题
         </div>
         <h2 className="font-serif text-[22px] font-medium leading-[1.25] tracking-tight text-foreground">
-          So you land running.
+          让你一进来就能开始。
         </h2>
       </section>
 
       <section className="flex flex-col gap-4">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          What you get
+          你会得到什么
         </div>
         <div className="flex flex-col gap-4">
           <UnlockItem
             icon={<PenLine className="h-4 w-4" />}
-            title="A starter project, tailored"
-            body="A Getting Started checklist shaped by your answers."
+            title="定制入门项目"
+            body="根据你的回答生成 Getting Started 检查清单。"
           />
           <UnlockItem
             icon={<Sparkles className="h-4 w-4" />}
-            title="A head start with agents"
-            body="Connect a runtime and we'll pick a template for your role — plus write its first task."
+            title="智能体上手起点"
+            body="连接运行环境后，我们会按你的角色推荐模板，并生成第一个任务。"
           />
         </div>
       </section>
@@ -335,7 +335,7 @@ function WhyWeAsk() {
         rel="noopener noreferrer"
         className="self-start text-[13px] text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
       >
-        Learn how agents work →
+        了解智能体如何工作 →
       </a>
     </div>
   );

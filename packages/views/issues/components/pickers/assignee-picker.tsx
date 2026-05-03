@@ -11,10 +11,13 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { memberListOptions, agentListOptions, assigneeFrequencyOptions } from "@multica/core/workspace/queries";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
+  AvatarNamePickerEmpty,
+  AvatarNamePickerItem,
+} from "../../../common/actor-picker/avatar-name-picker";
+import {
   PropertyPicker,
   PickerItem,
   PickerSection,
-  PickerEmpty,
 } from "./property-picker";
 
 /**
@@ -93,7 +96,7 @@ export function AssigneePicker({
   const triggerLabel =
     assigneeType && assigneeId
       ? getActorName(assigneeType, assigneeId)
-      : "Unassigned";
+      : "未分配";
 
   return (
     <PropertyPicker
@@ -105,7 +108,7 @@ export function AssigneePicker({
       width="w-52"
       align={align}
       searchable
-      searchPlaceholder="Assign to..."
+      searchPlaceholder="分配给..."
       onSearchChange={setFilter}
       triggerRender={triggerRender}
       trigger={
@@ -115,7 +118,7 @@ export function AssigneePicker({
             <span className="truncate">{triggerLabel}</span>
           </>
         ) : (
-          <span className="text-muted-foreground">Unassigned</span>
+          <span className="text-muted-foreground">未分配</span>
         )
       }
     >
@@ -129,35 +132,37 @@ export function AssigneePicker({
           }}
         >
           <UserMinus className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Unassigned</span>
+          <span className="text-muted-foreground">未分配</span>
         </PickerItem>
       )}
 
       {/* Members */}
       {filteredMembers.length > 0 && (
-        <PickerSection label="Members">
+        <PickerSection label="成员">
           {filteredMembers.map((m) => (
-            <PickerItem
+            <AvatarNamePickerItem
               key={m.user_id}
+              actorType="member"
+              actorId={m.user_id}
+              label={m.name}
+              description={m.role === "owner" ? "工作区所有者" : m.role === "admin" ? "管理员" : "成员"}
               selected={isSelected("member", m.user_id)}
-              onClick={() => {
+              onSelect={() => {
                 onUpdate({
                   assignee_type: "member",
                   assignee_id: m.user_id,
                 });
                 setOpen(false);
               }}
-            >
-              <ActorAvatar actorType="member" actorId={m.user_id} size={18} />
-              <span>{m.name}</span>
-            </PickerItem>
+              showStatusDot={false}
+            />
           ))}
         </PickerSection>
       )}
 
       {/* Agents */}
       {filteredAgents.length > 0 && (
-        <PickerSection label="Agents">
+        <PickerSection label="智能体">
           {filteredAgents.map((a) => {
             const decision = canAssignAgentToIssue(a, {
               userId: user?.id ?? null,
@@ -170,12 +175,16 @@ export function AssigneePicker({
             });
             const allowed = decision.allowed;
             return (
-              <PickerItem
+              <AvatarNamePickerItem
                 key={a.id}
+                actorType="agent"
+                actorId={a.id}
+                label={a.name}
+                description={a.description || (a.visibility === "private" ? "私有智能体" : "工作区智能体")}
                 selected={isSelected("agent", a.id)}
                 disabled={!allowed}
                 tooltip={!allowed ? decision.message : undefined}
-                onClick={() => {
+                onSelect={() => {
                   if (!allowed) return;
                   onUpdate({
                     assignee_type: "agent",
@@ -183,13 +192,10 @@ export function AssigneePicker({
                   });
                   setOpen(false);
                 }}
-              >
-                <ActorAvatar actorType="agent" actorId={a.id} size={18} showStatusDot />
-                <span className={allowed ? "" : "text-muted-foreground"}>{a.name}</span>
-                {a.visibility === "private" && (
+                rightSlot={a.visibility === "private" ? (
                   <Lock className="ml-auto h-3 w-3 text-muted-foreground" />
-                )}
-              </PickerItem>
+                ) : undefined}
+              />
             );
           })}
         </PickerSection>
@@ -197,7 +203,7 @@ export function AssigneePicker({
 
       {filteredMembers.length === 0 &&
         filteredAgents.length === 0 &&
-        filter && <PickerEmpty />}
+        filter && <AvatarNamePickerEmpty />}
     </PropertyPicker>
   );
 }

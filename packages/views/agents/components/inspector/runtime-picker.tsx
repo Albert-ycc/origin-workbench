@@ -47,7 +47,7 @@ export function RuntimePicker({
       <span className="inline-flex min-w-0 items-center gap-1.5 px-1.5 py-0.5 text-xs text-muted-foreground">
         <Icon className="h-3 w-3 shrink-0" />
         <span className="min-w-0 truncate font-mono">
-          {selected?.name ?? "No runtime"}
+          {selected?.name ?? "暂无运行环境"}
         </span>
         {selected && (
           <span
@@ -66,11 +66,11 @@ export function RuntimePicker({
   // producing the "Claude (host) (host · 2.1.121 (Claude Code))" mess.
   // device_info still shows on each row in the popover (small mono line),
   // which is the right place for system detail.
-  const triggerLabel = selected?.name ?? "No runtime";
+  const triggerLabel = selected?.name ?? "暂无运行环境";
   const isOnline = selected?.status === "online";
   const triggerTitle = selected
-    ? `Runtime · ${selected.name} · ${isOnline ? "online" : "offline"}`
-    : "Runtime · none selected";
+    ? `运行环境 · ${selected.name} · ${isOnline ? "在线" : "离线"}`
+    : "运行环境 · 未选择";
 
   const hasOtherRuntimes = runtimes.some((r) => r.owner_id !== currentUserId);
 
@@ -131,13 +131,13 @@ export function RuntimePicker({
                 active={filter === "mine"}
                 onClick={() => setFilter("mine")}
               >
-                Mine
+                我的
               </FilterButton>
               <FilterButton
                 active={filter === "all"}
                 onClick={() => setFilter("all")}
               >
-                All
+                全部
               </FilterButton>
             </div>
           </div>
@@ -146,7 +146,7 @@ export function RuntimePicker({
     >
       {filtered.length === 0 ? (
         <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-          No runtimes
+          暂无运行环境
         </p>
       ) : (
         filtered.map((rt) => {
@@ -158,8 +158,8 @@ export function RuntimePicker({
           // line anyway for users who do need that detail.
           const tooltip = [
             rt.name,
-            owner ? `owned by ${owner.name}` : null,
-            rtOnline ? "online" : "offline",
+            owner ? `所有者 ${owner.name}` : null,
+            rtOnline ? "在线" : "离线",
           ]
             .filter(Boolean)
             .join(" · ");
@@ -181,7 +181,7 @@ export function RuntimePicker({
                   </span>
                   {rt.runtime_mode === "cloud" && (
                     <span className="shrink-0 rounded bg-info/10 px-1 text-[10px] font-medium text-info">
-                      Cloud
+                      云端
                     </span>
                   )}
                 </div>
@@ -210,7 +210,7 @@ export function RuntimePicker({
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                   rtOnline ? "bg-success" : "bg-muted-foreground/40"
                 }`}
-                aria-label={rtOnline ? "online" : "offline"}
+                aria-label={rtOnline ? "在线" : "离线"}
               />
             </PickerItem>
           );

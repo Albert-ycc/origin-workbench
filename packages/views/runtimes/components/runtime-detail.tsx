@@ -124,11 +124,11 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
   const handleDelete = () => {
     deleteMutation.mutate(runtime.id, {
       onSuccess: () => {
-        toast.success("Runtime deleted");
+        toast.success("能力来源已删除");
         setDeleteOpen(false);
       },
       onError: (e) => {
-        toast.error(e instanceof Error ? e.message : "Failed to delete runtime");
+        toast.error(e instanceof Error ? e.message : "删除能力来源失败");
       },
     });
   };
@@ -148,7 +148,7 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
           render={<AppLink href={paths.runtimes()} />}
         >
           <ArrowLeft className="h-3 w-3" />
-          All runtimes
+          全部能力来源
         </Button>
         <ChevronRight className="h-3 w-3 text-muted-foreground" />
         <span className="truncate font-mono text-xs text-foreground">
@@ -158,7 +158,7 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
           {!canDelete && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <Lock className="h-3 w-3" />
-              Read-only
+              只读
             </span>
           )}
           {canDelete && (
@@ -170,13 +170,13 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
                     size="icon-sm"
                     onClick={() => setDeleteOpen(true)}
                     className="text-muted-foreground hover:text-destructive"
-                    aria-label="Delete runtime"
+                    aria-label="删除能力来源"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 }
               />
-              <TooltipContent>Delete runtime</TooltipContent>
+              <TooltipContent>删除能力来源</TooltipContent>
             </Tooltip>
           )}
         </div>
@@ -223,19 +223,19 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
       <AlertDialog open={deleteOpen} onOpenChange={(v) => { if (!v) setDeleteOpen(false); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Runtime</AlertDialogTitle>
+            <AlertDialogTitle>删除能力来源</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete &ldquo;{runtime.name}&rdquo;? This action cannot be undone.
+              确定要删除“{runtime.name}”吗？此操作无法撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "删除中..." : "删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -291,7 +291,7 @@ function HeroCard({
             </h2>
             <HealthBadge health={health} />
             <span className="text-xs text-muted-foreground">
-              last seen {lastSeen}
+              上次心跳 {lastSeen}
             </span>
           </div>
         </div>
@@ -301,7 +301,7 @@ function HeroCard({
           Replaces the older dense `·`-separated meta strip that mixed
           everything (including dev-only IDs) at the same visual weight. */}
       <dl className="grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-        <Fact label="Owner">
+        <Fact label="所有者">
           {ownerMember ? (
             <span className="inline-flex min-w-0 items-center gap-1.5">
               <ActorAvatar
@@ -316,7 +316,7 @@ function HeroCard({
             <span className="text-sm text-muted-foreground">—</span>
           )}
         </Fact>
-        <Fact label="Device">
+        <Fact label="设备">
           {device?.hostname ? (
             <Tooltip>
               <TooltipTrigger
@@ -332,7 +332,7 @@ function HeroCard({
             <span className="text-sm text-muted-foreground">—</span>
           )}
         </Fact>
-        <Fact label="Runtime">
+        <Fact label="能力类型">
           <span className="block truncate text-sm">
             {device?.runtime ?? (
               <span className="capitalize">{runtime.provider}</span>
@@ -356,17 +356,17 @@ function HeroCard({
                 showDetails ? "rotate-90" : ""
               }`}
             />
-            Technical details
+            技术详情
           </button>
           {showDetails && (
             <dl className="grid grid-cols-1 gap-y-2 border-t bg-muted/30 px-4 py-3 sm:grid-cols-2">
               {cliVersion && (
-                <Fact label="Daemon CLI" mono compact>
+                <Fact label="守护进程 CLI" mono compact>
                   {cliVersion}
                 </Fact>
               )}
               {daemonShort && (
-                <Fact label="Daemon ID" mono compact>
+                <Fact label="守护进程 ID" mono compact>
                   {daemonShort}
                 </Fact>
               )}
@@ -411,16 +411,16 @@ function ServingAgentsCard({
   return (
     <div className="rounded-lg border">
       <div className="flex items-center justify-between border-b px-4 py-2.5">
-        <span className="text-xs font-semibold">Serving</span>
+        <span className="text-xs font-semibold">已绑定智能体</span>
         <span className="text-xs text-muted-foreground">
-          {agents.length} agent{agents.length === 1 ? "" : "s"}
+          {agents.length} 个智能体
         </span>
       </div>
       {agents.length === 0 ? (
         <div className="flex flex-col items-center px-4 py-6 text-center">
           <Cpu className="h-5 w-5 text-muted-foreground/40" />
           <p className="mt-2 text-xs text-muted-foreground">
-            No agents are bound to this runtime yet.
+            暂无智能体绑定到这个能力来源。
           </p>
         </div>
       ) : (
@@ -457,10 +457,10 @@ function ServingAgentsCard({
                         />
                         {wl.label}
                         {running > 0 && (
-                          <span className="text-muted-foreground">· {running} running</span>
+                          <span className="text-muted-foreground">· {running} 个运行中</span>
                         )}
                         {queued > 0 && (
-                          <span className="text-muted-foreground">· {queued} queued</span>
+                          <span className="text-muted-foreground">· {queued} 个排队中</span>
                         )}
                       </span>
                     )}
@@ -493,7 +493,7 @@ function DiagnosticsCard({
   return (
     <div className="rounded-lg border">
       <div className="border-b px-4 py-2.5">
-        <span className="text-xs font-semibold">Diagnostics</span>
+        <span className="text-xs font-semibold">能力诊断</span>
       </div>
       <div className="space-y-3 p-4">
         {isLocal && (
@@ -518,7 +518,7 @@ function DiagnosticsCard({
               onClick={onDelete}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete runtime
+              删除能力来源
             </Button>
           </div>
         )}

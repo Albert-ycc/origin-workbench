@@ -5,10 +5,20 @@ import { Plus, Search, Server } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { api } from "@multica/core/api";
+import type {
+  AgentRuntime,
+  CreateAgentRequest,
+} from "@multica/core/types";
 import { runtimeListOptions, runtimeKeys } from "@multica/core/runtimes/queries";
 import { useUpdatableRuntimeIds } from "@multica/core/runtimes/hooks";
 import { deriveRuntimeHealth } from "@multica/core/runtimes";
 import { useWSEvent } from "@multica/core/realtime";
+import { useWorkspacePaths } from "@multica/core/paths";
+import {
+  memberListOptions,
+  workspaceKeys,
+} from "@multica/core/workspace/queries";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -18,6 +28,8 @@ import {
   TooltipTrigger,
 } from "@multica/ui/components/ui/tooltip";
 import { PageHeader } from "../../layout/page-header";
+import { useNavigation } from "../../navigation";
+import { CreateAgentDialog } from "../../agents/components/create-agent-dialog";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { RuntimeList } from "./runtime-list";
 
@@ -42,24 +54,24 @@ const HEALTH_CHIP: Record<
   { label: string; dot: string; description: string }
 > = {
   online: {
-    label: "Online",
+    label: "在线",
     dot: "bg-success",
-    description: "Heartbeat received in the last 45s. Ready to dispatch tasks.",
+    description: "最近 45 秒内收到心跳，可以绑定智能体并分发任务。",
   },
   recently_lost: {
-    label: "Recently lost",
+    label: "刚刚断开",
     dot: "bg-warning",
-    description: "Lost contact under 5 minutes ago — often a brief network blip.",
+    description: "5 分钟内失去联系，通常是短暂网络波动。",
   },
   offline: {
-    label: "Offline",
+    label: "离线",
     dot: "bg-muted-foreground/40",
-    description: "No heartbeat for 5+ minutes. Restart the daemon or investigate the host.",
+    description: "超过 5 分钟没有心跳。请重启本地守护进程或检查能力来源。",
   },
   about_to_gc: {
-    label: "About to GC",
+    label: "即将清理",
     dot: "bg-destructive",
-    description: "Offline 6+ days. Auto-deleted at 7 days unless it reconnects.",
+    description: "已离线 6 天以上。如不恢复，7 天后会自动清理。",
   },
 };
 
@@ -89,11 +101,14 @@ function useNowTick(intervalMs = 30_000): number {
 export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {}) {
   const isLoading = useAuthStore((s) => s.isLoading);
   const wsId = useWorkspaceId();
+  const paths = useWorkspacePaths();
+  const navigation = useNavigation();
   const qc = useQueryClient();
   const [scope, setScope] = useState<RuntimeFilter>("mine");
   const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
   const [search, setSearch] = useState("");
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [agentRuntime, setAgentRuntime] = useState<AgentRuntime | null>(null);
 
   // One unified cache per workspace: scope (Mine/All) is a view filter, not
   // a fetch dimension. Splitting on owner used to give us two TanStack cache
@@ -103,6 +118,7 @@ export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {})
     runtimeListOptions(wsId),
   );
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
 
   const handleDaemonEvent = useCallback(() => {
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
@@ -148,6 +164,13 @@ export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {})
     });
   }, [scopedRuntimes, healthFilter, search, now]);
 
+  const handleCreateAgent = async (data: CreateAgentRequest) => {
+    const agent = await api.createAgent(data);
+    setAgentRuntime(null);
+    await qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+    navigation.push(paths.agentDetail(agent.id));
+  };
+
   if (isLoading || fetching) return <RuntimesPageSkeleton />;
 
   const totalCount = runtimes.length;
@@ -189,6 +212,7 @@ export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {})
                 runtimes={filtered}
                 updatableIds={updatableIds}
                 now={now}
+                onCreateAgent={setAgentRuntime}
               />
             )}
           </div>
@@ -197,6 +221,17 @@ export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {})
 
       {showConnectDialog && (
         <ConnectRemoteDialog onClose={() => setShowConnectDialog(false)} />
+      )}
+
+      {agentRuntime && (
+        <CreateAgentDialog
+          runtimes={runtimes}
+          members={members}
+          currentUserId={currentUserId ?? null}
+          initialRuntimeId={agentRuntime.id}
+          onClose={() => setAgentRuntime(null)}
+          onCreate={handleCreateAgent}
+        />
       )}
     </div>
   );
@@ -218,27 +253,19 @@ function PageHeaderBar({
     <PageHeader className="justify-between px-5">
       <div className="flex items-center gap-2">
         <Server className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-medium">Runtimes</h1>
+        <h1 className="text-sm font-medium">能力池</h1>
         {totalCount > 0 && (
           <span className="font-mono text-xs tabular-nums text-muted-foreground/70">
             {totalCount}
           </span>
         )}
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
-          Machines and cloud workers running CLI sessions for your agents.{" "}
-          <a
-            href="https://multica.ai/docs/runtimes"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"
-          >
-            Learn more →
-          </a>
+          展示本机已登录 CLI 和外部 API Provider；用户确认后再绑定为智能体。
         </p>
       </div>
       <Button type="button" size="sm" onClick={onConnectRemote}>
         <Plus className="h-3 w-3" />
-        Connect remote machine
+        添加能力来源
       </Button>
     </PageHeader>
   );
@@ -275,7 +302,7 @@ function CardToolbar({
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search runtimes…"
+          placeholder="搜索能力来源…"
           className="h-8 w-64 pl-8 text-sm"
         />
       </div>
@@ -288,12 +315,12 @@ function CardToolbar({
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
               </span>
-              Live
+              实时
             </div>
           }
         />
         <TooltipContent side="top">
-          Real-time updates · offline detection up to 75s
+          实时更新 · 本地守护进程会自动刷新能力状态
         </TooltipContent>
       </Tooltip>
     </div>
@@ -320,7 +347,7 @@ function ScopeSegment({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        Mine
+        本机
       </button>
       <button
         onClick={() => onChange("all")}
@@ -330,7 +357,7 @@ function ScopeSegment({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        All
+        全部
       </button>
     </div>
   );
@@ -359,13 +386,13 @@ function FilterChipsRow({
         const count = key === "all" ? total : healthCounts[key];
         const visual = key === "all" ? null : HEALTH_CHIP[key];
         const description =
-          key === "all" ? "All runtimes in this view" : visual!.description;
+          key === "all" ? "当前视图中的全部能力来源" : visual!.description;
         return (
           <HealthChip
             key={key}
             active={healthFilter === key}
             onClick={() => setHealthFilter(key)}
-            label={visual?.label ?? "All"}
+            label={visual?.label ?? "全部"}
             count={count}
             dotClass={visual?.dot}
             description={description}
@@ -435,10 +462,9 @@ function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
         <Server className="h-6 w-6 text-muted-foreground" />
       </div>
-      <h2 className="mt-4 text-base font-semibold">No runtimes yet</h2>
+      <h2 className="mt-4 text-base font-semibold">暂无能力来源</h2>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        Desktop auto-scans your local machine. For AWS EC2 or other remote
-        machines, connect them using the setup wizard.
+        桌面版会自动扫描 Claude Code、Codex、Gemini、Cursor 等本机已登录能力。外部 API Provider 会在接入钥匙串后开放绑定。
       </p>
       <Button
         type="button"
@@ -447,7 +473,7 @@ function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
         className="mt-5"
       >
         <Plus className="h-3 w-3" />
-        Connect remote machine
+        添加能力来源
       </Button>
     </div>
   );
@@ -474,9 +500,9 @@ function NoMatchesState({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-16 text-center">
         <Server className="h-8 w-8 animate-pulse text-muted-foreground/40" />
-        <p className="text-sm text-muted-foreground">Starting local runtime…</p>
+        <p className="text-sm text-muted-foreground">正在启动本机能力扫描…</p>
         <p className="max-w-xs text-xs text-muted-foreground/70">
-          This usually takes a few seconds. Your daemon is registering with the workspace.
+          通常只需要几秒钟。守护进程正在识别本机可用的 CLI 能力。
         </p>
       </div>
     );
@@ -489,12 +515,12 @@ function NoMatchesState({
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-16 text-center text-muted-foreground">
       <Search className="h-8 w-8 text-muted-foreground/40" />
-      <p className="text-sm">No matches</p>
+      <p className="text-sm">无匹配项</p>
       <p className="max-w-xs text-xs">
         {hasSearch
-          ? `No runtimes match "${search}"${hasHealthFilter || hasScope ? " in this filter" : ""}.`
-          : "No runtimes match this filter."}{" "}
-        Try widening the scope or clearing filters.
+          ? `没有匹配“${search}”的能力来源${hasHealthFilter || hasScope ? "（当前筛选内）" : ""}。`
+          : "没有能力来源匹配当前筛选。"}{" "}
+        可以放宽范围或清除筛选。
       </p>
     </div>
   );

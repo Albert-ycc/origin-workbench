@@ -84,7 +84,7 @@ export function BoardColumn({
                 </Button>
               }
             />
-            <TooltipContent>Add issue</TooltipContent>
+            <TooltipContent>添加任务</TooltipContent>
           </Tooltip>
         </div>
       </div>

@@ -34,20 +34,20 @@ interface Stage {
 // translations. Unknown tools fall back to "Working" rather than leaking
 // the raw slug.
 const TOOL_LABELS: Record<string, string> = {
-  bash: "Running a command",
-  exec: "Running a command",
-  read: "Reading files",
-  glob: "Reading files",
-  grep: "Searching the code",
-  write: "Making edits",
-  edit: "Making edits",
-  multi_edit: "Making edits",
-  multiedit: "Making edits",
-  web_search: "Searching the web",
-  websearch: "Searching the web",
+  bash: "正在运行命令",
+  exec: "正在运行命令",
+  read: "正在读取文件",
+  glob: "正在读取文件",
+  grep: "正在搜索代码",
+  write: "正在修改",
+  edit: "正在修改",
+  multi_edit: "正在修改",
+  multiedit: "正在修改",
+  web_search: "正在搜索网页",
+  websearch: "正在搜索网页",
 };
 
-const TOOL_FALLBACK = "Working";
+const TOOL_FALLBACK = "正在工作";
 
 // Pure stage decision. Two-tier signal: presence + status drive the
 // queued/wait copy, then taskMessages drive the running-state label.
@@ -63,16 +63,16 @@ function pickStage(
     (status === "queued" || status === "dispatched") &&
     availability === "offline"
   ) {
-    return { label: "Offline", static: true };
+    return { label: "离线", static: true };
   }
   if (
     (status === "queued" || status === "dispatched") &&
     availability === "unstable"
   ) {
-    return { label: "Reconnecting" };
+    return { label: "正在重连" };
   }
-  if (status === "queued") return { label: "Queued" };
-  if (status === "dispatched") return { label: "Starting up" };
+  if (status === "queued") return { label: "排队中" };
+  if (status === "dispatched") return { label: "正在启动" };
 
   // running: latest meaningful message decides the label. We deliberately
   // skip both `error` rows (rendered inline by the timeline; flipping the
@@ -90,14 +90,14 @@ function pickStage(
     }
   }
 
-  if (!latest) return { label: "Thinking" };
-  if (latest.type === "thinking") return { label: "Thinking" };
-  if (latest.type === "text") return { label: "Typing" };
+  if (!latest) return { label: "思考中" };
+  if (latest.type === "thinking") return { label: "思考中" };
+  if (latest.type === "text") return { label: "输入中" };
   if (latest.type === "tool_use") {
     const tool = (latest.tool ?? "").toLowerCase();
     return { label: TOOL_LABELS[tool] ?? TOOL_FALLBACK };
   }
-  return { label: "Thinking" };
+  return { label: "思考中" };
 }
 
 export function TaskStatusPill({

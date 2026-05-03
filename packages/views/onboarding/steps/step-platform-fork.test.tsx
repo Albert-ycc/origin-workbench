@@ -86,33 +86,33 @@ describe("StepPlatformFork", () => {
 
   it("renders the three fork options at rest", () => {
     renderFork();
-    expect(screen.getByText(/download the desktop app/i)).toBeInTheDocument();
-    expect(screen.getByText(/^install the cli$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^cloud runtime$/i)).toBeInTheDocument();
+    expect(screen.getByText(/下载桌面版/i)).toBeInTheDocument();
+    expect(screen.getByText(/^安装 CLI$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^云端运行环境$/i)).toBeInTheDocument();
     // Dialogs closed at rest → no CLI instructions, no email field.
     expect(screen.queryByTestId("cli-instructions")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/邮箱/i)).not.toBeInTheDocument();
   });
 
   it("footer: Skip only + explanatory hint (no Continue)", () => {
     renderFork();
     expect(
-      screen.getByRole("button", { name: /skip for now/i }),
+      screen.getByRole("button", { name: /暂时跳过/i }),
     ).toBeEnabled();
     // Continue is gone — it lived in the footer before; now advancement
     // for the CLI path is owned by the CLI dialog's own button.
     expect(
-      screen.queryByRole("button", { name: /^continue$/i }),
+      screen.queryByRole("button", { name: /^继续$/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/pick a path above — or skip and configure/i),
+      screen.getByText(/请选择上方路径，也可以先跳过/i),
     ).toBeInTheDocument();
   });
 
   it("Skip is always enabled and calls onNext(null)", async () => {
     const user = userEvent.setup();
     const { onNext } = renderFork();
-    await user.click(screen.getByRole("button", { name: /skip for now/i }));
+    await user.click(screen.getByRole("button", { name: /暂时跳过/i }));
     expect(onNext).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledWith(null);
   });
@@ -122,7 +122,7 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     renderFork();
 
-    await user.click(screen.getByText(/download the desktop app/i));
+    await user.click(screen.getByText(/下载桌面版/i));
 
     // Routes to the new /download page (not GitHub releases) so the
     // user lands on the OS auto-detect surface.
@@ -132,7 +132,7 @@ describe("StepPlatformFork", () => {
       "noopener,noreferrer",
     );
     expect(
-      screen.getByText(/continuing on the download page/i),
+      screen.getByText(/正在下载页继续/i),
     ).toBeInTheDocument();
   });
 
@@ -140,16 +140,16 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     renderFork();
 
-    await user.click(screen.getByRole("button", { name: /show steps/i }));
+    await user.click(screen.getByRole("button", { name: /查看步骤/i }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByTestId("cli-instructions")).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/listening for your daemon/i),
+      within(dialog).getByText(/正在监听你的守护进程/i),
     ).toBeInTheDocument();
     // Connect & continue stays disabled while no runtime is selected.
     expect(
-      within(dialog).getByRole("button", { name: /connect & continue/i }),
+      within(dialog).getByRole("button", { name: /连接并继续/i }),
     ).toBeDisabled();
   });
 
@@ -164,16 +164,16 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     const { onNext } = renderFork();
 
-    await user.click(screen.getByRole("button", { name: /show steps/i }));
+    await user.click(screen.getByRole("button", { name: /查看步骤/i }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/1 runtime connected/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/已连接 1 个运行环境/i)).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/selected: claude code/i),
+      within(dialog).getByText(/已选择：Claude Code/i),
     ).toBeInTheDocument();
 
     const connect = within(dialog).getByRole("button", {
-      name: /connect & continue/i,
+      name: /连接并继续/i,
     });
     expect(connect).toBeEnabled();
     await user.click(connect);
@@ -196,11 +196,11 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     const { onNext } = renderFork();
 
-    await user.click(screen.getByRole("button", { name: /^join waitlist$/i }));
+    await user.click(screen.getByRole("button", { name: /^加入候补$/i }));
     const dialog = await screen.findByRole("dialog");
-    await user.type(within(dialog).getByLabelText(/email/i), "a@b.co");
+    await user.type(within(dialog).getByLabelText(/邮箱/i), "a@b.co");
     await user.click(
-      within(dialog).getByRole("button", { name: /^join waitlist$/i }),
+      within(dialog).getByRole("button", { name: /^加入候补名单$/i }),
     );
 
     expect(mocks.joinCloudWaitlist).toHaveBeenCalled();
@@ -212,15 +212,15 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     const { onNext } = renderFork();
 
-    await user.click(screen.getByRole("button", { name: /^join waitlist$/i }));
+    await user.click(screen.getByRole("button", { name: /^加入候补$/i }));
     const dialog = await screen.findByRole("dialog");
-    await user.type(within(dialog).getByLabelText(/email/i), "a@b.co");
+    await user.type(within(dialog).getByLabelText(/邮箱/i), "a@b.co");
     await user.type(
-      within(dialog).getByLabelText(/why cloud/i),
+      within(dialog).getByLabelText(/为什么需要云端/i),
       "running agents overnight",
     );
     await user.click(
-      within(dialog).getByRole("button", { name: /^join waitlist$/i }),
+      within(dialog).getByRole("button", { name: /^加入候补名单$/i }),
     );
 
     expect(mocks.joinCloudWaitlist).toHaveBeenCalledTimes(1);
@@ -232,11 +232,11 @@ describe("StepPlatformFork", () => {
     expect(onNext).not.toHaveBeenCalled();
     // Form button locks out after submit.
     expect(
-      within(dialog).getByRole("button", { name: /you're on the list/i }),
+      within(dialog).getByRole("button", { name: /已加入名单/i }),
     ).toBeDisabled();
     // Footer hint flips to reflect submitted state.
     expect(
-      screen.getByText(/you're on the waitlist — pick skip to keep exploring/i),
+      screen.getByText(/你已加入候补名单，可以点击“跳过”继续探索/i),
     ).toBeInTheDocument();
   });
 
@@ -245,14 +245,14 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     renderFork();
 
-    await user.click(screen.getByRole("button", { name: /^join waitlist$/i }));
+    await user.click(screen.getByRole("button", { name: /^加入候补$/i }));
     const dialog = await screen.findByRole("dialog");
     await user.type(
-      within(dialog).getByLabelText(/email/i),
+      within(dialog).getByLabelText(/邮箱/i),
       "solo@example.com",
     );
     await user.click(
-      within(dialog).getByRole("button", { name: /^join waitlist$/i }),
+      within(dialog).getByRole("button", { name: /^加入候补名单$/i }),
     );
 
     expect(mocks.joinCloudWaitlist).toHaveBeenCalledWith(
@@ -265,19 +265,19 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     renderFork();
 
-    await user.click(screen.getByRole("button", { name: /^join waitlist$/i }));
+    await user.click(screen.getByRole("button", { name: /^加入候补$/i }));
     const dialog = await screen.findByRole("dialog");
     const submit = within(dialog).getByRole("button", {
-      name: /^join waitlist$/i,
+      name: /^加入候补名单$/i,
     });
     expect(submit).toBeDisabled();
 
-    await user.type(within(dialog).getByLabelText(/email/i), "not-an-email");
+    await user.type(within(dialog).getByLabelText(/邮箱/i), "not-an-email");
     expect(submit).toBeDisabled();
 
-    await user.clear(within(dialog).getByLabelText(/email/i));
+    await user.clear(within(dialog).getByLabelText(/邮箱/i));
     await user.type(
-      within(dialog).getByLabelText(/email/i),
+      within(dialog).getByLabelText(/邮箱/i),
       "someone@example.com",
     );
     expect(submit).toBeEnabled();

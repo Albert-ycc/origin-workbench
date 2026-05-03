@@ -16,28 +16,28 @@ const notificationGroups: {
 }[] = [
   {
     key: "assignments",
-    label: "Assignments",
-    description: "When you are assigned or unassigned from an issue",
+    label: "任务分配",
+    description: "当你被分配或移出某个任务时通知",
   },
   {
     key: "status_changes",
-    label: "Status changes",
-    description: "When an issue you follow changes status (e.g. todo, in progress, done)",
+    label: "状态变更",
+    description: "当你关注的任务状态变更时通知（例如待办、进行中、完成）",
   },
   {
     key: "comments",
-    label: "Comments & Mentions",
-    description: "New comments on issues you follow, or when someone @mentions you",
+    label: "评论与提及",
+    description: "当你关注的任务有新评论，或有人 @提及你时通知",
   },
   {
     key: "updates",
-    label: "Priority & Due date",
-    description: "When priority or due date changes on issues you follow",
+    label: "优先级与截止时间",
+    description: "当你关注的任务优先级或截止时间变更时通知",
   },
   {
     key: "agent_activity",
-    label: "Agent activity",
-    description: "When an agent task completes or fails",
+    label: "智能体动态",
+    description: "当智能体任务完成或失败时通知",
   },
 ];
 
@@ -58,7 +58,7 @@ export function NotificationsTab() {
       delete updated[key];
     }
     mutation.mutate(updated, {
-      onError: () => toast.error("Failed to update notification settings"),
+      onError: () => toast.error("更新通知设置失败"),
     });
   };
 
@@ -66,11 +66,9 @@ export function NotificationsTab() {
     <div className="space-y-4">
       <section className="space-y-4">
         <div>
-          <h2 className="text-sm font-semibold">Inbox Notifications</h2>
+          <h2 className="text-sm font-semibold">收件箱通知</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Control which events generate inbox notifications. Muted event types
-            are silently filtered — you can still see them by visiting the issue
-            directly.
+            控制哪些事件会生成收件箱通知。静音的事件类型会被自动过滤；你仍然可以进入任务详情查看。
           </p>
         </div>
 

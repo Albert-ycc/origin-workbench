@@ -7,29 +7,29 @@ import type { InboxItem, InboxItemType, IssueStatus, IssuePriority } from "@mult
 import { getQuickCreateFailureDetail } from "./inbox-display";
 
 const typeLabels: Record<InboxItemType, string> = {
-  issue_assigned: "Assigned",
-  unassigned: "Unassigned",
-  assignee_changed: "Assignee changed",
-  status_changed: "Status changed",
-  priority_changed: "Priority changed",
-  due_date_changed: "Due date changed",
-  new_comment: "New comment",
-  mentioned: "Mentioned",
-  review_requested: "Review requested",
-  task_completed: "Task completed",
-  task_failed: "Task failed",
-  agent_blocked: "Agent blocked",
-  agent_completed: "Agent completed",
-  reaction_added: "Reacted",
-  quick_create_done: "Created with agent",
-  quick_create_failed: "Create with agent failed",
+  issue_assigned: "已分配",
+  unassigned: "未分配",
+  assignee_changed: "负责人已变更",
+  status_changed: "状态已变更",
+  priority_changed: "优先级已变更",
+  due_date_changed: "截止时间已变更",
+  new_comment: "新评论",
+  mentioned: "提到了你",
+  review_requested: "请求审核",
+  task_completed: "任务已完成",
+  task_failed: "任务失败",
+  agent_blocked: "智能体受阻",
+  agent_completed: "智能体已完成",
+  reaction_added: "有新回应",
+  quick_create_done: "智能体已创建",
+  quick_create_failed: "智能体创建失败",
 };
 
 export { typeLabels };
 
 function shortDate(dateStr: string): string {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString("zh-CN", {
     month: "short",
     day: "numeric",
   });
@@ -45,7 +45,7 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
       const label = STATUS_CONFIG[details.to as IssueStatus]?.label ?? details.to;
       return (
         <span className="inline-flex items-center gap-1">
-          Set status to
+          状态设为
           <StatusIcon status={details.to as IssueStatus} className="h-3 w-3" />
           {label}
         </span>
@@ -56,7 +56,7 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
       const label = PRIORITY_CONFIG[details.to as IssuePriority]?.label ?? details.to;
       return (
         <span className="inline-flex items-center gap-1">
-          Set priority to
+          优先级设为
           <PriorityIcon priority={details.to as IssuePriority} className="h-3 w-3" />
           {label}
         </span>
@@ -64,21 +64,21 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
     }
     case "issue_assigned": {
       if (details.new_assignee_id) {
-        return <span>Assigned to {getActorName(details.new_assignee_type ?? "member", details.new_assignee_id)}</span>;
+        return <span>已分配给 {getActorName(details.new_assignee_type ?? "member", details.new_assignee_id)}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }
     case "unassigned":
-      return <span>Removed assignee</span>;
+      return <span>已移除负责人</span>;
     case "assignee_changed": {
       if (details.new_assignee_id) {
-        return <span>Assigned to {getActorName(details.new_assignee_type ?? "member", details.new_assignee_id)}</span>;
+        return <span>已分配给 {getActorName(details.new_assignee_type ?? "member", details.new_assignee_id)}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }
     case "due_date_changed": {
-      if (details.to) return <span>Set due date to {shortDate(details.to)}</span>;
-      return <span>Removed due date</span>;
+      if (details.to) return <span>截止时间设为 {shortDate(details.to)}</span>;
+      return <span>已移除截止时间</span>;
     }
     case "new_comment": {
       if (item.body) return <span>{item.body}</span>;
@@ -86,17 +86,17 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
     }
     case "reaction_added": {
       const emoji = details.emoji;
-      if (emoji) return <span>Reacted {emoji} to your comment</span>;
+      if (emoji) return <span>用 {emoji} 回应了你的评论</span>;
       return <span>{typeLabels[item.type]}</span>;
     }
     case "quick_create_done": {
       const identifier = details.identifier;
-      if (identifier) return <span>Created with agent: {identifier}</span>;
+      if (identifier) return <span>智能体已创建：{identifier}</span>;
       return <span>{typeLabels[item.type]}</span>;
     }
     case "quick_create_failed": {
       const detail = getQuickCreateFailureDetail(item);
-      if (detail) return <span>Failed: {detail}</span>;
+      if (detail) return <span>失败：{detail}</span>;
       return <span>{typeLabels[item.type]}</span>;
     }
     default:

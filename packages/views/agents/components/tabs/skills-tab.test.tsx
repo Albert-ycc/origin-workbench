@@ -85,13 +85,13 @@ describe("SkillsTab", () => {
     // Top informational callout should still render; that's how we know
     // the tab body itself rendered (not stuck in a loading state).
     expect(
-      await screen.findByText(/Local runtime skills are always available/i),
+      await screen.findByText(/本地运行环境里的技能会自动可用/),
     ).toBeInTheDocument();
 
     // The removed section's heading and its trigger button must be gone.
-    expect(screen.queryByText("Local Runtime Skills")).not.toBeInTheDocument();
+    expect(screen.queryByText("本地运行环境技能")).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Import to Workspace/i }),
+      screen.queryByRole("button", { name: /导入到工作区/i }),
     ).not.toBeInTheDocument();
 
     // No runtime list / local-skills query should be wired up either —

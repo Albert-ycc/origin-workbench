@@ -136,17 +136,17 @@ describe("IssueActionsDropdown", () => {
     fireEvent.click(screen.getByTestId("trigger"));
 
     // Base UI portals the popup; role=menu lands on the popup wrapper.
-    expect(await screen.findByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("Priority")).toBeInTheDocument();
-    expect(screen.getByText("Assignee")).toBeInTheDocument();
-    expect(screen.getByText("Due date")).toBeInTheDocument();
-    expect(screen.getByText("Copy link")).toBeInTheDocument();
-    expect(screen.getByText("More")).toBeInTheDocument();
-    expect(screen.getByText("Delete issue")).toBeInTheDocument();
+    expect(await screen.findByText("状态")).toBeInTheDocument();
+    expect(screen.getByText("优先级")).toBeInTheDocument();
+    expect(screen.getByText("负责人")).toBeInTheDocument();
+    expect(screen.getByText("截止时间")).toBeInTheDocument();
+    expect(screen.getByText("复制链接")).toBeInTheDocument();
+    expect(screen.getByText("更多")).toBeInTheDocument();
+    expect(screen.getByText("删除任务")).toBeInTheDocument();
     // Relationship actions are hidden inside the "More" submenu by default.
-    expect(screen.queryByText("Create sub-issue")).not.toBeInTheDocument();
-    expect(screen.queryByText("Set parent issue...")).not.toBeInTheDocument();
-    expect(screen.queryByText("Add sub-issue...")).not.toBeInTheDocument();
+    expect(screen.queryByText("创建子任务")).not.toBeInTheDocument();
+    expect(screen.queryByText("设置父任务...")).not.toBeInTheDocument();
+    expect(screen.queryByText("添加子任务...")).not.toBeInTheDocument();
   });
 
   it("clicking Delete issue opens the delete-confirm modal", async () => {
@@ -161,7 +161,7 @@ describe("IssueActionsDropdown", () => {
     );
 
     fireEvent.click(screen.getByTestId("trigger"));
-    const del = await screen.findByText("Delete issue");
+    const del = await screen.findByText("删除任务");
     fireEvent.click(del);
 
     expect(mockOpenModal).toHaveBeenCalledWith("issue-delete-confirm", {
@@ -184,7 +184,7 @@ describe("IssueActionsContextMenu", () => {
 
     fireEvent.contextMenu(screen.getByTestId("row"));
 
-    expect(await screen.findByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("Delete issue")).toBeInTheDocument();
+    expect(await screen.findByText("状态")).toBeInTheDocument();
+    expect(screen.getByText("删除任务")).toBeInTheDocument();
   });
 });

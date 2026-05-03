@@ -15,29 +15,22 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Inbox,
-  ListTodo,
   Bot,
   Monitor,
-  ChevronDown,
   ChevronRight,
   Settings,
-  LogOut,
-  Plus,
-  Check,
+  Compass,
+  Network,
+  Lightbulb,
+  Route,
   BookOpenText,
-  SquarePen,
-  CircleUser,
-  FolderKanban,
+  Users,
   X,
-  Zap,
+  Brain,
 } from "lucide-react";
-import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@multica/ui/components/ui/collapsible";
 import { StatusIcon } from "../issues/components/status-icon";
-import { useIssueDraftStore } from "@multica/core/issues/stores/draft-store";
 import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
 import {
   Sidebar,
@@ -52,21 +45,9 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@multica/ui/components/ui/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
 import { useAuthStore } from "@multica/core/auth";
-import { useCurrentWorkspace, useWorkspacePaths, paths } from "@multica/core/paths";
-import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@multica/core/workspace/queries";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { inboxKeys, deduplicateInboxItems } from "@multica/core/inbox/queries";
-import { api } from "@multica/core/api";
+import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+import { useQuery } from "@tanstack/react-query";
 import { useModalStore } from "@multica/core/modals";
 import { useMyRuntimesNeedUpdate } from "@multica/core/runtimes/hooks";
 import { pinListOptions } from "@multica/core/pins/queries";
@@ -74,8 +55,8 @@ import { useDeletePin, useReorderPins } from "@multica/core/pins/mutations";
 import { issueDetailOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import type { PinnedItem } from "@multica/core/types";
-import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
+import { resolveUserAvatarUrl } from "../common/default-avatar";
 
 // Top-level nav items stay active when the user is on a child route
 // (e.g. "Projects" stays lit on /:slug/projects/:id). Pinned items keep
@@ -91,47 +72,46 @@ function isNavActive(pathname: string, href: string): boolean {
 // `useEffect`/`useMemo` that depends on the value, and can trigger infinite
 // re-render loops when the effect itself calls `setState`.
 const EMPTY_PINS: PinnedItem[] = [];
-const EMPTY_WORKSPACES: Awaited<ReturnType<typeof api.listWorkspaces>> = [];
-const EMPTY_INVITATIONS: Awaited<ReturnType<typeof api.listMyInvitations>> = [];
-const EMPTY_INBOX: Awaited<ReturnType<typeof api.listInbox>> = [];
 
 // Nav items reference WorkspacePaths method names so they can be resolved
 // against the current workspace slug at render time (see AppSidebar body).
 // Only parameterless paths are valid nav destinations.
 type NavKey =
-  | "inbox"
-  | "myIssues"
+  | "workbench"
+  | "ideas"
+  | "councils"
+  | "missions"
   | "issues"
+  | "explorations"
   | "projects"
   | "autopilots"
   | "agents"
+  | "teams"
   | "runtimes"
   | "skills"
   | "settings";
 
-const personalNav: { key: NavKey; label: string; icon: typeof Inbox }[] = [
-  { key: "inbox", label: "Inbox", icon: Inbox },
-  { key: "myIssues", label: "My Issues", icon: CircleUser },
+const productNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
+  { key: "workbench", label: "原点工作台", icon: Compass },
+  { key: "ideas", label: "想法池", icon: Lightbulb },
+  { key: "agents", label: "智能体", icon: Bot },
+  { key: "councils", label: "会议室", icon: Users },
+  { key: "missions", label: "任务中枢", icon: Network },
+  { key: "explorations", label: "分叉探索", icon: Route },
 ];
 
-const workspaceNav: { key: NavKey; label: string; icon: typeof Inbox }[] = [
-  { key: "issues", label: "Issues", icon: ListTodo },
-  { key: "projects", label: "Projects", icon: FolderKanban },
-  { key: "autopilots", label: "Autopilot", icon: Zap },
-  { key: "agents", label: "Agents", icon: Bot },
+const systemNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
+  { key: "runtimes", label: "能力池", icon: Monitor },
+  { key: "skills", label: "记忆 / 技能", icon: Brain },
+  { key: "settings", label: "设置", icon: Settings },
 ];
 
-const configureNav: { key: NavKey; label: string; icon: typeof Inbox }[] = [
-  { key: "runtimes", label: "Runtimes", icon: Monitor },
-  { key: "skills", label: "Skills", icon: BookOpenText },
-  { key: "settings", label: "Settings", icon: Settings },
+const debugNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
+  { key: "issues", label: "执行记录", icon: BookOpenText },
+  { key: "teams", label: "旧团队编组", icon: Users },
+  { key: "projects", label: "项目调试", icon: BookOpenText },
+  { key: "autopilots", label: "自动巡航调试", icon: BookOpenText },
 ];
-
-function DraftDot() {
-  const hasDraft = useIssueDraftStore((s) => !!(s.draft.title || s.draft.description));
-  if (!hasDraft) return null;
-  return <span className="absolute top-0 right-0 size-1.5 rounded-full bg-brand" />;
-}
 
 /**
  * Presentational pin row. The `label` and `iconNode` are computed by the
@@ -208,7 +188,7 @@ function SortablePinItem({
           >
             <X className="size-1" />
           </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={4}>Unpin</TooltipContent>
+          <TooltipContent side="top" sideOffset={4}>取消固定</TooltipContent>
         </Tooltip>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -308,25 +288,13 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }: AppSidebarProps = {}) {
-  const { pathname, push } = useNavigation();
+  const { pathname } = useNavigation();
   const user = useAuthStore((s) => s.user);
   const userId = useAuthStore((s) => s.user?.id);
-  const logout = useLogout();
   const workspace = useCurrentWorkspace();
   const p = useWorkspacePaths();
-  const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
-  const { data: myInvitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
 
   const wsId = workspace?.id;
-  const { data: inboxItems = EMPTY_INBOX } = useQuery({
-    queryKey: wsId ? inboxKeys.list(wsId) : ["inbox", "disabled"],
-    queryFn: () => api.listInbox(),
-    enabled: !!wsId,
-  });
-  const unreadCount = React.useMemo(
-    () => deduplicateInboxItems(inboxItems).filter((i) => !i.read).length,
-    [inboxItems],
-  );
   const hasRuntimeUpdates = useMyRuntimesNeedUpdate(wsId);
   const { data: pinnedItems = EMPTY_PINS } = useQuery({
     ...pinListOptions(wsId ?? "", userId ?? ""),
@@ -366,36 +334,6 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     [localPinned, reorderPins],
   );
 
-  const queryClient = useQueryClient();
-  const acceptInvitationMut = useMutation({
-    mutationFn: (id: string) => api.acceptInvitation(id),
-    // After accepting an invitation, navigate INTO the newly-joined workspace.
-    // Otherwise the user stays on their current workspace and just sees the
-    // new one appear in the dropdown — silent and confusing (this is MUL-820).
-    onSuccess: async (_, invitationId) => {
-      const invitation = myInvitations.find((i) => i.id === invitationId);
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.myInvitations() });
-      // staleTime: 0 forces a real network fetch — we need the joined workspace
-      // in the list before we can resolve its slug for navigation.
-      const list = await queryClient.fetchQuery({
-        ...workspaceListOptions(),
-        staleTime: 0,
-      });
-      const joined = invitation
-        ? list.find((w) => w.id === invitation.workspace_id)
-        : null;
-      if (joined) {
-        push(paths.workspace(joined.slug).issues());
-      }
-    },
-  });
-  const declineInvitationMut = useMutation({
-    mutationFn: (id: string) => api.declineInvitation(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.myInvitations() });
-    },
-  });
-
   // Global "C" shortcut: opens whichever create mode the user landed on last
   // (agent vs manual), persisted in useCreateModeStore. The mode switch lives
   // inside both modal footers so users can flip without remembering which
@@ -431,124 +369,28 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   return (
       <Sidebar variant="inset">
         {topSlot}
-        {/* Workspace Switcher */}
+        {/* Local user identity */}
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
             <SidebarMenuItem>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <SidebarMenuButton>
-                      <span className="relative">
-                        <WorkspaceAvatar name={workspace?.name ?? "M"} size="sm" />
-                        {myInvitations.length > 0 && (
-                          <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-brand ring-1 ring-sidebar" />
-                        )}
-                      </span>
-                      <span className="flex-1 truncate font-medium">
-                        {workspace?.name ?? "Multica"}
-                      </span>
-                      <ChevronDown className="size-3 text-muted-foreground" />
-                    </SidebarMenuButton>
-                  }
+              <div
+                className="flex h-12 items-center gap-3 rounded-lg px-2 text-sidebar-foreground"
+                aria-label="当前用户"
+              >
+                <img
+                  src={resolveUserAvatarUrl(user?.avatar_url, user?.name)}
+                  alt={user?.name ?? "本地用户"}
+                  className="size-8 shrink-0 rounded-full object-cover"
                 />
-                <DropdownMenuContent
-                  className="w-auto min-w-56"
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <div className="flex items-center gap-2.5 px-2 py-1.5">
-                    <ActorAvatar
-                      name={user?.name ?? ""}
-                      initials={(user?.name ?? "U").charAt(0).toUpperCase()}
-                      avatarUrl={user?.avatar_url}
-                      size={32}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium leading-tight">
-                        {user?.name}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground leading-tight">
-                        {user?.email}
-                      </p>
-                    </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold leading-5">
+                    {user?.name?.trim() || "本地用户"}
                   </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Workspaces
-                    </DropdownMenuLabel>
-                    {workspaces.map((ws) => (
-                      <DropdownMenuItem
-                        key={ws.id}
-                        render={
-                          <AppLink href={paths.workspace(ws.slug).issues()} />
-                        }
-                      >
-                        <WorkspaceAvatar name={ws.name} size="sm" />
-                        <span className="flex-1 truncate">{ws.name}</span>
-                        {ws.id === workspace?.id && (
-                          <Check className="h-3.5 w-3.5 text-primary" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuItem
-                      onClick={() =>
-                        useModalStore.getState().open("create-workspace")
-                      }
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Create workspace
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                  {myInvitations.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuGroup>
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">
-                          Pending invitations
-                        </DropdownMenuLabel>
-                        {myInvitations.map((inv) => (
-                          <div key={inv.id} className="flex items-center gap-2 px-2 py-1.5">
-                            <WorkspaceAvatar name={inv.workspace_name ?? "W"} size="sm" />
-                            <span className="flex-1 truncate text-sm">{inv.workspace_name ?? "Workspace"}</span>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                              disabled={acceptInvitationMut.isPending}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                acceptInvitationMut.mutate(inv.id);
-                              }}
-                            >
-                              Join
-                            </button>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
-                              disabled={declineInvitationMut.isPending}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                declineInvitationMut.mutate(inv.id);
-                              }}
-                            >
-                              Decline
-                            </button>
-                          </div>
-                        ))}
-                      </DropdownMenuGroup>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem variant="destructive" onClick={logout}>
-                      <LogOut className="h-3.5 w-3.5" />
-                      Log out
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {workspace?.name ?? "原点工作台"}
+                  </div>
+                </div>
+              </div>
             </SidebarMenuItem>
           </SidebarMenu>
           <SidebarMenu>
@@ -557,52 +399,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                 {searchSlot}
               </SidebarMenuItem>
             )}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="text-muted-foreground"
-                onClick={() => useModalStore.getState().open("quick-create-issue")}
-              >
-                <span className="relative">
-                  <SquarePen />
-                  <DraftDot />
-                </span>
-                <span>New Issue</span>
-                <kbd className="pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">C</kbd>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
 
         {/* Navigation */}
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {personalNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                      >
-                        <item.icon />
-                        <span>{item.label}</span>
-                        {item.label === "Inbox" && unreadCount > 0 && (
-                          <span className="ml-auto text-xs">
-                            {unreadCount > 99 ? "99+" : unreadCount}
-                          </span>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
           {localPinned.length > 0 && (
             <Collapsible defaultOpen>
               <SidebarGroup className="group/pinned">
@@ -610,7 +411,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                   render={<CollapsibleTrigger />}
                   className="group/trigger cursor-pointer hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                 >
-                  <span>Pinned</span>
+                  <span>固定</span>
                   <ChevronRight className="!size-3 ml-1 stroke-[2.5] transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
                   <span className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/pinned:opacity-100">{localPinned.length}</span>
                 </SidebarGroupLabel>
@@ -639,10 +440,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           )}
 
           <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupLabel>Origin</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {workspaceNav.map((item) => {
+                {productNav.map((item) => {
                   const href = p[item.key]();
                   const isActive = isNavActive(pathname, href);
                   return (
@@ -662,11 +463,45 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             </SidebarGroupContent>
           </SidebarGroup>
 
+          <Collapsible>
+            <SidebarGroup>
+              <SidebarGroupLabel
+                render={<CollapsibleTrigger />}
+                className="group/trigger cursor-pointer hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+              >
+                <span>调试入口</span>
+                <ChevronRight className="!size-3 ml-1 stroke-[2.5] transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu className="gap-0.5">
+                    {debugNav.map((item) => {
+                      const href = p[item.key]();
+                      const isActive = isNavActive(pathname, href);
+                      return (
+                        <SidebarMenuItem key={item.key}>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            render={<AppLink href={href} />}
+                            className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                          >
+                            <item.icon />
+                            <span>{item.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
+
           <SidebarGroup>
-            <SidebarGroupLabel>Configure</SidebarGroupLabel>
+            <SidebarGroupLabel>系统</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {configureNav.map((item) => {
+                {systemNav.map((item) => {
                   const href = p[item.key]();
                   const isActive = isNavActive(pathname, href);
                   return (
@@ -678,7 +513,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       >
                         <item.icon />
                         <span>{item.label}</span>
-                        {item.label === "Runtimes" && hasRuntimeUpdates && (
+                        {item.key === "runtimes" && hasRuntimeUpdates && (
                           <span className="ml-auto size-1.5 rounded-full bg-destructive" />
                         )}
                       </SidebarMenuButton>

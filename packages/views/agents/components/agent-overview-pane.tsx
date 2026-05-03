@@ -6,6 +6,7 @@ import {
   BookOpenText,
   FileText,
   KeyRound,
+  LayoutDashboard,
   Terminal,
 } from "lucide-react";
 import type { Agent, AgentRuntime } from "@multica/core/types";
@@ -24,8 +25,10 @@ import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";
 import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
+import { JournalTab } from "./tabs/journal-tab";
 
 type DetailTab =
+  | "journal"
   | "activity"
   | "instructions"
   | "skills"
@@ -37,11 +40,12 @@ const detailTabs: {
   label: string;
   icon: typeof FileText;
 }[] = [
-  { id: "activity", label: "Activity", icon: Activity },
-  { id: "instructions", label: "Instructions", icon: FileText },
-  { id: "skills", label: "Skills", icon: BookOpenText },
-  { id: "env", label: "Environment", icon: KeyRound },
-  { id: "custom_args", label: "Custom Args", icon: Terminal },
+  { id: "journal", label: "工作记录", icon: LayoutDashboard },
+  { id: "activity", label: "动态", icon: Activity },
+  { id: "instructions", label: "指令", icon: FileText },
+  { id: "skills", label: "技能", icon: BookOpenText },
+  { id: "env", label: "环境变量", icon: KeyRound },
+  { id: "custom_args", label: "自定义参数", icon: Terminal },
 ];
 
 interface AgentOverviewPaneProps {
@@ -77,7 +81,7 @@ export function AgentOverviewPane({
   runtimes,
   onUpdate,
 }: AgentOverviewPaneProps) {
-  const [activeTab, setActiveTab] = useState<DetailTab>("activity");
+  const [activeTab, setActiveTab] = useState<DetailTab>("journal");
   const [activeDirty, setActiveDirty] = useState(false);
   // Holds the destination when a tab change is intercepted by the dirty
   // guard. Null means no pending change. The AlertDialog reads non-null as
@@ -128,6 +132,11 @@ export function AgentOverviewPane({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
+        {activeTab === "journal" && (
+          <TabContent>
+            <JournalTab agent={agent} />
+          </TabContent>
+        )}
         {activeTab === "activity" && <ActivityTab agent={agent} />}
         {activeTab === "instructions" && (
           <TabContent>
@@ -174,19 +183,18 @@ export function AgentOverviewPane({
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+              <AlertDialogTitle>放弃未保存的修改？</AlertDialogTitle>
               <AlertDialogDescription>
-                You have unsaved changes in this tab. Leaving now will discard
-                them.
+                这个标签页里还有未保存的修改。现在离开会丢弃它们。
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+              <AlertDialogCancel>继续编辑</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 onClick={commitTabChange}
               >
-                Discard changes
+                放弃修改
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

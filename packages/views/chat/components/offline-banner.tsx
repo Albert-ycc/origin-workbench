@@ -28,14 +28,14 @@ interface Props {
 export function OfflineBanner({ agentName, availability }: Props) {
   if (availability !== "offline" && availability !== "unstable") return null;
 
-  const name = agentName?.trim() || "the agent";
+  const name = agentName?.trim() || "该智能体";
   if (availability === "unstable") {
     return (
       <div className="px-5 mb-1.5">
         <div className="mx-auto flex w-full max-w-4xl items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 ring-1 ring-amber-200/60 dark:ring-amber-900/40">
           <AlertCircle className="size-3.5 shrink-0" />
           <span className="truncate">
-            {name}&apos;s connection is unstable — replies may be delayed.
+            {name}连接不稳定，回复可能会延迟。
           </span>
         </div>
       </div>
@@ -46,7 +46,7 @@ export function OfflineBanner({ agentName, availability }: Props) {
       <div className="mx-auto flex w-full max-w-4xl items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs bg-muted text-muted-foreground ring-1 ring-border">
         <WifiOff className="size-3.5 shrink-0" />
         <span className="truncate">
-          {name} is offline — your message will be delivered when they&apos;re back.
+          {name}已离线，消息会在恢复在线后送达。
         </span>
       </div>
     </div>

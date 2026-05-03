@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   ArrowUpCircle,
+  Bot,
   MoreHorizontal,
   Trash2,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@multica/ui/components/ui/dropdown-menu";
 import {
@@ -83,6 +85,7 @@ interface CreateColumnsArgs {
   latestCliVersion: string | null;
   wsId: string;
   now: number;
+  onCreateAgent: (runtime: AgentRuntime) => void;
 }
 
 export function createRuntimeColumns({
@@ -90,18 +93,19 @@ export function createRuntimeColumns({
   latestCliVersion,
   wsId,
   now,
+  onCreateAgent,
 }: CreateColumnsArgs): ColumnDef<RuntimeRow>[] {
   const cols: ColumnDef<RuntimeRow>[] = [
     {
       id: "runtime",
-      header: "Runtime",
+      header: "能力来源",
       size: COL_WIDTHS.runtime,
       meta: { grow: true },
       cell: ({ row }) => <RuntimeNameCell runtime={row.original.runtime} />,
     },
     {
       id: "health",
-      header: "Health",
+      header: "可用状态",
       size: COL_WIDTHS.health,
       meta: { grow: true },
       cell: ({ row }) => (
@@ -113,7 +117,7 @@ export function createRuntimeColumns({
   if (showOwner) {
     cols.push({
       id: "owner",
-      header: "Owner",
+      header: "所有者",
       size: COL_WIDTHS.owner,
       cell: ({ row }) =>
         row.original.ownerMember ? (
@@ -136,7 +140,7 @@ export function createRuntimeColumns({
   cols.push(
     {
       id: "agents",
-      header: "Agents",
+      header: "智能体",
       size: COL_WIDTHS.agents,
       cell: ({ row }) => (
         <AgentStack agentIds={row.original.workload.agentIds} />
@@ -144,7 +148,7 @@ export function createRuntimeColumns({
     },
     {
       id: "workload",
-      header: "Workload",
+      header: "任务负载",
       size: COL_WIDTHS.workload,
       cell: ({ row }) => {
         const health = deriveRuntimeHealth(row.original.runtime, now);
@@ -160,7 +164,7 @@ export function createRuntimeColumns({
     },
     {
       id: "cost",
-      header: () => <div className="text-right">Cost · 7d</div>,
+      header: () => <div className="text-right">消耗 · 7 天</div>,
       size: COL_WIDTHS.cost,
       cell: ({ row }) => <CostCell runtimeId={row.original.runtime.id} />,
     },
@@ -190,6 +194,7 @@ export function createRuntimeColumns({
             runtime={row.original.runtime}
             wsId={wsId}
             canDelete={row.original.canDelete}
+            onCreateAgent={onCreateAgent}
           />
         </div>
       ),
@@ -353,7 +358,7 @@ function CostCell({ runtimeId }: { runtimeId: string }) {
     delta == null
       ? null
       : delta === 0
-        ? "flat"
+        ? "持平"
         : `${delta > 0 ? "↑" : "↓"}${Math.abs(delta)}%`;
   return (
     <div className="flex flex-col items-end leading-tight">
@@ -400,7 +405,7 @@ function CliCell({
     <div className="flex min-w-0 items-center gap-1 text-xs">
       {isManaged && (
         <span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
-          Desktop
+          桌面版
         </span>
       )}
       <span
@@ -416,12 +421,12 @@ function CliCell({
             render={
               <ArrowUpCircle
                 className="h-3 w-3 shrink-0 text-warning"
-                aria-label="Update available"
+                aria-label="有可用更新"
               />
             }
           />
           <TooltipContent>
-            Update available: {latestCliVersion}
+            可更新到：{latestCliVersion}
           </TooltipContent>
         </Tooltip>
       )}
@@ -466,27 +471,55 @@ function RowMenu({
   runtime,
   wsId,
   canDelete,
+  onCreateAgent,
 }: {
   runtime: AgentRuntime;
   wsId: string;
   canDelete: boolean;
+  onCreateAgent: (runtime: AgentRuntime) => void;
 }) {
   const deleteMutation = useDeleteRuntime(wsId);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!canDelete) {
-    return <span aria-hidden />;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="行操作"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          }
+        >
+          <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="w-44"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DropdownMenuItem onClick={() => onCreateAgent(runtime)}>
+            <Bot className="h-3.5 w-3.5" />
+            创建智能体
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
   }
 
   const handleDelete = () => {
     deleteMutation.mutate(runtime.id, {
       onSuccess: () => {
-        toast.success("Runtime deleted");
+        toast.success("能力来源已删除");
         setDeleteOpen(false);
       },
       onError: (e) => {
         toast.error(
-          e instanceof Error ? e.message : "Failed to delete runtime",
+          e instanceof Error ? e.message : "删除能力来源失败",
         );
       },
     });
@@ -500,7 +533,7 @@ function RowMenu({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Row actions"
+              aria-label="行操作"
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
             />
@@ -510,16 +543,21 @@ function RowMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className="w-40"
+          className="w-44"
           onClick={(e) => e.stopPropagation()}
         >
+          <DropdownMenuItem onClick={() => onCreateAgent(runtime)}>
+            <Bot className="h-3.5 w-3.5" />
+            创建智能体
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
             onClick={() => setDeleteOpen(true)}
-            title="Only the runtime owner and workspace admins can delete this runtime"
+            title="只有能力来源所有者和本地管理员可以删除这个能力来源"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete
+            删除
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -532,23 +570,22 @@ function RowMenu({
       >
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Runtime</AlertDialogTitle>
+            <AlertDialogTitle>删除能力来源</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete &ldquo;{runtime.name}&rdquo;?
-              This action cannot be undone.
+              确定要删除“{runtime.name}”吗？此操作无法撤销。
               <span className="mt-2 block text-xs text-muted-foreground/80">
-                Only the runtime owner and workspace admins can delete a runtime.
+                只有能力来源所有者和本地管理员可以删除能力来源。
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "删除中..." : "删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

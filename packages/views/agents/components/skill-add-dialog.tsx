@@ -58,7 +58,7 @@ export function SkillAddDialog({
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add skill");
+      toast.error(e instanceof Error ? e.message : "添加技能失败");
     } finally {
       setSaving(false);
     }
@@ -68,9 +68,9 @@ export function SkillAddDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-sm">Add skill</DialogTitle>
+          <DialogTitle className="text-sm">添加技能</DialogTitle>
           <DialogDescription className="text-xs">
-            Select a workspace skill to assign to this agent.
+            选择一个工作区技能，分配给这个智能体。
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-64 space-y-1 overflow-y-auto">
@@ -94,13 +94,13 @@ export function SkillAddDialog({
           ))}
           {availableSkills.length === 0 && (
             <p className="py-6 text-center text-xs text-muted-foreground">
-              All workspace skills are already assigned.
+              所有工作区技能都已经分配给这个智能体。
             </p>
           )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            取消
           </Button>
         </DialogFooter>
       </DialogContent>

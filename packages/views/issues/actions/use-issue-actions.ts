@@ -89,7 +89,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       if (!issueId) return;
       updateIssue.mutate(
         { id: issueId, ...updates },
-        { onError: () => toast.error("Failed to update issue") },
+        { onError: () => toast.error("更新任务失败") },
       );
       // Hint: assigning an agent to a backlog issue won't trigger execution
       // until the issue is moved to an active status.
@@ -125,9 +125,9 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
         : path;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success("Link copied");
+      toast.success("链接已复制");
     } catch {
-      toast.error("Failed to copy link");
+      toast.error("复制链接失败");
     }
   }, [paths, issueId, navigation]);
 

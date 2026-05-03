@@ -158,7 +158,7 @@ function StatusAccordionItem({
             >
               <Plus className="size-3.5" />
             </TooltipTrigger>
-            <TooltipContent>Add issue</TooltipContent>
+            <TooltipContent>添加任务</TooltipContent>
           </Tooltip>
         </div>
       </Accordion.Header>

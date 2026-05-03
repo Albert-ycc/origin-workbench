@@ -28,74 +28,74 @@ interface AutopilotTemplate {
 
 const TEMPLATES: AutopilotTemplate[] = [
   {
-    title: "Daily news digest",
-    summary: "Search and summarize today's news for the team",
-    prompt: `1. Search the web for news and announcements published today only (strictly today's date)
-2. Filter for topics relevant to our team and industry
-3. For each item, write a short summary including: title, source, key takeaways
-4. Compile everything into a single digest post
-5. Post the digest as a comment on this issue and @mention all workspace members`,
+    title: "每日新闻摘要",
+    summary: "搜索并汇总当天新闻，发给团队",
+    prompt: `1. 只搜索今天发布的新闻和公告
+2. 筛选与团队和行业相关的主题
+3. 为每条内容写短摘要，包括标题、来源和关键结论
+4. 汇总成一份简洁摘要
+5. 将摘要作为评论发布到这个任务，并 @提及所有工作区成员`,
     icon: Newspaper,
     frequency: "daily",
     time: "09:00",
   },
   {
-    title: "PR review reminder",
-    summary: "Flag stale pull requests that need review",
-    prompt: `1. List all open pull requests in the repository
-2. Identify PRs that have been open for more than 24 hours without a review
-3. For each stale PR, note the author, age, and a one-line summary of the change
-4. Post a comment on this issue listing all stale PRs with links
-5. @mention the team to remind them to review`,
+    title: "PR 评审提醒",
+    summary: "标记长期未评审的 Pull Request",
+    prompt: `1. 列出代码仓库中所有开放的 Pull Request
+2. 找出超过 24 小时仍未被评审的 PR
+3. 为每个过期 PR 记录作者、等待时间和一句话变更摘要
+4. 在这个任务下评论所有过期 PR 及链接
+5. @提及团队成员提醒评审`,
     icon: GitPullRequest,
     frequency: "weekdays",
     time: "10:00",
   },
   {
-    title: "Bug triage",
-    summary: "Assess and prioritize new bug reports",
-    prompt: `1. List all issues with status "triage" or "backlog" that have not been prioritized
-2. For each issue, read the description and any attached logs or screenshots
-3. Assess severity (critical / high / medium / low) based on user impact and scope
-4. Set the priority field on the issue accordingly
-5. Add a comment explaining your assessment and suggested next steps`,
+    title: "Bug 分诊",
+    summary: "评估并排序新的 Bug 反馈",
+    prompt: `1. 列出所有状态为“待分诊”或“待整理”且尚未设置优先级的任务
+2. 阅读每个任务描述，以及附带的日志或截图
+3. 根据用户影响和范围评估严重程度（紧急 / 高 / 中 / 低）
+4. 相应设置任务优先级
+5. 添加评论说明评估理由和建议下一步`,
     icon: Bug,
     frequency: "weekdays",
     time: "09:00",
   },
   {
-    title: "Weekly progress report",
-    summary: "Compile a weekly summary of team progress",
-    prompt: `1. Gather all issues completed (status "done") in the past 7 days
-2. Gather all issues currently in progress
-3. Identify any blocked issues and their blockers
-4. Calculate key metrics: issues closed, issues opened, net change
-5. Write a structured weekly report with sections: Completed, In Progress, Blocked, Metrics
-6. Post the report as a comment on this issue`,
+    title: "周进展报告",
+    summary: "整理团队一周进展总结",
+    prompt: `1. 收集过去 7 天完成的所有任务
+2. 收集当前进行中的所有任务
+3. 找出受阻任务及阻塞原因
+4. 统计关键指标：关闭任务数、新增任务数、净变化
+5. 写一份结构化周报，包含：已完成、进行中、受阻、指标
+6. 将报告作为评论发布到这个任务`,
     icon: BarChart3,
     frequency: "weekly",
     time: "17:00",
   },
   {
-    title: "Dependency audit",
-    summary: "Scan for security vulnerabilities and outdated packages",
-    prompt: `1. Run dependency audit tools on the project (npm audit, go vuln check, etc.)
-2. Identify any packages with known security vulnerabilities
-3. List outdated packages that are more than 2 major versions behind
-4. For each finding, note the severity, affected package, and recommended fix
-5. Post a summary report as a comment with actionable items`,
+    title: "依赖安全审计",
+    summary: "扫描安全漏洞和过期依赖",
+    prompt: `1. 在项目中运行依赖审计工具（如 npm audit、go vuln check 等）
+2. 找出存在已知安全漏洞的依赖包
+3. 列出落后超过 2 个大版本的依赖包
+4. 为每项发现记录严重程度、受影响包和建议修复方式
+5. 发布一份包含可执行事项的摘要报告`,
     icon: Shield,
     frequency: "weekly",
     time: "08:00",
   },
   {
-    title: "Documentation check",
-    summary: "Review recent changes for documentation gaps",
-    prompt: `1. List all code changes merged in the past 7 days (via git log)
-2. For each significant change, check if related documentation was updated
-3. Identify any new APIs, config options, or features missing documentation
-4. Create a list of documentation gaps with file paths and suggested content
-5. Post the findings as a comment on this issue`,
+    title: "文档缺口检查",
+    summary: "检查近期变更是否缺少文档",
+    prompt: `1. 通过 git log 列出过去 7 天合入的代码变更
+2. 对每个重要变更检查相关文档是否同步更新
+3. 找出缺少文档的新 API、配置项或功能
+4. 列出文档缺口、文件路径和建议补充内容
+5. 将发现作为评论发布到这个任务`,
     icon: FileSearch,
     frequency: "weekly",
     time: "14:00",
@@ -105,22 +105,22 @@ const TEMPLATES: AutopilotTemplate[] = [
 function formatRelativeDate(date: string): string {
   const diff = Date.now() - new Date(date).getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days < 1) return "Today";
-  if (days === 1) return "1d ago";
-  if (days < 30) return `${days}d ago`;
+  if (days < 1) return "今天";
+  if (days === 1) return "1 天前";
+  if (days < 30) return `${days} 天前`;
   const months = Math.floor(days / 30);
-  return `${months}mo ago`;
+  return `${months} 个月前`;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Zap }> = {
-  active: { label: "Active", color: "text-emerald-500", icon: Play },
-  paused: { label: "Paused", color: "text-amber-500", icon: Pause },
-  archived: { label: "Archived", color: "text-muted-foreground", icon: AlertCircle },
+  active: { label: "启用", color: "text-emerald-500", icon: Play },
+  paused: { label: "暂停", color: "text-amber-500", icon: Pause },
+  archived: { label: "已归档", color: "text-muted-foreground", icon: AlertCircle },
 };
 
 const EXECUTION_MODE_LABELS: Record<string, string> = {
-  create_issue: "Create Issue",
-  run_only: "Run Only",
+  create_issue: "创建任务",
+  run_only: "仅运行",
 };
 
 function AutopilotRow({ autopilot }: { autopilot: Autopilot }) {
@@ -183,14 +183,14 @@ export function AutopilotsPage() {
       <PageHeader className="justify-between px-5">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-medium">Autopilot</h1>
+          <h1 className="text-sm font-medium">自动巡航</h1>
           {!isLoading && autopilots.length > 0 && (
             <span className="text-xs text-muted-foreground tabular-nums">{autopilots.length}</span>
           )}
         </div>
         <Button size="sm" variant="outline" onClick={() => openCreate()}>
           <Plus className="h-3.5 w-3.5 mr-1" />
-          New autopilot
+          新建自动巡航
         </Button>
       </PageHeader>
 
@@ -215,9 +215,9 @@ export function AutopilotsPage() {
         ) : autopilots.length === 0 ? (
           <div className="flex flex-col items-center py-16 px-5">
             <Zap className="h-10 w-10 mb-3 text-muted-foreground opacity-30" />
-            <p className="text-sm text-muted-foreground">No autopilots yet</p>
+            <p className="text-sm text-muted-foreground">暂无自动巡航</p>
             <p className="text-xs text-muted-foreground mt-1 mb-6">
-              Schedule recurring tasks for your AI agents. Pick a template or start from scratch.
+              为 AI 智能体设置周期性任务。选择模板，或从空白开始。
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-3xl">
               {TEMPLATES.map((t) => {
@@ -240,7 +240,7 @@ export function AutopilotsPage() {
             </div>
             <Button size="sm" variant="outline" className="mt-4" onClick={() => openCreate()}>
               <Plus className="h-3.5 w-3.5 mr-1" />
-              Start from scratch
+              从空白开始
             </Button>
           </div>
         ) : (
@@ -248,11 +248,11 @@ export function AutopilotsPage() {
             {/* Column headers */}
             <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 border-b bg-muted/30 px-5 text-xs font-medium text-muted-foreground">
               <span className="shrink-0 w-4" />
-              <span className="min-w-0 flex-1">Name</span>
-              <span className="w-32 shrink-0">Agent</span>
-              <span className="w-24 text-center shrink-0">Mode</span>
-              <span className="w-20 text-center shrink-0">Status</span>
-              <span className="w-20 text-right shrink-0">Last run</span>
+              <span className="min-w-0 flex-1">名称</span>
+              <span className="w-32 shrink-0">智能体</span>
+              <span className="w-24 text-center shrink-0">模式</span>
+              <span className="w-20 text-center shrink-0">状态</span>
+              <span className="w-20 text-right shrink-0">上次运行</span>
             </div>
             {autopilots.map((autopilot) => (
               <AutopilotRow key={autopilot.id} autopilot={autopilot} />

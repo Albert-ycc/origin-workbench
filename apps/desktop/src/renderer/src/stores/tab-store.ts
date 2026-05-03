@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
 import { createPersistStorage, defaultStorage } from "@multica/core/platform";
 import { createSafeId } from "@multica/core/utils";
-import { isReservedSlug } from "@multica/core/paths";
+import { isReservedSlug, paths } from "@multica/core/paths";
 import type { DataRouter } from "react-router-dom";
 import { createTabRouter } from "../routes";
 
@@ -100,12 +100,18 @@ interface TabStore {
 // ---------------------------------------------------------------------------
 
 const ROUTE_ICONS: Record<string, string> = {
+  workbench: "Compass",
+  ideas: "Lightbulb",
+  councils: "Users",
   inbox: "Inbox",
   "my-issues": "CircleUser",
+  missions: "Network",
   issues: "ListTodo",
+  explorations: "Route",
   projects: "FolderKanban",
   autopilots: "ListTodo",
   agents: "Bot",
+  teams: "Users",
   runtimes: "Monitor",
   skills: "BookOpenText",
   settings: "Settings",
@@ -193,14 +199,29 @@ function makeTab(path: string, title: string, icon: string): Tab {
   };
 }
 
-/** Default entry point for a workspace — its issues list. */
+/** Default entry point for a workspace — the Origin workbench. */
 function defaultPathFor(slug: string): string {
-  return `/${slug}/issues`;
+  return paths.workspace(slug).root();
+}
+
+function isLegacyDefaultPath(path: string, slug: string): boolean {
+  return path === `/${slug}/issues` || path === `/${slug}/missions`;
+}
+
+function normalizePersistedTab(tab: V2PersistedTab, slug: string): V2PersistedTab {
+  if (!isLegacyDefaultPath(tab.path, slug)) return tab;
+  const path = defaultPathFor(slug);
+  return {
+    ...tab,
+    path,
+    title: "原点工作台",
+    icon: resolveRouteIcon(path),
+  };
 }
 
 function defaultTabFor(slug: string): Tab {
   const path = defaultPathFor(slug);
-  return makeTab(path, "Issues", resolveRouteIcon(path));
+  return makeTab(path, "原点工作台", resolveRouteIcon(path));
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +267,7 @@ export const useTabStore = create<TabStore>()(
             desiredPath && sanitizeTabPath(desiredPath) === desiredPath
               ? desiredPath
               : defaultPathFor(slug);
-          const tab = makeTab(seedPath, "Issues", resolveRouteIcon(seedPath));
+          const tab = makeTab(seedPath, "原点工作台", resolveRouteIcon(seedPath));
           set({
             activeWorkspaceSlug: slug,
             byWorkspace: {
@@ -273,7 +294,7 @@ export const useTabStore = create<TabStore>()(
               });
               return;
             }
-            const tab = makeTab(clean, "Issues", resolveRouteIcon(clean));
+            const tab = makeTab(clean, "原点工作台", resolveRouteIcon(clean));
             set({
               activeWorkspaceSlug: slug,
               byWorkspace: {
@@ -514,7 +535,8 @@ export const useTabStore = create<TabStore>()(
         for (const [slug, pGroup] of Object.entries(persisted.byWorkspace)) {
           const tabs: Tab[] = [];
           for (const pTab of pGroup.tabs) {
-            const clean = sanitizeTabPath(pTab.path);
+            const normalized = normalizePersistedTab(pTab, slug);
+            const clean = sanitizeTabPath(normalized.path);
             // Persisted path may have come from a stale version or a
             // manual edit. Drop rather than rewrite so we never silently
             // put users on a path that doesn't match the group's slug.
@@ -527,10 +549,10 @@ export const useTabStore = create<TabStore>()(
               continue;
             }
             tabs.push({
-              id: pTab.id,
+              id: normalized.id,
               path: clean,
-              title: pTab.title,
-              icon: pTab.icon,
+              title: normalized.title,
+              icon: normalized.icon,
               router: createTabRouter(clean),
               historyIndex: 0,
               historyLength: 1,

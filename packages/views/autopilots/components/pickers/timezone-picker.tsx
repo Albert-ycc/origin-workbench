@@ -65,7 +65,7 @@ export function TimezonePicker({
       width="w-64"
       align="start"
       searchable
-      searchPlaceholder="Search timezone..."
+      searchPlaceholder="搜索时区..."
       onSearchChange={setFilter}
       triggerRender={
         <button

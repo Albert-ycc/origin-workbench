@@ -37,9 +37,9 @@ import {
 // Cost-by tabs, and the CSV export all read from the same `days` value so
 // the labels ("· 30D") and the data slice never disagree.
 const TIME_RANGES = [
-  { label: "7d", days: 7 },
-  { label: "30d", days: 30 },
-  { label: "90d", days: 90 },
+  { label: "7 天", days: 7 },
+  { label: "30 天", days: 30 },
+  { label: "90 天", days: 90 },
 ] as const;
 
 type TimeRange = (typeof TIME_RANGES)[number]["days"];
@@ -136,7 +136,7 @@ export function UsageSection({ runtimeId }: { runtimeId: string }) {
           its tab disables this control to telegraph that. */}
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
-          Period
+          时间范围
         </span>
         <Segmented
           value={days}
@@ -152,7 +152,7 @@ export function UsageSection({ runtimeId }: { runtimeId: string }) {
           divider; the big numbers carry the visual weight of the page. */}
       <div className="grid grid-cols-3 divide-x rounded-lg border bg-card">
         <KpiCard
-          label={`Cost · ${days}D`}
+          label={`费用 · ${days} 天`}
           value={fmtMoney(totals.cost)}
           hint={
             costDelta == null ? undefined : (
@@ -166,27 +166,27 @@ export function UsageSection({ runtimeId }: { runtimeId: string }) {
                 }
               >
                 {costDelta > 0 ? "+" : ""}
-                {costDelta}% vs prev
+                {costDelta}% 较上一周期
               </span>
             )
           }
         />
         <KpiCard
-          label={`Cache savings · ${days}D`}
+          label={`缓存节省 · ${days} 天`}
           value={fmtMoney(totals.cacheSavings)}
           accent={totals.cacheSavings > 0 ? "success" : "default"}
           hint={
             <span>
-              {cacheHitRate}% hit · {formatTokens(totals.cacheRead)} reads
+              {cacheHitRate}% 命中 · {formatTokens(totals.cacheRead)} 读取
             </span>
           }
         />
         <KpiCard
-          label={`Tokens · ${days}D`}
+          label={`Token · ${days} 天`}
           value={formatTokens(tokensTotal)}
           hint={
             <span>
-              in {formatTokens(totals.input)} · out {formatTokens(totals.output)}
+              输入 {formatTokens(totals.input)} · 输出 {formatTokens(totals.output)}
             </span>
           }
         />
@@ -258,15 +258,15 @@ function WhenChart({
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h4 className="text-sm font-semibold">When this runtime spent</h4>
+          <h4 className="text-sm font-semibold">此能力来源的消耗时间</h4>
           <Segmented
             value={tab}
             onChange={setTab}
             options={
               [
-                { label: "Daily", value: "daily" },
-                { label: "Hourly", value: "hourly" },
-                { label: "Heatmap", value: "heatmap" },
+                { label: "按天", value: "daily" },
+                { label: "按小时", value: "hourly" },
+                { label: "热力图", value: "heatmap" },
               ] as const
             }
           />
@@ -279,7 +279,7 @@ function WhenChart({
           squares; the long view is the whole point). */}
       {tab === "heatmap" && (
         <p className="mb-2 text-center text-xs text-muted-foreground">
-          Last 26 weeks · daily $ intensity (period selector ignored here)
+          最近 26 周 · 每日费用强度（此处不受时间范围影响）
         </p>
       )}
 
@@ -341,23 +341,23 @@ function EmptyChartState({ usage }: { usage: RuntimeUsage[] }) {
       <BarChart3 className="h-5 w-5 text-muted-foreground/50" />
       {!hasTokens ? (
         <p className="text-xs text-muted-foreground">
-          No usage in this period.
+          当前时间范围暂无用量。
         </p>
       ) : unmapped.length > 0 ? (
         <>
           <p className="text-xs text-muted-foreground">
-            Tokens recorded but pricing missing for:
+            已记录 Token，但以下模型缺少价格：
           </p>
           <p className="font-mono text-[11px] text-foreground">
             {unmapped.join(", ")}
           </p>
           <p className="text-[11px] text-muted-foreground/70">
-            Add to MODEL_PRICING in packages/views/runtimes/utils.ts
+            请补充到 packages/views/runtimes/utils.ts 的 MODEL_PRICING
           </p>
         </>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Tokens recorded but cost calculation returned $0.
+          已记录 Token，但费用计算结果为 $0。
         </p>
       )}
     </div>
@@ -422,21 +422,23 @@ function CostByBlock({
 
   const caption =
     tab === "agent"
-      ? `${byAgent.length} agent${byAgent.length === 1 ? "" : "s"} on this runtime`
-      : `${byModel.length} model${byModel.length === 1 ? "" : "s"} used`;
+      ? `这个能力来源上有 ${byAgent.length} 个智能体`
+      : `使用了 ${byModel.length} 个模型`;
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
         <div className="flex items-center gap-3">
-          <h4 className="text-sm font-semibold">Cost by {tab}</h4>
+          <h4 className="text-sm font-semibold">
+            {tab === "agent" ? "按智能体看费用" : "按模型看费用"}
+          </h4>
           <Segmented
             value={tab}
             onChange={setTab}
             options={
               [
-                { label: "By agent", value: "agent" },
-                { label: "By model", value: "model" },
+                { label: "按智能体", value: "agent" },
+                { label: "按模型", value: "model" },
               ] as const
             }
           />
@@ -481,7 +483,7 @@ function CostByBlock({
 function CostByList({
   rows,
   renderKey,
-  emptyHint = "No usage in this period.",
+  emptyHint = "当前时间范围暂无用量。",
 }: {
   rows: CostByKey[];
   renderKey: (key: string) => React.ReactNode;
@@ -542,7 +544,7 @@ function FoldedRow({ usage }: { usage: RuntimeUsage[] }) {
         <ChevronRight
           className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`}
         />
-        Daily breakdown table
+        每日明细表
       </button>
       {open && (
         <div className="mt-3 rounded-md border p-4">
@@ -563,12 +565,12 @@ function DailyBreakdownTable({ usage }: { usage: RuntimeUsage[] }) {
   return (
     <div className="rounded-lg border">
       <div className="grid grid-cols-[100px_1fr_80px_80px_80px_80px] gap-2 border-b px-3 py-2 text-xs font-medium text-muted-foreground">
-        <div>Date</div>
-        <div>Model</div>
-        <div className="text-right">Input</div>
-        <div className="text-right">Output</div>
-        <div className="text-right">Cache R</div>
-        <div className="text-right">Cache W</div>
+        <div>日期</div>
+        <div>模型</div>
+        <div className="text-right">输入</div>
+        <div className="text-right">输出</div>
+        <div className="text-right">缓存读</div>
+        <div className="text-right">缓存写</div>
       </div>
       <div className="max-h-64 overflow-y-auto divide-y">
         {[...byDate.entries()].map(([date, rows]) =>
@@ -617,7 +619,7 @@ function UsageEmpty() {
   return (
     <div className="flex flex-col items-center rounded-lg border border-dashed py-8">
       <BarChart3 className="h-5 w-5 text-muted-foreground/40" />
-      <p className="mt-2 text-xs text-muted-foreground">No usage data yet</p>
+      <p className="mt-2 text-xs text-muted-foreground">暂无用量数据</p>
     </div>
   );
 }
@@ -665,4 +667,3 @@ function computeTotals(rows: RuntimeUsage[]): UsageTotals {
     { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, cacheSavings: 0 },
   );
 }
-

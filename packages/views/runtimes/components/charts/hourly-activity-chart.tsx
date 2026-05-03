@@ -18,7 +18,7 @@ import {
 // fundamentally different from "how much per calendar day". Data is fed in
 // by the parent (single orchestrator pattern) — this component is dumb.
 const hourlyChartConfig = {
-  cost: { label: "Cost", color: "var(--color-chart-1)" },
+  cost: { label: "费用", color: "var(--color-chart-1)" },
 } satisfies ChartConfig;
 
 export interface HourlyCostPoint {

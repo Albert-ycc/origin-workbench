@@ -115,7 +115,7 @@ export function StarterContentPrompt() {
       // component unmounts cleanly on the next render.
       await refreshMe();
 
-      toast.success("Starter tasks added — check your sidebar");
+      toast.success("已添加入门任务，请查看侧栏");
 
       // If the server took the agent-guided branch, a welcome issue
       // exists and we jump to it. Otherwise, stay on the issues list —
@@ -127,7 +127,7 @@ export function StarterContentPrompt() {
       }
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Import failed — please retry",
+        err instanceof Error ? err.message : "导入失败，请重试",
       );
       setSubmitting(null);
     }
@@ -143,7 +143,7 @@ export function StarterContentPrompt() {
       toast.error(
         err instanceof Error
           ? err.message
-          : "Could not dismiss — please retry",
+          : "无法跳过，请重试",
       );
       setSubmitting(null);
     }
@@ -163,15 +163,14 @@ export function StarterContentPrompt() {
       <DialogContent showCloseButton={false} className="sm:max-w-[440px]">
         <DialogHeader>
           <DialogTitle className="text-balance font-serif text-[22px] leading-[1.2] font-medium tracking-tight">
-            Welcome — add starter tasks?
+            欢迎使用，要添加入门任务吗？
           </DialogTitle>
           <DialogDescription className="pt-2 text-[14px] leading-[1.55]">
             A{" "}
             <span className="font-medium text-foreground">
               Getting Started
             </span>{" "}
-            project with short tasks that walk through how agents, issues,
-            and context work in Multica.
+            项目会包含几条简短任务，带你了解智能体、任务和上下文在 Multica 中如何协作。
           </DialogDescription>
         </DialogHeader>
 
@@ -184,13 +183,13 @@ export function StarterContentPrompt() {
             {submitting === "dismiss" && (
               <Loader2 className="h-4 w-4 animate-spin" />
             )}
-            Start blank workspace
+            从空白工作区开始
           </Button>
           <Button onClick={onImport} disabled={submitting !== null}>
             {submitting === "import" && (
               <Loader2 className="h-4 w-4 animate-spin" />
             )}
-            Add starter tasks
+            添加入门任务
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -111,19 +111,45 @@ function createWindow(): void {
     return { action: "deny" };
   });
 
-  // Prevent Cmd+R / Ctrl+R / Shift+Cmd+R / Shift+Ctrl+R / F5 from
-  // reloading the page. In a desktop app an accidental reload destroys
-  // in-memory state (tabs, drafts, WS connections) with no URL bar to
-  // navigate back. DevTools refresh (via the DevTools UI) still works.
-  mainWindow.webContents.on("before-input-event", (_event, input) => {
+  // Reload prevention + explicit zoom shortcuts.
+  //
+  // Reload (Cmd/Ctrl+R, F5) is suppressed because in a desktop app an
+  // accidental reload destroys in-memory state (tabs, drafts, WS) with no
+  // URL bar to navigate back. DevTools UI refresh still works.
+  //
+  // Zoom (Cmd+= / Cmd+- / Cmd+0): Electron's default accelerator only
+  // catches the "in" direction reliably on macOS — Cmd+- (the Minus
+  // physical key) doesn't always reach the default zoomOut handler
+  // depending on keyboard layout / Electron version. We handle all three
+  // keys uniformly here using `input.code` (physical key) instead of
+  // `input.key` (layout-dependent character) so non-US layouts also work.
+  const ZOOM_STEP = 0.5;
+  const ZOOM_MAX = 9;
+  const ZOOM_MIN = -8;
+  mainWindow.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return;
     const cmdOrCtrl =
       process.platform === "darwin" ? input.meta : input.control;
+
     if (
       (cmdOrCtrl && input.key.toLowerCase() === "r") ||
       input.key === "F5"
     ) {
-      _event.preventDefault();
+      event.preventDefault();
+      return;
+    }
+
+    if (!cmdOrCtrl) return;
+    const wc = mainWindow!.webContents;
+    if (input.code === "Equal") {
+      event.preventDefault();
+      wc.setZoomLevel(Math.min(wc.getZoomLevel() + ZOOM_STEP, ZOOM_MAX));
+    } else if (input.code === "Minus") {
+      event.preventDefault();
+      wc.setZoomLevel(Math.max(wc.getZoomLevel() - ZOOM_STEP, ZOOM_MIN));
+    } else if (input.code === "Digit0") {
+      event.preventDefault();
+      wc.setZoomLevel(0);
     }
   });
 
@@ -151,6 +177,15 @@ function createWindow(): void {
 const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   ? `Multica Canary ${process.env.DESKTOP_APP_SUFFIX}`
   : "Multica Canary";
+
+function isLocalDesktopBuild(): boolean {
+  return process.execPath.includes("Multica Local.app");
+}
+
+if (!is.dev && isLocalDesktopBuild()) {
+  app.setName("Multica Local");
+  app.setPath("userData", join(app.getPath("appData"), "Multica Local"));
+}
 
 if (is.dev) {
   app.setName(DEV_APP_NAME);
@@ -189,7 +224,11 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     electronApp.setAppUserModelId(
-      is.dev ? "ai.multica.desktop.dev" : "ai.multica.desktop",
+      isLocalDesktopBuild()
+        ? "ai.multica.desktop.local"
+        : is.dev
+          ? "ai.multica.desktop.dev"
+          : "ai.multica.desktop",
     );
 
     // macOS: replace the default Electron dock icon with the bundled logo

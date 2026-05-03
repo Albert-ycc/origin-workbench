@@ -13,7 +13,7 @@ import { WorkspacePresencePrefetch } from "@multica/views/layout";
 import { useTabStore } from "@/stores/tab-store";
 
 /**
- * Desktop equivalent of apps/web/app/[workspaceSlug]/layout.tsx.
+ * Desktop workspace route boundary.
  *
  * Resolves the URL slug → workspace UUID via the React Query list cache
  * (seeded by AuthInitializer). Children do not render until the workspace

@@ -60,8 +60,8 @@ export function InstructionsTab({
     // the Save row scrolls off-screen as the user writes longer prompts.
     <div className="flex h-full flex-col gap-4">
       <p className="text-xs text-muted-foreground">
-        Define this agent&apos;s identity and working style. Injected into the
-        agent&apos;s context for every task. Markdown is supported.
+        定义这个智能体的身份和工作方式。每次执行任务时都会注入到智能体上下文，
+        支持 Markdown。
       </p>
 
       <div
@@ -92,7 +92,7 @@ export function InstructionsTab({
 
       <div className="flex items-center justify-end gap-3">
         {isDirty && (
-          <span className="text-xs text-muted-foreground">Unsaved changes</span>
+          <span className="text-xs text-muted-foreground">有未保存的修改</span>
         )}
         <Button
           size="sm"
@@ -104,7 +104,7 @@ export function InstructionsTab({
           ) : (
             <Save className="h-3.5 w-3.5" />
           )}
-          Save
+          保存
         </Button>
       </div>
     </div>

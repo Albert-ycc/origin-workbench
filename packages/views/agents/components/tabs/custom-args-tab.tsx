@@ -68,9 +68,9 @@ export function CustomArgsTab({
     setSaving(true);
     try {
       await onSave({ custom_args: currentArgs });
-      toast.success("Custom arguments saved");
+      toast.success("自定义参数已保存");
     } catch {
-      toast.error("Failed to save custom arguments");
+      toast.error("保存自定义参数失败");
     } finally {
       setSaving(false);
     }
@@ -83,13 +83,12 @@ export function CustomArgsTab({
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            Additional CLI arguments appended to the agent command at launch.
-            Multi-token flags can share one row — they&apos;ll be split on
-            whitespace before being passed to the CLI.
+            启动时追加到智能体命令的 CLI 参数。多个 token 可以写在同一行，
+            传给 CLI 前会按空白拆分。
           </p>
           {launchHeader && (
             <p className="text-xs text-muted-foreground">
-              Launch mode:{" "}
+              启动模式：{" "}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
                 {launchHeader} &lt;your args&gt;
               </code>
@@ -104,7 +103,7 @@ export function CustomArgsTab({
           className="shrink-0"
         >
           <Plus className="h-3 w-3" />
-          Add
+          添加
         </Button>
       </div>
 
@@ -123,7 +122,7 @@ export function CustomArgsTab({
                 size="icon-sm"
                 onClick={() => removeEntry(index)}
                 className="text-muted-foreground hover:text-destructive"
-                aria-label="Remove argument"
+                aria-label="移除参数"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -134,7 +133,7 @@ export function CustomArgsTab({
 
       <div className="flex items-center justify-end gap-3">
         {dirty && (
-          <span className="text-xs text-muted-foreground">Unsaved changes</span>
+          <span className="text-xs text-muted-foreground">有未保存的修改</span>
         )}
         <Button onClick={handleSave} disabled={!dirty || saving} size="sm">
           {saving ? (
@@ -142,7 +141,7 @@ export function CustomArgsTab({
           ) : (
             <Save className="h-3.5 w-3.5" />
           )}
-          Save
+          保存
         </Button>
       </div>
     </div>

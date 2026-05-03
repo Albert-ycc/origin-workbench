@@ -43,18 +43,17 @@ export function CreateWorkspaceModal({ onClose }: { onClose: () => void }) {
           onClick={onClose}
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          返回
         </Button>
 
         <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
           <div className="flex w-full max-w-md flex-col items-center gap-6">
             <div className="text-center">
               <DialogTitle className="text-2xl font-semibold">
-                Create a new workspace
+                新建工作区
               </DialogTitle>
               <DialogDescription className="mt-2">
-                Workspaces are shared environments where teams can work on
-                projects and issues.
+                工作区是团队协作处理项目和任务的共享环境。
               </DialogDescription>
             </div>
             <CreateWorkspaceForm

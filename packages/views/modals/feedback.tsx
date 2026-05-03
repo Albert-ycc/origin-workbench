@@ -55,7 +55,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
   const handleSubmit = async () => {
     if (!canSubmit) return;
     if (editorRef.current?.hasActiveUploads()) {
-      toast.info("Please wait for uploads to finish…");
+      toast.info("请等待上传完成…");
       return;
     }
     // Read from the editor ref at submit time — `message` state lags 150ms
@@ -64,7 +64,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
     const latest = editorRef.current?.getMarkdown()?.trim() ?? "";
     if (!latest) return;
     if (latest.length > MAX_MESSAGE_LEN) {
-      toast.error("Message is too long");
+      toast.error("内容太长");
       return;
     }
     try {
@@ -74,13 +74,13 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
         workspace_id: workspace?.id,
       });
       clearDraft();
-      toast.success("Thanks for the feedback!");
+      toast.success("感谢反馈！");
       onClose();
     } catch (err) {
       const msg =
         err instanceof Error && err.message
           ? err.message
-          : "Failed to send feedback";
+          : "发送反馈失败";
       toast.error(msg);
     }
   };
@@ -89,10 +89,9 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-2xl !h-[28rem] p-0 gap-0 flex flex-col overflow-hidden">
         <DialogHeader className="px-5 pt-4 pb-2 shrink-0">
-          <DialogTitle>Feedback</DialogTitle>
+          <DialogTitle>反馈</DialogTitle>
           <DialogDescription>
-            We&apos;d love to hear what&apos;s working, what isn&apos;t, or
-            what you&apos;d like to see next.
+            欢迎告诉我们哪些地方好用、哪里不好用，或你希望下一步看到什么。
           </DialogDescription>
         </DialogHeader>
 
@@ -104,7 +103,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
             <ContentEditor
               ref={editorRef}
               defaultValue={draft.message}
-              placeholder="Tell us about your experience, bugs you've found, or features you'd like to see…"
+              placeholder="告诉我们你的使用体验、发现的问题，或希望看到的功能…"
               onUpdate={(md) => { setMessage(md); setDraft({ message: md }); }}
               onUploadFile={uploadWithToast}
               onSubmit={handleSubmit}
@@ -118,7 +117,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
 
         <div className="flex items-center justify-end px-4 py-3 border-t shrink-0">
           <Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
-            {mutation.isPending ? "Sending…" : "Send feedback"}
+            {mutation.isPending ? "发送中…" : "发送反馈"}
             <kbd className="ml-1 inline-flex h-4 items-center gap-0.5 rounded border border-border/50 bg-background/30 px-1 font-mono text-[10px] leading-none">
               ⌘↵
             </kbd>

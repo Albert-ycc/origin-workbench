@@ -161,7 +161,7 @@ export function FileTree({
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
         <FolderOpen className="h-5 w-5 text-muted-foreground/40" />
-        <p className="mt-2 text-xs">No files</p>
+        <p className="mt-2 text-xs">暂无文件</p>
       </div>
     );
   }

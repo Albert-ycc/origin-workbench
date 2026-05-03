@@ -21,7 +21,7 @@ export function NoAgentBanner() {
       <div className="mx-auto flex w-full max-w-4xl items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs bg-muted text-muted-foreground ring-1 ring-border">
         <Bot className="size-3.5 shrink-0" />
         <span className="truncate">
-          You need an agent to start chatting.
+          需要先创建一个智能体，才能开始对话。
         </span>
       </div>
     </div>

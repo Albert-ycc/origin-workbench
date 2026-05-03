@@ -17,6 +17,7 @@ export function DesktopLoginPage() {
     <div className="flex h-screen flex-col">
       <DragStrip />
       <LoginPage
+        mode="local"
         logo={<MulticaIcon bordered size="lg" />}
         onSuccess={() => {
           // Auth store update triggers AppContent re-render → shows DesktopShell.

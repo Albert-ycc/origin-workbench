@@ -137,12 +137,12 @@ export function StepPlatformFork({
 
   const footerHint = (() => {
     if (waitlistSubmitted) {
-      return "You're on the waitlist — pick Skip to keep exploring.";
+      return "你已加入候补名单，可以点击“跳过”继续探索。";
     }
     if (downloaded) {
-      return "Finish setup on the download page, then come back to this tab.";
+      return "请在下载页完成设置，然后回到这个标签页。";
     }
-    return "Pick a path above — or skip and configure a runtime later.";
+    return "请选择上方路径，也可以先跳过，稍后再配置运行环境。";
   })();
 
   return (
@@ -159,7 +159,7 @@ export function StepPlatformFork({
               className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back
+              返回
             </button>
           ) : (
             <span aria-hidden className="w-0" />
@@ -176,31 +176,30 @@ export function StepPlatformFork({
         >
           <div className="mx-auto w-full max-w-[620px] px-6 py-10 sm:px-10 md:px-14 lg:px-0 lg:py-14">
             <div className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              Step 3 · Runtime
+              第 3 步 · 运行环境
             </div>
             <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
-              Connect a runtime.
+              连接运行环境。
             </h1>
             <p className="mt-4 max-w-[560px] text-[15.5px] leading-[1.55] text-muted-foreground">
-              A runtime is what actually runs your agents&apos; work. Pick
-              how you&apos;d like to set one up.
+              运行环境是真正执行智能体任务的地方。请选择你想使用的配置方式。
             </p>
 
             <div className="mt-10 flex max-w-[560px] flex-col gap-3.5">
               <ForkPrimary onClick={pickDesktop} downloaded={downloaded} />
 
               <ForkAlt
-                title="Install the CLI"
-                subtitle="For servers, remote dev boxes, and headless setups. Terminal required."
-                actionLabel="Show steps"
+                title="安装 CLI"
+                subtitle="适用于服务器、远程开发机和无界面环境。需要终端。"
+                actionLabel="查看步骤"
                 onAction={handleOpenCli}
               />
 
               <ForkAlt
-                title="Cloud runtime"
-                subtitle="We host the runtime. Not live yet — join the waitlist."
+                title="云端运行环境"
+                subtitle="我们托管运行环境。暂未开放，可加入候补名单。"
                 actionLabel={
-                  waitlistSubmitted ? "On the list" : "Join waitlist"
+                  waitlistSubmitted ? "已加入名单" : "加入候补"
                 }
                 onAction={handleOpenCloud}
               />
@@ -219,7 +218,7 @@ export function StepPlatformFork({
             {footerHint}
           </span>
           <Button variant="secondary" onClick={() => onNext(null)}>
-            Skip for now
+            暂时跳过
           </Button>
         </footer>
       </div>
@@ -281,19 +280,19 @@ function ForkPrimary({
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-[17px] font-medium tracking-tight">
           <Download className="h-4 w-4" aria-hidden />
-          {downloaded ? "Continuing on the download page…" : "Download the desktop app"}
+          {downloaded ? "正在下载页继续…" : "下载桌面版"}
         </div>
         <div className="mt-1 text-[13px] text-background/60">
           {downloaded
-            ? "Opened in a new tab. Pick your installer there, then finish setup on desktop."
-            : "Bundled daemon, zero setup. Pick your platform on the next page."}
+            ? "已在新标签页打开。请在那边选择安装包，然后回到桌面版完成设置。"
+            : "内置守护进程，无需额外配置。下一页选择你的平台。"}
         </div>
       </div>
       <span
         aria-hidden
         className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-background/10 px-4 py-2 text-[13px] font-medium transition-colors group-hover:bg-background/20"
       >
-        Download
+        下载
         <ArrowRight className="h-3.5 w-3.5" />
       </span>
     </button>
@@ -378,11 +377,9 @@ function CliInstallDialog({
           Connect button below the viewport. */}
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>Install the CLI</DialogTitle>
+          <DialogTitle>安装 CLI</DialogTitle>
           <DialogDescription>
-            Same daemon as Desktop, installed via terminal. Use it when
-            Desktop doesn&apos;t fit — servers, remote dev boxes, or
-            headless setups.
+            与桌面版相同的守护进程，通过终端安装。适用于服务器、远程开发机或无界面环境。
           </DialogDescription>
         </DialogHeader>
 
@@ -397,8 +394,7 @@ function CliInstallDialog({
               <div className="flex items-center gap-2 pt-1 text-sm">
                 <div className="h-2 w-2 rounded-full bg-success" />
                 <span className="font-medium">
-                  {runtimes.length} runtime{runtimes.length > 1 ? "s" : ""}{" "}
-                  connected
+                  已连接 {runtimes.length} 个运行环境
                 </span>
               </div>
               {/* Cap the runtime list at ~4 rows visible, scroll the rest.
@@ -428,16 +424,16 @@ function CliInstallDialog({
           <span className="text-xs text-muted-foreground">
             {hasRuntimes
               ? canConnect && selectedName
-                ? `Selected: ${selectedName}`
-                : "Pick a runtime above."
+                ? `已选择：${selectedName}`
+                : "请选择上方运行环境。"
               : null}
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose}>
-              Cancel
+              取消
             </Button>
             <Button disabled={!canConnect} onClick={onConnect}>
-              Connect &amp; continue
+              连接并继续
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
@@ -520,7 +516,7 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
           className="inline-block size-2 shrink-0 rounded-full bg-success animate-pulse"
         />
         <span className="font-medium text-foreground">
-          Live · Listening for your daemon
+          实时 · 正在监听你的守护进程
         </span>
         <span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
           {formatElapsed(elapsed)}
@@ -533,32 +529,29 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
       >
         {stage === "normal" && (
           <>
-            Run the command above. As soon as{" "}
-            <span className="font-mono">multica setup</span> finishes
-            browser sign-in and the daemon starts, your runtime will
-            appear here automatically (usually 10–30 seconds).
+            运行上方命令。当{" "}
+            <span className="font-mono">multica setup</span>{" "}
+            完成浏览器登录并启动守护进程后，你的运行环境会自动出现在这里（通常 10–30 秒）。
           </>
         )}
         {stage === "midway" && (
           <>
-            Still listening. Make sure you finished the browser tab that{" "}
-            <span className="font-mono">multica setup</span> opened — it
-            needs you to approve the sign-in before the daemon can start.
+            仍在监听。请确认你已经完成{" "}
+            <span className="font-mono">multica setup</span>{" "}
+            打开的浏览器标签页里的登录授权，守护进程才会启动。
           </>
         )}
         {stage === "slow" && (
           <>
-            Taking longer than usual. Check the terminal where you ran{" "}
-            <span className="font-mono">multica setup</span> for errors.
+            用时比平常更久。请检查运行{" "}
+            <span className="font-mono">multica setup</span> 的终端是否有错误。
           </>
         )}
         {stage === "stalled" && (
           <>
-            Nothing coming through yet. If you&apos;re not comfortable
-            with the terminal,{" "}
+            暂时还没有收到运行环境。如果你不想处理终端配置，{" "}
             <span className="font-medium text-foreground">Desktop</span>{" "}
-            is the smoother path — it bundles the daemon. Close this
-            dialog and pick Desktop, or hit Skip to continue.
+            会更顺畅，它内置守护进程。你可以关闭弹窗选择桌面版，或点击跳过继续。
           </>
         )}
       </p>
@@ -591,10 +584,9 @@ function CloudWaitlistDialog({
     <Dialog open={open} onOpenChange={(o) => (o ? null : onClose())}>
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Join the cloud runtime waitlist</DialogTitle>
+          <DialogTitle>加入云端运行环境候补名单</DialogTitle>
           <DialogDescription>
-            Cloud runtimes aren&apos;t live yet. Leave your email and
-            we&apos;ll email you when they are.
+            云端运行环境暂未开放。留下邮箱，开放后我们会邮件通知你。
           </DialogDescription>
         </DialogHeader>
 
@@ -607,7 +599,7 @@ function CloudWaitlistDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
-            {submitted ? "Close" : "Cancel"}
+            {submitted ? "关闭" : "取消"}
           </Button>
         </DialogFooter>
       </DialogContent>

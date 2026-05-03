@@ -90,7 +90,7 @@ export function IssuePickerModal({
     >
       <Command shouldFilter={false}>
         <CommandInput
-          placeholder="Search issues..."
+          placeholder="搜索任务..."
           value={query}
           onValueChange={(v) => {
             setQuery(v);
@@ -100,15 +100,15 @@ export function IssuePickerModal({
         <CommandList>
           {isLoading && (
             <div className="py-6 text-center text-sm text-muted-foreground">
-              Searching...
+              搜索中...
             </div>
           )}
           {!isLoading && query.trim() && results.length === 0 && (
-            <CommandEmpty>No issues found.</CommandEmpty>
+            <CommandEmpty>没有找到任务。</CommandEmpty>
           )}
           {!isLoading && !query.trim() && (
             <div className="py-6 text-center text-sm text-muted-foreground">
-              Type to search issues
+              输入内容搜索任务
             </div>
           )}
           {results.length > 0 && (

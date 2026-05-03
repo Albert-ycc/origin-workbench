@@ -10,17 +10,19 @@ import {
   MessageSquare,
   Plus,
   SearchIcon,
-  Inbox,
-  CircleUser,
-  ListTodo,
-  FolderKanban,
   Bot,
   Monitor,
+  Network,
   Moon,
   Sun,
   BookOpenText,
   Settings,
   Building2,
+  Compass,
+  Lightbulb,
+  Route,
+  Brain,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Command as CommandPrimitive } from "cmdk";
@@ -91,11 +93,15 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 // against the current workspace slug at render time (see SearchCommand body).
 // Only parameterless paths are valid nav destinations.
 type NavKey =
-  | "inbox"
-  | "myIssues"
+  | "workbench"
+  | "ideas"
+  | "councils"
+  | "missions"
   | "issues"
+  | "explorations"
   | "projects"
   | "agents"
+  | "teams"
   | "runtimes"
   | "skills"
   | "settings";
@@ -108,14 +114,18 @@ interface NavPage {
 }
 
 const navPages: NavPage[] = [
-  { key: "inbox", label: "Inbox", icon: Inbox, keywords: ["inbox", "notifications"] },
-  { key: "myIssues", label: "My Issues", icon: CircleUser, keywords: ["my", "issues", "assigned"] },
-  { key: "issues", label: "Issues", icon: ListTodo, keywords: ["issues", "tasks", "bugs"] },
-  { key: "projects", label: "Projects", icon: FolderKanban, keywords: ["projects", "kanban"] },
-  { key: "agents", label: "Agents", icon: Bot, keywords: ["agents", "bots", "ai"] },
-  { key: "runtimes", label: "Runtimes", icon: Monitor, keywords: ["runtimes", "environments"] },
-  { key: "skills", label: "Skills", icon: BookOpenText, keywords: ["skills", "library"] },
-  { key: "settings", label: "Settings", icon: Settings, keywords: ["settings", "config", "preferences"] },
+  { key: "workbench", label: "原点工作台", icon: Compass, keywords: ["origin", "workbench", "home", "原点", "工作台", "首页"] },
+  { key: "ideas", label: "想法池", icon: Lightbulb, keywords: ["idea", "ideas", "capture", "想法", "灵感", "捕捉"] },
+  { key: "missions", label: "任务中枢", icon: Network, keywords: ["missions", "mission", "agent", "任务中枢", "派发", "智能体"] },
+  { key: "agents", label: "智能体", icon: Bot, keywords: ["agents", "bots", "ai", "智能体", "代理"] },
+  { key: "councils", label: "会议室", icon: Users, keywords: ["council", "meeting", "session", "会议室", "会议", "临时讨论"] },
+  { key: "explorations", label: "分叉探索", icon: Route, keywords: ["exploration", "branch", "fork", "分叉", "探索", "方案"] },
+  { key: "runtimes", label: "能力池", icon: Monitor, keywords: ["runtimes", "environments", "能力池", "运行环境", "环境"] },
+  { key: "skills", label: "记忆 / 技能", icon: Brain, keywords: ["skills", "library", "memory", "技能", "记忆", "能力库"] },
+  { key: "settings", label: "设置", icon: Settings, keywords: ["settings", "config", "preferences", "设置", "配置"] },
+  { key: "issues", label: "执行记录", icon: BookOpenText, keywords: ["issues", "tasks", "bugs", "执行记录", "任务", "问题"] },
+  { key: "teams", label: "旧团队编组", icon: Users, keywords: ["teams", "team", "captain", "团队", "负责人", "调试"] },
+  { key: "projects", label: "项目调试", icon: BookOpenText, keywords: ["projects", "kanban", "项目", "调试"] },
 ];
 
 type ThemeValue = "light" | "dark" | "system";
@@ -190,27 +200,27 @@ export function SearchCommand() {
     const activeThemeCheck = (value: ThemeValue) =>
       theme === value ? (
         <Check
-          aria-label="Current theme"
+          aria-label="当前主题"
           className="ml-auto size-4 shrink-0 text-muted-foreground"
         />
       ) : undefined;
 
     const items: CommandItem[] = [
       {
-        key: "new-issue",
-        label: "New Issue",
+        key: "new-mission",
+        label: "新建 Mission",
         icon: Plus,
-        keywords: ["new", "issue", "create", "add"],
+        keywords: ["new", "mission", "create", "add", "新建", "任务中枢", "创建"],
         onSelect: () => {
-          useModalStore.getState().open("quick-create-issue");
+          push(p.missions());
           setOpen(false);
         },
       },
       {
         key: "new-project",
-        label: "New Project",
+        label: "新建项目",
         icon: Plus,
-        keywords: ["new", "project", "create", "add"],
+        keywords: ["new", "project", "create", "add", "新建", "项目", "创建"],
         onSelect: () => {
           useModalStore.getState().open("create-project");
           setOpen(false);
@@ -223,24 +233,24 @@ export function SearchCommand() {
       items.push(
         {
           key: "copy-issue-link",
-          label: "Copy Issue Link",
+          label: "复制任务链接",
           icon: Link2,
-          keywords: ["copy", "link", "share", "url", identifier.toLowerCase()],
+          keywords: ["copy", "link", "share", "url", "复制", "链接", identifier.toLowerCase()],
           onSelect: () => {
             const url = getShareableUrl ? getShareableUrl(pathname) : window.location.href;
             void navigator.clipboard.writeText(url);
-            toast.success("Link copied");
+            toast.success("链接已复制");
             setOpen(false);
           },
         },
         {
           key: "copy-issue-identifier",
-          label: `Copy Identifier (${identifier})`,
+          label: `复制编号（${identifier}）`,
           icon: Copy,
-          keywords: ["copy", "id", "identifier", identifier.toLowerCase()],
+          keywords: ["copy", "id", "identifier", "复制", "编号", identifier.toLowerCase()],
           onSelect: () => {
             void navigator.clipboard.writeText(identifier);
-            toast.success(`Copied ${identifier}`);
+            toast.success(`已复制 ${identifier}`);
             setOpen(false);
           },
         },
@@ -250,9 +260,9 @@ export function SearchCommand() {
     items.push(
       {
         key: "theme-light",
-        label: "Switch to Light Theme",
+        label: "切换到浅色主题",
         icon: Sun,
-        keywords: ["light", "theme", "appearance", "mode", "bright"],
+        keywords: ["light", "theme", "appearance", "mode", "bright", "浅色", "主题", "外观"],
         trailing: activeThemeCheck("light"),
         onSelect: () => {
           setTheme("light");
@@ -261,9 +271,9 @@ export function SearchCommand() {
       },
       {
         key: "theme-dark",
-        label: "Switch to Dark Theme",
+        label: "切换到深色主题",
         icon: Moon,
-        keywords: ["dark", "theme", "appearance", "mode", "night"],
+        keywords: ["dark", "theme", "appearance", "mode", "night", "深色", "主题", "外观"],
         trailing: activeThemeCheck("dark"),
         onSelect: () => {
           setTheme("dark");
@@ -272,9 +282,9 @@ export function SearchCommand() {
       },
       {
         key: "theme-system",
-        label: "Use System Theme",
+        label: "跟随系统主题",
         icon: Monitor,
-        keywords: ["system", "theme", "appearance", "mode", "auto"],
+        keywords: ["system", "theme", "appearance", "mode", "auto", "系统", "主题", "外观", "自动"],
         trailing: activeThemeCheck("system"),
         onSelect: () => {
           setTheme("system");
@@ -291,7 +301,7 @@ export function SearchCommand() {
     // No query: only surface the primary creation action. Other commands
     // (theme switches, copy actions, New Project) are revealed as the user
     // types, leaving the empty-state space to Recent.
-    if (!q) return commands.filter((c) => c.key === "new-issue");
+    if (!q) return commands.filter((c) => c.key === "new-mission");
     return commands.filter(
       (c) =>
         c.label.toLowerCase().includes(q) ||
@@ -306,7 +316,7 @@ export function SearchCommand() {
     if (!q) return [];
     const others = workspaces.filter((w) => w.id !== currentWorkspace?.id);
     const wantsAll =
-      q.length >= 2 && ("workspace".startsWith(q) || "switch".startsWith(q));
+      q.length >= 2 && ("workspace".startsWith(q) || "switch".startsWith(q) || "工作区".startsWith(q) || "切换".startsWith(q));
     return others.filter(
       (w) =>
         wantsAll ||
@@ -435,7 +445,7 @@ export function SearchCommand() {
 
   const handleSwitchWorkspace = useCallback(
     (slug: string) => {
-      push(paths.workspace(slug).issues());
+      push(paths.workspace(slug).root());
       setOpen(false);
     },
     [push, setOpen],
@@ -449,9 +459,9 @@ export function SearchCommand() {
         showCloseButton={false}
       >
         <DialogHeader className="sr-only">
-          <DialogTitle>Search</DialogTitle>
+          <DialogTitle>搜索</DialogTitle>
           <DialogDescription>
-            Search pages, issues, and projects
+            搜索页面、任务和项目
           </DialogDescription>
         </DialogHeader>
         <CommandPrimitive
@@ -462,7 +472,7 @@ export function SearchCommand() {
           <div className="flex items-center gap-3 border-b px-4 py-3">
             <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
             <CommandPrimitive.Input
-              placeholder="Type a command or search..."
+              placeholder="输入命令或搜索..."
               value={query}
               onValueChange={handleValueChange}
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -478,7 +488,7 @@ export function SearchCommand() {
             {filteredPages.length > 0 && (
               <CommandPrimitive.Group className="p-2">
                 <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                  Pages
+                  页面
                 </div>
                 {filteredPages.map((page) => (
                   <CommandPrimitive.Item
@@ -500,7 +510,7 @@ export function SearchCommand() {
             {filteredCommands.length > 0 && (
               <CommandPrimitive.Group className="p-2">
                 <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                  Commands
+                  命令
                 </div>
                 {filteredCommands.map((cmd) => (
                   <CommandPrimitive.Item
@@ -519,11 +529,11 @@ export function SearchCommand() {
               </CommandPrimitive.Group>
             )}
 
-            {/* Workspaces section — switch to a different workspace, only shown when query matches */}
+            {/* Local spaces section — compatibility layer for the old workspace model. */}
             {filteredWorkspaces.length > 0 && (
               <CommandPrimitive.Group className="p-2">
                 <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                  Switch Workspace
+                  切换本地空间
                 </div>
                 {filteredWorkspaces.map((ws) => (
                   <CommandPrimitive.Item
@@ -557,13 +567,13 @@ export function SearchCommand() {
               filteredCommands.length === 0 &&
               filteredWorkspaces.length === 0 && (
                 <CommandPrimitive.Empty className="py-10 text-center text-sm text-muted-foreground">
-                  No results found.
+                  没有找到结果。
                 </CommandPrimitive.Empty>
               )}
 
             {!isLoading && results.projects.length > 0 && (
               <CommandPrimitive.Group
-                heading="Projects"
+                heading="项目"
                 className="p-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
               >
                 {results.projects.map((project) => (
@@ -602,7 +612,7 @@ export function SearchCommand() {
 
             {!isLoading && results.issues.length > 0 && (
               <CommandPrimitive.Group
-                heading="Issues"
+                heading="任务"
                 className="p-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
               >
                 {results.issues.map((issue) => (
@@ -650,7 +660,7 @@ export function SearchCommand() {
               <CommandPrimitive.Group className="p-2">
                 <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground">
                   <Clock className="size-3" />
-                  <span>Recent</span>
+                  <span>最近</span>
                 </div>
                 {recentIssues.map((item) => (
                   <CommandPrimitive.Item
@@ -679,7 +689,7 @@ export function SearchCommand() {
 
             {!isLoading && !query.trim() && recentIssues.length === 0 && (
               <div className="px-5 py-4 text-center text-xs text-muted-foreground">
-                Type to search issues and projects
+                输入内容搜索任务和项目
               </div>
             )}
           </CommandPrimitive.List>

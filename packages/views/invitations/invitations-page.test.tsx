@@ -124,7 +124,7 @@ describe("InvitationsPage", () => {
     listMyInvitations.mockResolvedValue([mkInvite("inv-1", "ws-1", "Acme")]);
     renderWithClient();
     await waitFor(() => screen.getByText("Acme"));
-    fireEvent.click(screen.getByRole("button", { name: /skip/i }));
+    fireEvent.click(screen.getByRole("button", { name: /跳过/i }));
     expect(navigate).toHaveBeenCalledWith("/onboarding");
     // Empty submit doesn't accept anything or touch onboarding state.
     expect(acceptInvitation).not.toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe("InvitationsPage", () => {
     // Select Acme via its label/checkbox row.
     fireEvent.click(screen.getByText("Acme"));
 
-    fireEvent.click(screen.getByRole("button", { name: /join 1 workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /加入 1 个工作区/i }));
 
     await waitFor(() => {
       expect(acceptInvitation).toHaveBeenCalledWith("inv-1");
@@ -151,7 +151,7 @@ describe("InvitationsPage", () => {
         completion_path: "invite_accept",
       });
       expect(refreshMe).toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith("/acme/issues");
+      expect(navigate).toHaveBeenCalledWith("/acme/workbench");
     });
   });
 
@@ -160,10 +160,10 @@ describe("InvitationsPage", () => {
     renderWithClient();
 
     await waitFor(() =>
-      screen.getByRole("button", { name: /continue to setup/i }),
+      screen.getByRole("button", { name: /继续设置/i }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: /continue to setup/i }),
+      screen.getByRole("button", { name: /继续设置/i }),
     );
     expect(navigate).toHaveBeenCalledWith("/onboarding");
   });

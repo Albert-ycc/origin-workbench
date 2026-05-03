@@ -313,14 +313,14 @@ function MermaidLightbox({
       className="mermaid-diagram-lightbox"
       role="dialog"
       aria-modal="true"
-      aria-label="Mermaid diagram fullscreen view"
+      aria-label="Mermaid 图表全屏视图"
       onClick={onClose}
     >
       <iframe
         className="mermaid-diagram-lightbox-frame"
         sandbox=""
         srcDoc={srcDoc}
-        title="Mermaid diagram fullscreen"
+        title="Mermaid 图表全屏"
         onClick={(e) => e.stopPropagation()}
       />
     </div>,
@@ -370,7 +370,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to render Mermaid diagram");
+          setError(err instanceof Error ? err.message : "渲染 Mermaid 图表失败");
         }
       }
     }
@@ -385,7 +385,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
   if (error) {
     return (
       <div ref={containerRef} className="mermaid-diagram mermaid-diagram-error">
-        <p>Unable to render Mermaid diagram.</p>
+        <p>无法渲染 Mermaid 图表。</p>
         <pre>
           <code>{chart}</code>
         </pre>
@@ -394,7 +394,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
   }
 
   return (
-    <div ref={containerRef} className="mermaid-diagram" aria-label="Mermaid diagram">
+    <div ref={containerRef} className="mermaid-diagram" aria-label="Mermaid 图表">
       {sandboxedDocument ? (
         <>
           <iframe
@@ -405,14 +405,14 @@ function MermaidDiagram({ chart }: { chart: string }) {
               height: layout.height ? `${layout.height}px` : undefined,
               width: layout.width ? `${layout.width}px` : undefined,
             }}
-            title="Mermaid diagram"
+            title="Mermaid 图表"
           />
           <div className="mermaid-diagram-toolbar">
             <button
               type="button"
               onClick={() => setLightboxOpen(true)}
-              title="Open fullscreen"
-              aria-label="Open Mermaid diagram fullscreen"
+              title="全屏打开"
+              aria-label="全屏打开 Mermaid 图表"
             >
               <Maximize2 className="size-3.5" />
             </button>
@@ -425,7 +425,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
           )}
         </>
       ) : (
-        <div className="mermaid-diagram-loading">Rendering diagram…</div>
+        <div className="mermaid-diagram-loading">正在渲染图表…</div>
       )}
     </div>
   );
@@ -448,9 +448,9 @@ const components: Partial<Components> = {
     const handleCopyLink = async () => {
       try {
         await navigator.clipboard.writeText(imgSrc);
-        toast.success("Link copied");
+        toast.success("链接已复制");
       } catch {
-        toast.error("Failed to copy link");
+        toast.error("复制链接失败");
       }
     };
 
@@ -463,13 +463,13 @@ const components: Partial<Components> = {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            <button type="button" onClick={handleView} title="View image">
+            <button type="button" onClick={handleView} title="查看图片">
               <Maximize2 className="size-3.5" />
             </button>
-            <button type="button" onClick={handleDownload} title="Download">
+            <button type="button" onClick={handleDownload} title="下载">
               <Download className="size-3.5" />
             </button>
-            <button type="button" onClick={handleCopyLink} title="Copy link">
+            <button type="button" onClick={handleCopyLink} title="复制链接">
               <LinkIcon className="size-3.5" />
             </button>
           </span>

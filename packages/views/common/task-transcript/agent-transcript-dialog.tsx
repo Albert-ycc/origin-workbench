@@ -78,17 +78,17 @@ const colorClasses: Record<EventColor, { bg: string; bgActive: string; label: st
 function getEventLabel(item: TimelineItem): string {
   switch (item.type) {
     case "text":
-      return "Agent";
+      return "智能体";
     case "thinking":
-      return "Thinking";
+      return "思考";
     case "tool_use":
       return item.tool ?? "Tool";
     case "tool_result":
-      return item.tool ? `${item.tool}` : "Result";
+      return item.tool ? `${item.tool}` : "结果";
     case "error":
-      return "Error";
+      return "错误";
     default:
-      return "Event";
+      return "事件";
   }
 }
 
@@ -282,17 +282,17 @@ export function AgentTranscriptDialog({
   const statusBadge = isLive ? (
     <span className="inline-flex items-center gap-1 rounded-full bg-info/15 px-2 py-0.5 text-xs font-medium text-info">
       <Loader2 className="h-3 w-3 animate-spin" />
-      Running
+      运行中
     </span>
   ) : task.status === "completed" ? (
     <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
       <CheckCircle2 className="h-3 w-3" />
-      Completed
+      已完成
     </span>
   ) : task.status === "failed" ? (
     <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
       <XCircle className="h-3 w-3" />
-      Failed
+      失败
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground capitalize">
@@ -306,7 +306,7 @@ export function AgentTranscriptDialog({
         className="!max-w-4xl !w-[calc(100vw-4rem)] !max-h-[calc(100vh-4rem)] !h-[calc(100vh-4rem)] flex flex-col !p-0 !gap-0 overflow-hidden"
         showCloseButton={false}
       >
-        <DialogTitle className="sr-only">Agent Execution Transcript</DialogTitle>
+        <DialogTitle className="sr-only">智能体执行记录</DialogTitle>
 
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="border-b px-4 py-3 shrink-0 space-y-2">
@@ -536,7 +536,7 @@ function TimelineBar({
   }
 
   return (
-    <div className="flex gap-0.5 h-5 rounded overflow-hidden" role="navigation" aria-label="Timeline">
+    <div className="flex gap-0.5 h-5 rounded overflow-hidden" role="navigation" aria-label="时间线">
       {segments.map((seg) => {
         const isSelected = selectedSeq !== null && items.slice(seg.startIdx, seg.endIdx + 1).some((i) => i.seq === selectedSeq);
         const color = colorClasses[seg.color];

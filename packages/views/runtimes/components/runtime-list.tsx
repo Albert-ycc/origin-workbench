@@ -73,6 +73,7 @@ export function RuntimeList({
   runtimes,
   updatableIds,
   now,
+  onCreateAgent,
 }: {
   runtimes: AgentRuntime[];
   // Kept on the API surface for callers — the CLI column re-derives
@@ -81,6 +82,7 @@ export function RuntimeList({
   // page-level wrapper that still computes the set.
   updatableIds?: Set<string>;
   now: number;
+  onCreateAgent: (runtime: AgentRuntime) => void;
 }) {
   void updatableIds;
 
@@ -141,8 +143,9 @@ export function RuntimeList({
         latestCliVersion,
         wsId,
         now,
+        onCreateAgent,
       }),
-    [showOwner, latestCliVersion, wsId, now],
+    [showOwner, latestCliVersion, wsId, now, onCreateAgent],
   );
 
   const table = useReactTable({

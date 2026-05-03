@@ -10,7 +10,7 @@ export function ProjectDetailPage() {
   const wsId = useWorkspaceId();
   const { data: project } = useQuery(projectDetailOptions(wsId, id!));
 
-  useDocumentTitle(project ? `${project.icon || "📁"} ${project.title}` : "Project");
+  useDocumentTitle(project ? `${project.icon || "📁"} ${project.title}` : "项目");
 
   if (!id) return null;
   return <ProjectDetail projectId={id} />;

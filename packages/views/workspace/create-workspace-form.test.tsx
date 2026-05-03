@@ -22,7 +22,7 @@ describe("CreateWorkspaceForm", () => {
 
   it("auto-generates slug from name until user edits slug", () => {
     renderForm();
-    fireEvent.change(screen.getByLabelText(/workspace name/i), {
+    fireEvent.change(screen.getByLabelText(/工作区名称/i), {
       target: { value: "Acme Corp" },
     });
     expect(screen.getByDisplayValue("acme-corp")).toBeInTheDocument();
@@ -30,10 +30,10 @@ describe("CreateWorkspaceForm", () => {
 
   it("stops auto-generating slug once user edits slug directly", () => {
     renderForm();
-    fireEvent.change(screen.getByLabelText(/workspace url/i), {
+    fireEvent.change(screen.getByLabelText(/工作区 URL/i), {
       target: { value: "custom" },
     });
-    fireEvent.change(screen.getByLabelText(/workspace name/i), {
+    fireEvent.change(screen.getByLabelText(/工作区名称/i), {
       target: { value: "Different Name" },
     });
     expect(screen.getByDisplayValue("custom")).toBeInTheDocument();
@@ -45,10 +45,10 @@ describe("CreateWorkspaceForm", () => {
       opts?.onSuccess?.({ id: "ws-1", slug: "acme", name: "Acme" });
     });
     renderForm(onSuccess);
-    fireEvent.change(screen.getByLabelText(/workspace name/i), {
+    fireEvent.change(screen.getByLabelText(/工作区名称/i), {
       target: { value: "Acme" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /新建工作区/i }));
     await waitFor(() =>
       expect(onSuccess).toHaveBeenCalledWith(
         expect.objectContaining({ slug: "acme" }),
@@ -61,10 +61,10 @@ describe("CreateWorkspaceForm", () => {
       opts?.onError?.({ status: 409 });
     });
     renderForm();
-    fireEvent.change(screen.getByLabelText(/workspace name/i), {
+    fireEvent.change(screen.getByLabelText(/工作区名称/i), {
       target: { value: "Taken" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /新建工作区/i }));
     await waitFor(() =>
       expect(screen.getByText(/already taken/i)).toBeInTheDocument(),
     );
@@ -72,14 +72,14 @@ describe("CreateWorkspaceForm", () => {
 
   it("disables submit when slug has invalid format", () => {
     renderForm();
-    fireEvent.change(screen.getByLabelText(/workspace name/i), {
+    fireEvent.change(screen.getByLabelText(/工作区名称/i), {
       target: { value: "Valid Name" },
     });
-    fireEvent.change(screen.getByLabelText(/workspace url/i), {
+    fireEvent.change(screen.getByLabelText(/工作区 URL/i), {
       target: { value: "Invalid Slug!" },
     });
     expect(
-      screen.getByRole("button", { name: /create workspace/i }),
+      screen.getByRole("button", { name: /新建工作区/i }),
     ).toBeDisabled();
   });
 });

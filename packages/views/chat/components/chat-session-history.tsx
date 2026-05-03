@@ -56,9 +56,9 @@ export function ChatSessionHistory() {
           >
             <ArrowLeft />
           </TooltipTrigger>
-          <TooltipContent side="bottom">Back</TooltipContent>
+          <TooltipContent side="bottom">返回</TooltipContent>
         </Tooltip>
-        <span className="text-sm font-medium">Chat History</span>
+        <span className="text-sm font-medium">对话历史</span>
       </div>
 
       {/* Session list */}
@@ -66,7 +66,7 @@ export function ChatSessionHistory() {
         {sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
             <MessageSquare className="size-6" />
-            <span className="text-sm">No chat sessions yet</span>
+            <span className="text-sm">暂无对话</span>
           </div>
         ) : (
           <div>
@@ -116,7 +116,7 @@ function SessionItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">
-            {session.title || "Untitled"}
+            {session.title || "未命名"}
           </span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
@@ -140,9 +140,9 @@ function formatTimeAgo(dateStr: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  if (diffMins < 1) return "刚刚";
+  if (diffMins < 60) return `${diffMins} 分钟前`;
+  if (diffHours < 24) return `${diffHours} 小时前`;
+  if (diffDays < 7) return `${diffDays} 天前`;
+  return date.toLocaleDateString("zh-CN");
 }

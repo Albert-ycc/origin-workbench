@@ -197,10 +197,10 @@ export function DaemonPanel({
     try {
       await navigator.clipboard.writeText(text);
       toast.success(
-        `Copied ${filtered.length} line${filtered.length === 1 ? "" : "s"}`,
+        `已复制 ${filtered.length} 行日志`,
       );
     } catch (err) {
-      toast.error("Failed to copy", {
+      toast.error("复制失败", {
         description: err instanceof Error ? err.message : String(err),
       });
     }
@@ -252,14 +252,14 @@ export function DaemonPanel({
           <div className="flex min-w-0 items-center gap-2">
             <Server className="size-4 shrink-0 text-muted-foreground" />
             <DialogTitle className="text-sm font-medium">
-              Local daemon logs
+              本地守护进程日志
             </DialogTitle>
             <ContextBadge status={status} runtimeCount={runtimeCount} />
           </div>
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            aria-label="Close"
+            aria-label="关闭"
             className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X className="size-4" />
@@ -274,7 +274,7 @@ export function DaemonPanel({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search…"
+              placeholder="搜索…"
               className="h-7 w-full rounded-md border bg-background pl-7 pr-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
@@ -305,7 +305,7 @@ export function DaemonPanel({
               disabled={filtered.length === 0}
             >
               <CopyIcon className="size-3.5 mr-1.5" />
-              Copy
+              复制
             </Button>
             <Button
               variant="ghost"
@@ -315,7 +315,7 @@ export function DaemonPanel({
               disabled={logs.length === 0}
             >
               <Trash2 className="size-3.5 mr-1.5" />
-              Clear
+              清空
             </Button>
           </div>
         </div>
@@ -366,10 +366,10 @@ export function DaemonPanel({
             paused" (it isn't — data keeps flowing into the buffer). */}
         <div className="flex shrink-0 items-center justify-between border-t bg-muted/30 px-4 py-1.5 text-xs text-muted-foreground">
           <span className="tabular-nums">
-            Showing {filtered.length} of {logs.length}
+            显示 {filtered.length} / {logs.length}
             {logs.length === MAX_LOG_LINES && (
               <span className="ml-1 text-muted-foreground/60">
-                (buffer full)
+                （缓冲区已满）
               </span>
             )}
           </span>
@@ -380,7 +380,7 @@ export function DaemonPanel({
               className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-muted hover:text-foreground"
             >
               <ArrowDown className="size-3" />
-              Jump to latest
+              跳到最新
             </button>
           )}
         </div>
@@ -422,7 +422,7 @@ function ContextBadge({
       )}
       {isRunning && runtimeCount > 0 && (
         <span className="text-muted-foreground">
-          · {runtimeCount} runtime{runtimeCount === 1 ? "" : "s"}
+          · {runtimeCount} 个运行环境
         </span>
       )}
     </span>
@@ -580,8 +580,8 @@ function GroupRows({
         >
           <span>···</span>
           <span>
-            {rest.length} more &ldquo;{truncateValue(first.message, 48)}
-            &rdquo; — click to expand
+            还有 {rest.length} 条相同日志：“{truncateValue(first.message, 48)}
+            ”，点击展开
           </span>
         </button>
       </>
@@ -613,7 +613,7 @@ function GroupRows({
         className="my-0.5 ml-2 inline-flex w-fit items-center gap-2 rounded border border-dashed border-muted-foreground/25 px-2 py-0.5 text-[11px] italic text-muted-foreground/60 hover:text-foreground"
       >
         <span>···</span>
-        <span>collapse {rest.length + 1} repeated</span>
+        <span>收起 {rest.length + 1} 条重复日志</span>
       </button>
     </>
   );
@@ -631,14 +631,14 @@ function EmptyState({
   let title: string;
   let subtitle: string;
   if (hasFilter) {
-    title = "No matching log lines";
-    subtitle = "Try a different search or level toggle.";
+    title = "没有匹配的日志";
+    subtitle = "换个关键词或调整日志级别筛选。";
   } else if (!isRunning) {
-    title = "Daemon isn't running";
-    subtitle = "Start the daemon to see logs here.";
+    title = "守护进程未运行";
+    subtitle = "启动守护进程后，这里会显示日志。";
   } else if (!hasLogs) {
-    title = "Waiting for logs…";
-    subtitle = "New entries will appear in real time.";
+    title = "正在等待日志…";
+    subtitle = "新日志会实时显示在这里。";
   } else {
     title = "";
     subtitle = "";

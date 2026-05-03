@@ -82,17 +82,17 @@ function DeleteCommentDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete comment</AlertDialogTitle>
+          <AlertDialogTitle>删除评论</AlertDialogTitle>
           <AlertDialogDescription>
             {hasReplies
-              ? "This comment and all its replies will be permanently deleted. This cannot be undone."
-              : "This comment will be permanently deleted. This cannot be undone."}
+              ? "这条评论和所有回复会被永久删除。此操作无法撤销。"
+              : "这条评论会被永久删除。此操作无法撤销。"}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>取消</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={onConfirm}>
-            Delete
+            删除
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -214,7 +214,7 @@ function CommentRow({
       await onEdit(entry.id, trimmed);
       setEditing(false);
     } catch {
-      toast.error("Failed to update comment");
+      toast.error("更新评论失败");
     }
   };
 
@@ -259,10 +259,10 @@ function CommentRow({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => {
                 copyMarkdown(entry.content ?? "");
-                toast.success("Copied");
+                toast.success("已复制");
               }}>
                 <Copy className="h-3.5 w-3.5" />
-                Copy
+                复制
               </DropdownMenuItem>
               {(canEditEntry || canDeleteEntry) && (
                 <>
@@ -270,14 +270,14 @@ function CommentRow({
                   {canEditEntry && (
                     <DropdownMenuItem onClick={startEdit}>
                       <Pencil className="h-3.5 w-3.5" />
-                      Edit
+                      编辑
                     </DropdownMenuItem>
                   )}
                   {canEditEntry && canDeleteEntry && <DropdownMenuSeparator />}
                   {canDeleteEntry && (
                     <DropdownMenuItem onClick={() => setConfirmDelete(true)} variant="destructive">
                       <Trash2 className="h-3.5 w-3.5" />
-                      Delete
+                      删除
                     </DropdownMenuItem>
                   )}
                 </>
@@ -303,7 +303,7 @@ function CommentRow({
             <ContentEditor
               ref={editEditorRef}
               defaultValue={entry.content ?? ""}
-              placeholder="Edit comment..."
+              placeholder="编辑评论..."
               onSubmit={saveEdit}
               onUploadFile={(file) => uploadWithToast(file, { issueId })}
               debounceMs={100}
@@ -316,8 +316,8 @@ function CommentRow({
               onSelect={(file) => editEditorRef.current?.uploadFile(file)}
             />
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
-              <Button size="sm" variant="outline" onClick={saveEdit}>Save</Button>
+              <Button size="sm" variant="ghost" onClick={cancelEdit}>取消</Button>
+              <Button size="sm" variant="outline" onClick={saveEdit}>保存</Button>
             </div>
           </div>
           {isDragOver && <FileDropOverlay />}
@@ -408,7 +408,7 @@ function CommentCard({
       await onEdit(entry.id, trimmed);
       setEditing(false);
     } catch {
-      toast.error("Failed to update comment");
+      toast.error("更新评论失败");
     }
   };
 
@@ -464,7 +464,7 @@ function CommentCard({
             )}
             {!open && replyCount > 0 && (
               <span className="shrink-0 text-xs text-muted-foreground">
-                {replyCount} {replyCount === 1 ? "reply" : "replies"}
+                {replyCount} 条回复
               </span>
             )}
 
@@ -485,10 +485,10 @@ function CommentCard({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => {
                     copyMarkdown(entry.content ?? "");
-                    toast.success("Copied");
+                    toast.success("已复制");
                   }}>
                     <Copy className="h-3.5 w-3.5" />
-                    Copy
+                    复制
                   </DropdownMenuItem>
                   {(canEditEntry || canDeleteEntry) && (
                     <>
@@ -496,14 +496,14 @@ function CommentCard({
                       {canEditEntry && (
                         <DropdownMenuItem onClick={startEdit}>
                           <Pencil className="h-3.5 w-3.5" />
-                          Edit
+                          编辑
                         </DropdownMenuItem>
                       )}
                       {canEditEntry && canDeleteEntry && <DropdownMenuSeparator />}
                       {canDeleteEntry && (
                         <DropdownMenuItem onClick={() => setConfirmDelete(true)} variant="destructive">
                           <Trash2 className="h-3.5 w-3.5" />
-                          Delete
+                          删除
                         </DropdownMenuItem>
                       )}
                     </>
@@ -535,7 +535,7 @@ function CommentCard({
                   <ContentEditor
                     ref={editEditorRef}
                     defaultValue={entry.content ?? ""}
-                    placeholder="Edit comment..."
+                    placeholder="编辑评论..."
                     onSubmit={saveEdit}
                     onUploadFile={(file) => uploadWithToast(file, { issueId })}
                     debounceMs={100}
@@ -548,8 +548,8 @@ function CommentCard({
                     onSelect={(file) => editEditorRef.current?.uploadFile(file)}
                   />
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
-                    <Button size="sm" variant="outline" onClick={saveEdit}>Save</Button>
+                    <Button size="sm" variant="ghost" onClick={cancelEdit}>取消</Button>
+                    <Button size="sm" variant="outline" onClick={saveEdit}>保存</Button>
                   </div>
                 </div>
                 {parentDragOver && <FileDropOverlay />}
@@ -593,7 +593,7 @@ function CommentCard({
           <div className="border-t border-border/50 px-4 py-2.5">
             <ReplyInput
               issueId={issueId}
-              placeholder="Leave a reply..."
+              placeholder="写下回复..."
               size="sm"
               avatarType="member"
               avatarId={currentUserId ?? ""}

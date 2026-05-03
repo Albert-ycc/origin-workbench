@@ -11,30 +11,28 @@ export function RuntimeAsidePanel() {
     <div className="flex flex-col gap-6">
       <section>
         <div className="mb-3 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          What&apos;s a runtime?
+          什么是运行环境？
         </div>
         <p className="text-[14px] leading-[1.6] text-foreground/80">
-          A <strong className="font-medium text-foreground">runtime</strong>{" "}
-          is a small background process that runs on your machine. It
-          connects your workspace to AI coding tools like Claude Code or
-          Codex, and executes the tasks your agents pick up.
+          <strong className="font-medium text-foreground">运行环境</strong>
+          是运行在你机器上的小型后台进程。它把工作区连接到 Claude Code、Codex 等 AI 编程工具，并执行智能体接到的任务。
         </p>
       </section>
 
       <section>
         <div className="mb-3 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          Good to know
+          你需要知道
         </div>
         <div className="flex flex-col gap-4">
           <AsideItem
             glyph="↻"
-            title="Swap anytime"
-            body="Each agent's runtime is just a setting. Change it whenever you want."
+            title="随时切换"
+            body="每个智能体的运行环境只是一个设置，需要时可以随时更换。"
           />
           <AsideItem
             glyph="∞"
-            title="Add more later"
-            body="You can connect a second runtime on another machine for a team, or a dedicated one per agent."
+            title="以后再添加"
+            body="你可以为团队连接另一台机器上的运行环境，也可以给每个智能体单独配置。"
           />
         </div>
       </section>
@@ -45,7 +43,7 @@ export function RuntimeAsidePanel() {
         rel="noopener noreferrer"
         className="self-start text-[13px] text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
       >
-        Learn about runtimes →
+        了解运行环境 →
       </a>
     </div>
   );

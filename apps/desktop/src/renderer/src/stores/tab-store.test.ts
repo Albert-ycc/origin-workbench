@@ -114,7 +114,7 @@ describe("useTabStore actions", () => {
     const s = useTabStore.getState();
     expect(s.activeWorkspaceSlug).toBe("acme");
     expect(s.byWorkspace.acme.tabs).toHaveLength(1);
-    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/issues");
+    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/workbench");
   });
 
   it("switchWorkspace without openPath restores the group's last active tab", () => {
@@ -136,16 +136,16 @@ describe("useTabStore actions", () => {
 
   it("switchWorkspace with openPath dedupes into an existing tab with same path", () => {
     const store = useTabStore.getState();
-    store.switchWorkspace("acme"); // creates default /acme/issues
+    store.switchWorkspace("acme"); // creates default /acme/workbench
     store.addTab("/acme/projects", "Projects", "FolderKanban");
 
-    store.switchWorkspace("acme", "/acme/issues");
+    store.switchWorkspace("acme", "/acme/workbench");
     const s = useTabStore.getState();
     expect(s.byWorkspace.acme.tabs).toHaveLength(2); // no duplicate created
     const activeTab = s.byWorkspace.acme.tabs.find(
       (t) => t.id === s.byWorkspace.acme.activeTabId,
     );
-    expect(activeTab?.path).toBe("/acme/issues");
+    expect(activeTab?.path).toBe("/acme/workbench");
   });
 
   it("switchWorkspace with openPath not matching any tab adds a new tab", () => {
@@ -176,7 +176,7 @@ describe("useTabStore actions", () => {
     store.closeTab(onlyTabId);
     const s = useTabStore.getState();
     expect(s.byWorkspace.acme.tabs).toHaveLength(1);
-    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/issues");
+    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/workbench");
     expect(s.byWorkspace.acme.tabs[0].id).not.toBe(onlyTabId); // fresh tab
   });
 
@@ -220,5 +220,49 @@ describe("useTabStore actions", () => {
     const acmeTabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     store.setActiveTab(acmeTabId);
     expect(useTabStore.getState().activeWorkspaceSlug).toBe("acme");
+  });
+});
+
+describe("persisted tab migration", () => {
+  it("normalizes legacy default issues and missions tabs to workbench on rehydrate", () => {
+    const persisted = {
+      state: {
+        activeWorkspaceSlug: "acme",
+        byWorkspace: {
+          acme: {
+            activeTabId: "t1",
+            tabs: [
+              { id: "t1", path: "/acme/issues", title: "任务", icon: "ListTodo" },
+              { id: "t2", path: "/acme/missions", title: "任务中枢", icon: "Network" },
+              { id: "t3", path: "/acme/issues/bug-42", title: "Bug 42", icon: "ListTodo" },
+            ],
+          },
+        },
+      },
+      version: 2,
+    };
+
+    localStorage.setItem("multica_tabs", JSON.stringify(persisted));
+    useTabStore.persist.rehydrate();
+
+    const tabs = useTabStore.getState().byWorkspace.acme.tabs;
+    expect(tabs[0]).toMatchObject({
+      id: "t1",
+      path: "/acme/workbench",
+      title: "原点工作台",
+      icon: "Compass",
+    });
+    expect(tabs[1]).toMatchObject({
+      id: "t2",
+      path: "/acme/workbench",
+      title: "原点工作台",
+      icon: "Compass",
+    });
+    expect(tabs[2]).toMatchObject({
+      id: "t3",
+      path: "/acme/issues/bug-42",
+      title: "Bug 42",
+      icon: "ListTodo",
+    });
   });
 });

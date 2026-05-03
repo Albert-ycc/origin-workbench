@@ -1,6 +1,10 @@
 import {
   Inbox,
   CircleUser,
+  Compass,
+  Lightbulb,
+  Network,
+  Route,
   ListTodo,
   Bot,
   Monitor,
@@ -8,6 +12,7 @@ import {
   Settings,
   X,
   Plus,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -35,11 +40,16 @@ import { paths } from "@multica/core/paths";
 const TAB_ICONS: Record<string, LucideIcon> = {
   Inbox,
   CircleUser,
+  Compass,
+  Lightbulb,
+  Network,
+  Route,
   ListTodo,
   Bot,
   Monitor,
   BookOpenText,
   Settings,
+  Users,
 };
 
 function SortableTabItem({ tab, isActive, isOnly }: { tab: Tab; isActive: boolean; isOnly: boolean }) {
@@ -126,8 +136,8 @@ function NewTabButton() {
     // per workspace, so there is no cross-workspace ambiguity to resolve.
     const activeSlug = useTabStore.getState().activeWorkspaceSlug;
     if (!activeSlug) return;
-    const path = paths.workspace(activeSlug).issues();
-    const tabId = addTab(path, "Issues", resolveRouteIcon(path));
+    const path = paths.workspace(activeSlug).root();
+    const tabId = addTab(path, "原点工作台", resolveRouteIcon(path));
     if (tabId) setActiveTab(tabId);
   };
 

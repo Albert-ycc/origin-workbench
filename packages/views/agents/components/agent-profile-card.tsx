@@ -45,7 +45,7 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
 
   if (!agent) {
     return (
-      <div className="text-xs text-muted-foreground">Agent unavailable</div>
+      <div className="text-xs text-muted-foreground">智能体不可用</div>
     );
   }
 
@@ -85,7 +85,7 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
             {!isArchived && <VisibilityBadge value={agent.visibility} compact />}
             {isArchived && (
               <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                Archived
+                已归档
               </span>
             )}
           </div>
@@ -98,7 +98,7 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
             href={p.agentDetail(agent.id)}
             className="mr-1 mt-0.5 shrink-0 text-xs font-normal text-brand opacity-0 transition-opacity group-hover:opacity-100"
           >
-            Detail →
+            详情 →
           </AppLink>
         )}
       </div>
@@ -118,7 +118,7 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
         {agent.skills.length > 0 && (
           <SkillsRow skills={agent.skills.map((s) => s.name)} />
         )}
-        {owner && <MetaRow label="Owner" value={owner.name} />}
+        {owner && <MetaRow label="所有者" value={owner.name} />}
       </div>
     </div>
   );
@@ -168,10 +168,10 @@ function RuntimeRow({
     : runtime
       ? deriveRuntimeHealth(runtime, Date.now())
       : "offline";
-  const label = runtime?.name ?? (isCloud ? "Cloud" : "Unknown runtime");
+  const label = runtime?.name ?? (isCloud ? "云端" : "未知运行环境");
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-12 shrink-0 text-muted-foreground">Runtime</span>
+      <span className="w-12 shrink-0 text-muted-foreground">运行环境</span>
       <HealthIcon health={health} className="h-3 w-3 shrink-0" />
       <span className="min-w-0 truncate" title={label}>
         {label}
@@ -204,7 +204,7 @@ function SkillsRow({ skills }: { skills: string[] }) {
   const overflow = skills.length - visible.length;
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-12 shrink-0 text-muted-foreground">Skills</span>
+      <span className="w-12 shrink-0 text-muted-foreground">技能</span>
       <div className="flex min-w-0 flex-wrap gap-1">
         {visible.map((s) => (
           <span

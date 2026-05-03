@@ -10,12 +10,12 @@ import { getInboxDisplayTitle } from "./inbox-display";
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return `${hours} 小时`;
   const days = Math.floor(hours / 24);
-  return `${days}d`;
+  return `${days} 天`;
 }
 
 export { timeAgo };
@@ -65,7 +65,7 @@ export function InboxListItem({
               <span
                 role="button"
                 tabIndex={-1}
-                title="Mark as done"
+                title="标记完成"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDone();
@@ -84,7 +84,7 @@ export function InboxListItem({
             <span
               role="button"
               tabIndex={-1}
-              title="Archive"
+              title="归档"
               onClick={(e) => {
                 e.stopPropagation();
                 onArchive();

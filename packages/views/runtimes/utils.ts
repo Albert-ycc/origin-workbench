@@ -12,26 +12,26 @@ import type {
 // — gives the user enough precision to tell "just lost" from "long lost"
 // at a glance without forcing them to mouse-over for a full timestamp.
 export function formatLastSeen(lastSeenAt: string | null): string {
-  if (!lastSeenAt) return "Never";
+  if (!lastSeenAt) return "从未";
   const diffMs = Date.now() - new Date(lastSeenAt).getTime();
-  if (diffMs < 5_000) return "Just now";
+  if (diffMs < 5_000) return "刚刚";
 
   const seconds = Math.floor(diffMs / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (minutes < 1) return `${seconds}s ago`;
+  if (minutes < 1) return `${seconds} 秒前`;
   if (hours < 1) {
     const s = seconds % 60;
-    return s > 0 ? `${minutes}m ${s}s ago` : `${minutes}m ago`;
+    return s > 0 ? `${minutes} 分 ${s} 秒前` : `${minutes} 分钟前`;
   }
   if (days < 1) {
     const m = minutes % 60;
-    return m > 0 ? `${hours}h ${m}m ago` : `${hours}h ago`;
+    return m > 0 ? `${hours} 小时 ${m} 分钟前` : `${hours} 小时前`;
   }
   const h = hours % 24;
-  return h > 0 ? `${days}d ${h}h ago` : `${days}d ago`;
+  return h > 0 ? `${days} 天 ${h} 小时前` : `${days} 天前`;
 }
 
 // Turns the back-end's `device_info` string ("MacBook-Pro · darwin-amd64",

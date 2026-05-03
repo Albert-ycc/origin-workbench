@@ -94,14 +94,13 @@ export function ModelDropdown({
     // inert. (Hermes reads its model from ~/.hermes/.env.)
     return (
       <div className="min-w-0">
-        <Label className="text-xs text-muted-foreground">Model</Label>
+        <Label className="text-xs text-muted-foreground">模型</Label>
         <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0">
-            <div>Model selection is managed by this runtime.</div>
+            <div>模型选择由这个运行环境管理。</div>
             <div className="mt-0.5 text-xs">
-              Configure the model on the runtime host (e.g. Hermes reads it
-              from its own config file).
+              请在运行环境宿主机上配置模型（例如 Hermes 会从自己的配置文件读取）。
             </div>
           </div>
         </div>
@@ -112,9 +111,9 @@ export function ModelDropdown({
   return (
     <div className="min-w-0">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-muted-foreground">Model</Label>
+        <Label className="text-xs text-muted-foreground">模型</Label>
         {modelsQuery.isError && (
-          <span className="text-xs text-muted-foreground">discovery failed</span>
+          <span className="text-xs text-muted-foreground">发现失败</span>
         )}
       </div>
       <Popover open={open} onOpenChange={setOpen}>
@@ -144,7 +143,7 @@ export function ModelDropdown({
           <div className="border-b border-border p-2">
             <Input
               autoFocus
-              placeholder="Search or type a model ID"
+              placeholder="搜索或输入模型 ID"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8"
@@ -154,7 +153,7 @@ export function ModelDropdown({
             {modelsQuery.isLoading && (
               <div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Discovering models…
+                正在发现模型…
               </div>
             )}
 
@@ -179,7 +178,7 @@ export function ModelDropdown({
                           <span className="truncate font-medium">{m.label}</span>
                           {m.default && (
                             <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                              default
+                              默认
                             </span>
                           )}
                         </div>
@@ -201,7 +200,7 @@ export function ModelDropdown({
               Object.keys(filtered).length === 0 &&
               !canCreate && (
                 <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                  No models available.
+                  没有可用模型。
                 </div>
               )}
 
@@ -212,7 +211,7 @@ export function ModelDropdown({
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span className="truncate">
-                  Use “{trimmedSearch}”
+                  使用“{trimmedSearch}”
                 </span>
               </button>
             )}
@@ -222,7 +221,7 @@ export function ModelDropdown({
                 onClick={() => select("")}
                 className="mt-1 flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50"
               >
-                Clear selection (use provider default)
+                清空选择（使用提供商默认值）
               </button>
             )}
           </div>

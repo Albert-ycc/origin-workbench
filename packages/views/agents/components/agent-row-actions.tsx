@@ -93,9 +93,9 @@ export function AgentRowActions({
     try {
       await api.archiveAgent(agent.id);
       invalidateAgents();
-      toast.success("Agent archived");
+      toast.success("智能体已归档");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to archive agent");
+      toast.error(e instanceof Error ? e.message : "归档智能体失败");
     }
   };
 
@@ -103,9 +103,9 @@ export function AgentRowActions({
     try {
       await api.restoreAgent(agent.id);
       invalidateAgents();
-      toast.success("Agent restored");
+      toast.success("智能体已恢复");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to restore agent");
+      toast.error(e instanceof Error ? e.message : "恢复智能体失败");
     }
   };
 
@@ -119,11 +119,11 @@ export function AgentRowActions({
       invalidateAgents();
       toast.success(
         cancelled === 0
-          ? "No active tasks to cancel"
-          : `Cancelled ${cancelled} task${cancelled === 1 ? "" : "s"}`,
+          ? "没有可取消的进行中任务"
+          : `已取消 ${cancelled} 个任务`,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to cancel tasks");
+      toast.error(e instanceof Error ? e.message : "取消任务失败");
     }
   };
 
@@ -139,7 +139,7 @@ export function AgentRowActions({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Row actions"
+              aria-label="行操作"
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
             />
@@ -159,19 +159,19 @@ export function AgentRowActions({
               onClick={() => setConfirmCancel(true)}
             >
               <Square className="h-3.5 w-3.5" />
-              Cancel all tasks
+              取消全部任务
             </DropdownMenuItem>
           )}
           {showDuplicate && (
             <DropdownMenuItem onClick={() => onDuplicate(agent)}>
               <Copy className="h-3.5 w-3.5" />
-              Duplicate
+              复制
             </DropdownMenuItem>
           )}
           {showRestore && (
             <DropdownMenuItem onClick={handleRestore}>
               <RotateCcw className="h-3.5 w-3.5" />
-              Restore
+              恢复
             </DropdownMenuItem>
           )}
           {showArchive && (
@@ -182,7 +182,7 @@ export function AgentRowActions({
                 onClick={() => setConfirmArchive(true)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Archive
+                归档
               </DropdownMenuItem>
             </>
           )}
@@ -202,20 +202,20 @@ export function AgentRowActions({
           >
             <AlertDialogHeader>
               <AlertDialogTitle>
-                Cancel all tasks for &ldquo;{agent.name}&rdquo;?
+                取消&ldquo;{agent.name}&rdquo;的全部任务？
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {describeCancelImpact(runningCount, queuedCount)}
                 {runningCount > 0 && (
                   <>
-                    {" "}Running tasks may take up to 5 seconds to fully halt.
+                    {" "}运行中的任务可能需要最多 5 秒才会完全停止。
                   </>
                 )}{" "}
-                Cancelled tasks cannot be resumed.
+                已取消的任务不能恢复。
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Keep them</AlertDialogCancel>
+              <AlertDialogCancel>保留任务</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 onClick={() => {
@@ -223,7 +223,7 @@ export function AgentRowActions({
                   void handleCancelTasks();
                 }}
               >
-                Cancel all tasks
+                取消全部任务
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -245,18 +245,17 @@ export function AgentRowActions({
                 </div>
                 <div className="flex-1">
                   <AlertDialogTitle>
-                    Archive &ldquo;{agent.name}&rdquo;?
+                    归档&ldquo;{agent.name}&rdquo;？
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    The agent won&apos;t be assignable or mentionable, and any
-                    active tasks will be cancelled. All history is preserved
-                    and you can restore it later.
+                    这个智能体将不能再被分配或提及，进行中的任务也会被取消。
+                    历史记录会保留，之后也可以恢复。
                   </AlertDialogDescription>
                 </div>
               </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>取消</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 onClick={() => {
@@ -264,7 +263,7 @@ export function AgentRowActions({
                   void handleArchive();
                 }}
               >
-                Archive
+                归档
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -278,12 +277,10 @@ function describeCancelImpact(running: number, queued: number): string {
   // Both zero shouldn't happen — the menu item is gated on hasActiveWork —
   // but guarding anyway so the copy never reads "stop 0 tasks and 0 tasks".
   if (running === 0 && queued === 0) {
-    return "There are no active tasks to cancel.";
+    return "没有可取消的进行中任务。";
   }
   const parts: string[] = [];
-  if (running > 0) parts.push(`${running} running`);
-  if (queued > 0) parts.push(`${queued} queued`);
-  return `This will cancel ${parts.join(" and ")} ${
-    running + queued === 1 ? "task" : "tasks"
-  }.`;
+  if (running > 0) parts.push(`${running} 个运行中`);
+  if (queued > 0) parts.push(`${queued} 个排队中`);
+  return `这会取消 ${parts.join("和")}任务。`;
 }

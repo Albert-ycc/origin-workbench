@@ -199,11 +199,11 @@ function buildTriggerText(task: AgentTask): string {
 
   if (task.trigger_summary) return retryPrefix + task.trigger_summary;
   if (isRetry) {
-    return task.attempt && task.attempt > 1 ? `Retry #${task.attempt}` : "Retry";
+    return task.attempt && task.attempt > 1 ? `第 ${task.attempt} 次重试` : "重试";
   }
-  if (task.autopilot_run_id) return "Autopilot run";
-  if (task.trigger_comment_id) return "Comment trigger";
-  return "Initial run";
+  if (task.autopilot_run_id) return "自动巡航运行";
+  if (task.trigger_comment_id) return "评论触发";
+  return "初始运行";
 }
 
 // ─── Row visual config ─────────────────────────────────────────────────────
@@ -212,12 +212,12 @@ const STATUS_VISUAL: Record<
   AgentTask["status"],
   { label: string; tone: string }
 > = {
-  queued: { label: "Queued", tone: "text-warning" },
-  dispatched: { label: "Starting", tone: "text-warning" },
-  running: { label: "Working", tone: "text-info" },
-  completed: { label: "Completed", tone: "text-success" },
-  failed: { label: "Failed", tone: "text-destructive" },
-  cancelled: { label: "Cancelled", tone: "text-muted-foreground" },
+  queued: { label: "排队中", tone: "text-warning" },
+  dispatched: { label: "启动中", tone: "text-warning" },
+  running: { label: "工作中", tone: "text-info" },
+  completed: { label: "已完成", tone: "text-success" },
+  failed: { label: "失败", tone: "text-destructive" },
+  cancelled: { label: "已取消", tone: "text-muted-foreground" },
 };
 
 // Time anchor depends on status. Active rows want "Started 2m ago" /
@@ -251,7 +251,7 @@ function ActiveRow({ task, issueId }: { task: AgentTask; issueId: string }) {
     try {
       await api.cancelTask(issueId, task.id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to cancel task");
+      toast.error(e instanceof Error ? e.message : "取消任务失败");
       setCancelling(false);
     }
   };
@@ -271,7 +271,7 @@ function ActiveRow({ task, issueId }: { task: AgentTask; issueId: string }) {
             task={task}
             agentName=""
             isLive
-            title="View transcript"
+            title="查看执行记录"
           />
         )}
         <Tooltip>
@@ -281,7 +281,7 @@ function ActiveRow({ task, issueId }: { task: AgentTask; issueId: string }) {
                 type="button"
                 onClick={handleCancel}
                 disabled={cancelling}
-                aria-label="Cancel task"
+                aria-label="取消任务"
               />
             }
             className="flex items-center justify-center rounded p-1 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -292,7 +292,7 @@ function ActiveRow({ task, issueId }: { task: AgentTask; issueId: string }) {
               <Square className="h-3.5 w-3.5" />
             )}
           </TooltipTrigger>
-          <TooltipContent>Cancel task</TooltipContent>
+          <TooltipContent>取消任务</TooltipContent>
         </Tooltip>
       </RowActions>
     </RowShell>
@@ -318,7 +318,7 @@ function PastRow({ task }: { task: AgentTask }) {
         <span className="text-muted-foreground"> · {time}</span>
       </span>
       <RowActions>
-        <TranscriptButton task={task} agentName="" title="View transcript" />
+        <TranscriptButton task={task} agentName="" title="查看执行记录" />
       </RowActions>
     </RowShell>
   );

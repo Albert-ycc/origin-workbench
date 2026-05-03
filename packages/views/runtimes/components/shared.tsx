@@ -32,22 +32,22 @@ const HEALTH_VISUAL: Record<
 > = {
   online: {
     dot: "bg-success",
-    label: "Online",
+    label: "在线",
     tone: "bg-success/10 text-success",
   },
   recently_lost: {
     dot: "bg-warning",
-    label: "Recently lost",
+    label: "刚刚断开",
     tone: "bg-warning/10 text-warning",
   },
   offline: {
     dot: "bg-muted-foreground/40",
-    label: "Offline",
+    label: "离线",
     tone: "bg-muted text-muted-foreground",
   },
   about_to_gc: {
     dot: "bg-destructive",
-    label: "About to GC",
+    label: "即将清理",
     tone: "bg-destructive/10 text-destructive",
   },
 };

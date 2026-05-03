@@ -11,6 +11,7 @@ import {
 } from "@multica/ui/components/ui/sidebar";
 import { ModalRegistry } from "@multica/views/modals/registry";
 import { AppSidebar } from "@multica/views/layout";
+import { ChineseUiLocalizer } from "@multica/views/localization";
 import { SearchCommand, SearchTrigger } from "@multica/views/search";
 import { ChatFab, ChatWindow } from "@multica/views/chat";
 import { StarterContentPrompt } from "@multica/views/onboarding";
@@ -37,7 +38,7 @@ function SidebarTopBar() {
         <button
           onClick={goBack}
           disabled={!canGoBack}
-          aria-label="Go back"
+          aria-label="返回"
           className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
         >
           <ChevronLeft className="size-4" />
@@ -45,7 +46,7 @@ function SidebarTopBar() {
         <button
           onClick={goForward}
           disabled={!canGoForward}
-          aria-label="Go forward"
+          aria-label="前进"
           className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
         >
           <ChevronRight className="size-4" />
@@ -151,6 +152,7 @@ export function DesktopShell() {
           users see the window-level overlay (new-workspace flow)
           triggered by IndexRedirect, not a route. */}
       <WorkspaceSlugProvider slug={slug}>
+        <ChineseUiLocalizer />
         <DesktopInboxBridge />
         <div className="flex h-screen">
           <SidebarProvider className="flex-1">

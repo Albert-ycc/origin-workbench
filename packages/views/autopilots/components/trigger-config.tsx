@@ -25,14 +25,14 @@ export interface TriggerConfig {
 // ---------------------------------------------------------------------------
 
 const FREQUENCIES: { value: TriggerFrequency; label: string }[] = [
-  { value: "hourly", label: "Hourly" },
-  { value: "daily", label: "Daily" },
-  { value: "weekdays", label: "Weekdays" },
-  { value: "weekly", label: "Days" },
-  { value: "custom", label: "Custom" },
+  { value: "hourly", label: "每小时" },
+  { value: "daily", label: "每天" },
+  { value: "weekdays", label: "工作日" },
+  { value: "weekly", label: "指定日期" },
+  { value: "custom", label: "自定义" },
 ];
 
-const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS_OF_WEEK = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 const COMMON_TIMEZONES = [
   "UTC",
@@ -86,14 +86,6 @@ function getTimezoneLabel(tz: string): string {
   return `${city} (${getTimezoneOffset(tz)})`;
 }
 
-function formatTime12h(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h ?? "9", 10);
-  const min = parseInt(m ?? "0", 10);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  return `${hour % 12 || 12}:${min.toString().padStart(2, "0")} ${ampm}`;
-}
-
 // ---------------------------------------------------------------------------
 // Public helpers
 // ---------------------------------------------------------------------------
@@ -115,7 +107,7 @@ function sortedDays(days: number[]): number[] {
 function formatDayList(days: number[]): string {
   const sorted = sortedDays(days);
   if (sorted.length === 0) return "—";
-  return sorted.map((d) => DAYS_OF_WEEK[d]).join(", ");
+  return sorted.map((d) => DAYS_OF_WEEK[d]).join("、");
 }
 
 export function toCronExpression(cfg: TriggerConfig): string {
@@ -177,16 +169,16 @@ export function summarizeTrigger(cfg: TriggerConfig): string {
   switch (cfg.frequency) {
     case "hourly": {
       const min = cfg.time.split(":")[1] ?? "00";
-      return `Hourly · :${min}`;
+      return `每小时 · 第 ${min} 分钟`;
     }
     case "daily":
-      return `Daily ${cfg.time}`;
+      return `每天 ${cfg.time}`;
     case "weekdays":
-      return `Weekdays ${cfg.time}`;
+      return `工作日 ${cfg.time}`;
     case "weekly":
       return `${formatDayList(cfg.daysOfWeek)} ${cfg.time}`;
     case "custom":
-      return "Custom cron";
+      return "自定义 Cron";
   }
 }
 
@@ -195,16 +187,16 @@ export function describeTrigger(cfg: TriggerConfig): string {
   switch (cfg.frequency) {
     case "hourly": {
       const min = parseInt(cfg.time.split(":")[1] ?? "0", 10);
-      return `Runs every hour at :${min.toString().padStart(2, "0")}`;
+      return `每小时第 ${min.toString().padStart(2, "0")} 分钟运行`;
     }
     case "daily":
-      return `Runs daily at ${formatTime12h(cfg.time)} ${offset}`;
+      return `每天 ${cfg.time} 运行（${offset}）`;
     case "weekdays":
-      return `Runs weekdays at ${formatTime12h(cfg.time)} ${offset}`;
+      return `每个工作日 ${cfg.time} 运行（${offset}）`;
     case "weekly":
-      return `Runs every ${formatDayList(cfg.daysOfWeek)} at ${formatTime12h(cfg.time)} ${offset}`;
+      return `每周${formatDayList(cfg.daysOfWeek)} ${cfg.time} 运行（${offset}）`;
     case "custom":
-      return `Custom schedule: ${cfg.cronExpression}`;
+      return `自定义计划：${cfg.cronExpression}`;
   }
 }
 
@@ -249,7 +241,7 @@ export function TriggerConfigSection({
       {config.frequency === "custom" ? (
         /* Custom cron input */
         <div>
-          <label className="text-xs text-muted-foreground">Cron Expression</label>
+          <label className="text-xs text-muted-foreground">Cron 表达式</label>
           <input
             type="text"
             value={config.cronExpression}
@@ -258,7 +250,7 @@ export function TriggerConfigSection({
             className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Standard 5-field cron (min hour dom month dow)
+            标准 5 段 Cron（分钟 小时 日期 月份 星期）
           </p>
         </div>
       ) : (
@@ -267,7 +259,7 @@ export function TriggerConfigSection({
           <div className="flex gap-3">
             {config.frequency === "hourly" ? (
               <div className="w-24">
-                <label className="text-xs text-muted-foreground">Minute</label>
+                <label className="text-xs text-muted-foreground">分钟</label>
                 <input
                   type="number"
                   min={0}
@@ -283,7 +275,7 @@ export function TriggerConfigSection({
             ) : (
               <>
                 <div className="w-28">
-                  <label className="text-xs text-muted-foreground">Time</label>
+                  <label className="text-xs text-muted-foreground">时间</label>
                   <input
                     type="time"
                     value={config.time}
@@ -292,7 +284,7 @@ export function TriggerConfigSection({
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <label className="text-xs text-muted-foreground">Timezone</label>
+                  <label className="text-xs text-muted-foreground">时区</label>
                   <Select
                     value={config.timezone}
                     onValueChange={(v) => v && onChange({ ...config, timezone: v })}
@@ -318,7 +310,7 @@ export function TriggerConfigSection({
           {/* Day-of-week multi-selector for weekly */}
           {config.frequency === "weekly" && (
             <div>
-              <label className="text-xs text-muted-foreground">Days</label>
+              <label className="text-xs text-muted-foreground">日期</label>
               <div className="flex gap-1 mt-1">
                 {DAYS_OF_WEEK.map((day, i) => {
                   const selected = config.daysOfWeek.includes(i);

@@ -10,7 +10,6 @@ import {
   Search,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import type { Agent, AgentRuntime, CreateAgentRequest } from "@multica/core/types";
 import {
   type AgentAvailability,
@@ -21,6 +20,7 @@ import {
 } from "@multica/core/agents";
 import { api } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
+import { useChatStore } from "@multica/core/chat";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { canAssignAgentToIssue } from "@multica/core/permissions";
 import { useWorkspacePaths } from "@multica/core/paths";
@@ -39,12 +39,13 @@ import {
 } from "@multica/ui/components/ui/dropdown-menu";
 import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { DataTable } from "@multica/ui/components/ui/data-table";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { availabilityConfig, availabilityOrder } from "../presence";
 import { CreateAgentDialog } from "./create-agent-dialog";
-import { type AgentRow, createAgentColumns } from "./agent-columns";
+import { type AgentRow } from "./agent-columns";
+import { AgentCard } from "./agent-card";
+import { CreateTeamDialog } from "./create-team-dialog";
 
 // Filter axes:
 //
@@ -64,10 +65,10 @@ type AvailabilityFilter = "all" | AgentAvailability;
 type SortKey = "recent" | "name" | "runs" | "created";
 const SORT_KEYS: SortKey[] = ["recent", "name", "runs", "created"];
 const SORT_LABEL: Record<SortKey, string> = {
-  recent: "Recent activity",
-  name: "Name",
-  runs: "Most runs",
-  created: "Recently created",
+  recent: "最近活动",
+  name: "名称",
+  runs: "运行次数最多",
+  created: "最近创建",
 };
 
 export function AgentsPage() {
@@ -76,6 +77,9 @@ export function AgentsPage() {
   const navigation = useNavigation();
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
+  const setChatOpen = useChatStore((s) => s.setOpen);
+  const setChatAgent = useChatStore((s) => s.setSelectedAgentId);
+  const setChatSession = useChatStore((s) => s.setActiveSession);
 
   const {
     data: agents = [],
@@ -106,6 +110,7 @@ export function AgentsPage() {
   const [sort, setSort] = useState<SortKey>("recent");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [teamCaptain, setTeamCaptain] = useState<Agent | null>(null);
   // When set, the Create dialog opens pre-populated with this agent's
   // config — driven by the row-level "Duplicate" action. We keep this
   // separate from `showCreate` so a stray null-template doesn't open the
@@ -192,9 +197,13 @@ export function AgentsPage() {
         if (detail?.availability !== availabilityFilter) return false;
       }
       if (q) {
+        const skillMatches = a.skills.some((s) =>
+          `${s.name} ${s.description ?? ""}`.toLowerCase().includes(q),
+        );
         if (
           !a.name.toLowerCase().includes(q) &&
-          !(a.description ?? "").toLowerCase().includes(q)
+          !(a.description ?? "").toLowerCase().includes(q) &&
+          !skillMatches
         ) {
           return false;
         }
@@ -278,7 +287,10 @@ export function AgentsPage() {
     if (view === "archived" && archivedCount === 0) setView("active");
   }, [view, archivedCount]);
 
-  const handleCreate = async (data: CreateAgentRequest) => {
+  const handleCreate = async (
+    data: CreateAgentRequest,
+    skillIds?: string[],
+  ) => {
     const agent = await api.createAgent(data);
     // When duplicating, carry the source agent's skill assignments over.
     // Skills aren't part of CreateAgentRequest (they're managed via
@@ -286,10 +298,14 @@ export function AgentsPage() {
     // do a follow-up call. Failure here doesn't abort the duplicate —
     // the agent already exists and the user can re-attach skills from
     // the detail page.
-    if (duplicateTemplate?.skills.length) {
+    const skillsToAttach =
+      skillIds && skillIds.length > 0
+        ? skillIds
+        : duplicateTemplate?.skills.map((s) => s.id) ?? [];
+    if (skillsToAttach.length > 0) {
       try {
         await api.setAgentSkills(agent.id, {
-          skill_ids: duplicateTemplate.skills.map((s) => s.id),
+          skill_ids: skillsToAttach,
         });
       } catch {
         // Surfaced softly; the agent itself is fine.
@@ -305,6 +321,15 @@ export function AgentsPage() {
     setDuplicateTemplate(agent);
     setShowCreate(true);
   }, []);
+
+  const handleChat = useCallback(
+    (agent: Agent) => {
+      setChatAgent(agent.id);
+      setChatSession(null);
+      setChatOpen(true);
+    },
+    [setChatAgent, setChatOpen, setChatSession],
+  );
 
   // Assemble per-row data once per render — agent + runtime + presence +
   // activity + role flags. The columns reach into `row.original` and never
@@ -342,28 +367,13 @@ export function AgentsPage() {
     runCountsById,
   ]);
 
-  const columns = useMemo(
-    () => createAgentColumns({ onDuplicate: handleDuplicate }),
-    [handleDuplicate],
-  );
-
-  const table = useReactTable({
-    data: agentRows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    enableColumnResizing: true,
-    // Pin the kebab column right so it stays accessible during horizontal
-    // scroll — matches the pattern in Linear / Notion / GitHub.
-    initialState: { columnPinning: { right: ["actions"] } },
-  });
-
   // ---- Loading ----
   if (isLoading) {
     return (
       <div className="flex flex-1 min-h-0 flex-col">
         <PageHeaderBar totalCount={0} onCreate={() => setShowCreate(true)} />
         <div className="flex flex-1 min-h-0 flex-col gap-4 p-6">
-          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border">
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-2xl border bg-background">
             <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
               <Skeleton className="h-7 w-32 rounded-md" />
               <Skeleton className="h-7 w-32 rounded-md" />
@@ -373,9 +383,9 @@ export function AgentsPage() {
               <Skeleton className="h-6 w-24 rounded-full" />
               <Skeleton className="h-6 w-20 rounded-full" />
             </div>
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-md" />
+            <div className="grid gap-4 p-5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-[230px] rounded-2xl" />
               ))}
             </div>
           </div>
@@ -392,11 +402,11 @@ export function AgentsPage() {
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
           <AlertCircle className="h-8 w-8 text-destructive" />
           <div>
-            <p className="text-sm font-medium">Couldn&rsquo;t load agents</p>
+            <p className="text-sm font-medium">无法加载智能体</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {listError instanceof Error
                 ? listError.message
-                : "Something went wrong fetching the agent list."}
+                : "获取智能体列表时出现问题。"}
             </p>
           </div>
           <Button
@@ -405,7 +415,7 @@ export function AgentsPage() {
             size="sm"
             onClick={() => refetchList()}
           >
-            Try again
+            重试
           </Button>
         </div>
       </div>
@@ -427,7 +437,7 @@ export function AgentsPage() {
             <EmptyState onCreate={() => setShowCreate(true)} />
           </div>
         ) : (
-          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border bg-background">
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-2xl border bg-background">
             {view === "active" ? (
               <>
                 <ActiveToolbarRow
@@ -459,16 +469,16 @@ export function AgentsPage() {
               />
             )}
 
-            {sortedAgents.length === 0 ? (
-              <NoMatches view={view} search={search} scope={scope} />
-            ) : (
-              <DataTable
-                table={table}
-                onRowClick={(row) =>
-                  navigation.push(paths.agentDetail(row.original.agent.id))
-                }
-              />
-            )}
+            <AgentGrid
+              view={view}
+              rows={agentRows}
+              search={search}
+              scope={scope}
+              onOpen={(agent) => navigation.push(paths.agentDetail(agent.id))}
+              onChat={handleChat}
+              onDuplicate={handleDuplicate}
+              onCreateTeam={(agent) => setTeamCaptain(agent)}
+            />
           </div>
         )}
       </div>
@@ -486,6 +496,64 @@ export function AgentsPage() {
           }}
           onCreate={handleCreate}
         />
+      )}
+
+      {teamCaptain && (
+        <CreateTeamDialog
+          captain={teamCaptain}
+          agents={agents}
+          onClose={() => setTeamCaptain(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentGrid({
+  view,
+  rows,
+  search,
+  scope,
+  onOpen,
+  onChat,
+  onDuplicate,
+  onCreateTeam,
+}: {
+  view: View;
+  rows: AgentRow[];
+  search: string;
+  scope: Scope;
+  onOpen: (agent: Agent) => void;
+  onChat: (agent: Agent) => void;
+  onDuplicate: (agent: Agent) => void;
+  onCreateTeam: (agent: Agent) => void;
+}) {
+  if (rows.length === 0 && view !== "active") {
+    return <NoMatches view={view} search={search} scope={scope} />;
+  }
+
+  if (rows.length === 0 && search.trim()) {
+    return <NoMatches view={view} search={search} scope={scope} />;
+  }
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+        {rows.map((row) => (
+          <AgentCard
+            key={row.agent.id}
+            row={row}
+            onOpen={() => onOpen(row.agent)}
+            onChat={() => onChat(row.agent)}
+            onDuplicate={() => onDuplicate(row.agent)}
+            onCreateTeam={() => onCreateTeam(row.agent)}
+          />
+        ))}
+      </div>
+      {rows.length === 0 && view === "active" && (
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          当前筛选范围内还没有智能体，可以先新建一个。
+        </p>
       )}
     </div>
   );
@@ -506,7 +574,7 @@ function PageHeaderBar({
     <PageHeader className="justify-between px-5">
       <div className="flex items-center gap-2">
         <Bot className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-medium">Agents</h1>
+        <h1 className="text-sm font-medium">智能体</h1>
         {totalCount > 0 && (
           <span className="font-mono text-xs tabular-nums text-muted-foreground/70">
             {totalCount}
@@ -518,20 +586,20 @@ function PageHeaderBar({
             the state-legend job, so the tagline only needs to anchor what
             an agent IS, not what each colour means. */}
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
-          AI teammates that pick up issues, comment, and update status.{" "}
+          可接任务、写评论、更新状态的 AI 队友。{" "}
           <a
             href="https://multica.ai/docs/agents"
             target="_blank"
             rel="noopener noreferrer"
             className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"
           >
-            Learn more →
+            了解更多 →
           </a>
         </p>
       </div>
       <Button type="button" size="sm" onClick={onCreate}>
         <Plus className="h-3 w-3" />
-        New agent
+        新建智能体
       </Button>
     </PageHeader>
   );
@@ -578,7 +646,7 @@ function ActiveToolbarRow({
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search agents…"
+          placeholder="搜索智能体…"
           className="h-8 w-64 pl-8 text-sm"
         />
       </div>
@@ -590,11 +658,11 @@ function ActiveToolbarRow({
             onClick={onShowArchived}
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            Show archived ({archivedCount}) →
+            查看已归档（{archivedCount}）→
           </button>
         )}
         <span className="font-mono text-xs tabular-nums text-muted-foreground/70">
-          {visibleCount} of {totalCount}
+          {visibleCount} / {totalCount}
         </span>
         <SortDropdown sort={sort} setSort={setSort} />
       </div>
@@ -617,13 +685,13 @@ function ScopeSegment({
     <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
       <ScopeButton
         active={scope === "mine"}
-        label="Mine"
+        label="我的"
         count={counts.mine}
         onClick={() => setScope("mine")}
       />
       <ScopeButton
         active={scope === "all"}
-        label="All"
+        label="全部"
         count={counts.all}
         onClick={() => setScope("all")}
       />
@@ -721,7 +789,7 @@ function AvailabilityFilterRow({
       <AvailabilityChip
         active={value === "all"}
         onClick={() => onChange("all")}
-        label="All"
+        label="全部"
         count={totalCount}
       />
       {availabilityOrder.map((a) => {
@@ -798,10 +866,10 @@ function ArchivedToolbarRow({
         className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3 w-3" />
-        Active agents
+        活跃智能体
       </button>
       <span className="text-muted-foreground/40">/</span>
-      <span className="text-xs font-medium">Archived agents</span>
+      <span className="text-xs font-medium">已归档智能体</span>
       <span className="font-mono text-xs tabular-nums text-muted-foreground/70">
         {archivedCount}
       </span>
@@ -822,14 +890,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
         <Bot className="h-6 w-6 text-muted-foreground" />
       </div>
-      <h2 className="mt-4 text-base font-semibold">No agents yet</h2>
+      <h2 className="mt-4 text-base font-semibold">还没有智能体</h2>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        Create an agent and assign it issues, like any teammate. Local agents
-        run on your machine; cloud agents run on Multica&rsquo;s runtime.
+        创建智能体后，就可以像分配给队友一样把任务交给它。本地智能体运行在你的机器上，云端智能体运行在 Multica 的运行环境中。
       </p>
       <Button type="button" onClick={onCreate} size="sm" className="mt-5">
         <Plus className="h-3 w-3" />
-        New agent
+        新建智能体
       </Button>
     </div>
   );
@@ -853,18 +920,18 @@ function NoMatches({
   let body: string;
   if (view === "archived") {
     body = hasSearch
-      ? `No archived agents match "${search}".`
-      : "No archived agents yet.";
+      ? `没有匹配“${search}”的已归档智能体。`
+      : "还没有已归档智能体。";
   } else if (hasSearch) {
-    body = `No agents match "${search}"${hasFilter ? " in this filter" : ""}.`;
+    body = `没有匹配“${search}”的智能体${hasFilter ? "（当前筛选范围内）" : ""}。`;
   } else {
-    body = "No agents match this filter.";
+    body = "没有符合当前筛选条件的智能体。";
   }
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-16 text-center text-muted-foreground">
       <Search className="h-8 w-8 text-muted-foreground/40" />
-      <p className="text-sm">No matches</p>
+      <p className="text-sm">没有匹配项</p>
       <p className="max-w-xs text-xs">{body}</p>
     </div>
   );

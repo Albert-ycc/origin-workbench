@@ -27,7 +27,7 @@ export function BacklogAgentHintModal({
         if (issueId) {
           updateIssue.mutate(
             { id: issueId, status: "todo" },
-            { onError: () => toast.error("Failed to update status") },
+            { onError: () => toast.error("更新状态失败") },
           );
         }
         onClose();

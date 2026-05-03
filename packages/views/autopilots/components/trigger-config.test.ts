@@ -3,6 +3,8 @@ import {
   parseCronExpression,
   toCronExpression,
   getDefaultTriggerConfig,
+  describeTrigger,
+  summarizeTrigger,
 } from "./trigger-config";
 
 describe("parseCronExpression", () => {
@@ -64,5 +66,20 @@ describe("parseCronExpression", () => {
     expect(parsed.frequency).toBe("weekly");
     expect(parsed.time).toBe("14:45");
     expect(parsed.daysOfWeek).toEqual([0, 2, 6]);
+  });
+});
+
+describe("Chinese trigger copy", () => {
+  it("summarizes and describes schedules in Chinese", () => {
+    const cfg = {
+      ...getDefaultTriggerConfig(),
+      frequency: "weekly" as const,
+      time: "14:45",
+      daysOfWeek: [0, 2, 6],
+      timezone: "Asia/Shanghai",
+    };
+
+    expect(summarizeTrigger(cfg)).toBe("周日、周二、周六 14:45");
+    expect(describeTrigger(cfg)).toContain("每周周日、周二、周六 14:45 运行");
   });
 });

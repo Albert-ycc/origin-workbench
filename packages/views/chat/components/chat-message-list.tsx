@@ -193,7 +193,7 @@ function AssistantMessage({
         </div>
       )}
       {message.elapsed_ms != null && (
-        <ElapsedCaption verb="Replied in" elapsedMs={message.elapsed_ms} />
+        <ElapsedCaption verb="回复耗时" elapsedMs={message.elapsed_ms} />
       )}
     </div>
   );
@@ -236,7 +236,7 @@ function FailureBubble({
   // reason (e.g. a future enum value the front-end doesn't ship yet)
   // falls back to a generic "Task failed" so we never render a bare slug.
   const label =
-    failureReasonLabel[reason as TaskFailureReason] ?? "Task failed";
+    failureReasonLabel[reason as TaskFailureReason] ?? "任务失败";
 
   return (
     <div className="w-full space-y-1.5">
@@ -257,7 +257,7 @@ function FailureBubble({
                 ) : (
                   <ChevronRight className="size-3" />
                 )}
-                <span>Show details</span>
+                <span>显示详情</span>
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[11px] text-muted-foreground whitespace-pre-wrap break-all">
@@ -270,7 +270,7 @@ function FailureBubble({
       </div>
       {timeline.length > 0 && <TimelineView items={timeline} />}
       {elapsedMs != null && (
-        <ElapsedCaption verb="Failed after" elapsedMs={elapsedMs} />
+        <ElapsedCaption verb="失败耗时" elapsedMs={elapsedMs} />
       )}
     </div>
   );
@@ -348,7 +348,7 @@ function ToolGroupCollapsible({
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const toolCount = items.filter((i) => i.type === "tool_use").length;
-  const label = `${toolCount} ${toolCount === 1 ? "tool" : "tools"}`;
+  const label = `${toolCount} 个工具`;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -456,12 +456,12 @@ function ToolResultRow({ item }: { item: ChatTimelineItem }) {
           className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform mt-0.5", open && "rotate-90")}
         />
         <span className="text-muted-foreground/70 truncate">
-          {item.tool ? `${item.tool} result: ` : "result: "}{preview}
+          {item.tool ? `${item.tool} 结果：` : "结果："}{preview}
         </span>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <pre className="ml-[18px] mt-0.5 max-h-40 overflow-auto rounded bg-muted/50 p-2 text-[11px] text-muted-foreground whitespace-pre-wrap break-all">
-          {output.length > 4000 ? output.slice(0, 4000) + "\n... (truncated)" : output}
+          {output.length > 4000 ? output.slice(0, 4000) + "\n...（已截断）" : output}
         </pre>
       </CollapsibleContent>
     </Collapsible>
@@ -500,4 +500,3 @@ function ErrorRow({ item }: { item: ChatTimelineItem }) {
 }
 
 // ─── Shared ──────────────────────────────────────────────────────────────
-

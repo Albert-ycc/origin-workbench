@@ -22,7 +22,7 @@ function CopyButton({ text }: { text: string }) {
       type="button"
       onClick={handleCopy}
       className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      aria-label="Copy"
+      aria-label="复制"
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-success" />
@@ -63,12 +63,10 @@ export function CliInstallInstructions() {
     <Card className="w-full">
       <CardContent className="space-y-4 pt-4">
         <p className="text-xs leading-[1.55] text-muted-foreground">
-          You&apos;ll need an AI coding tool on this machine (Claude
-          Code, Codex, Cursor, …) for the daemon to do real work. Also
-          works on servers and remote dev boxes.
+          这台机器需要安装 AI 编码工具（Claude Code、Codex、Cursor 等），守护进程才能真正执行任务。服务器和远程开发机也可使用。
         </p>
-        <Step n={1} label="Install the Multica CLI" cmd={INSTALL_CMD} />
-        <Step n={2} label="Start the daemon" cmd={SETUP_CMD} />
+        <Step n={1} label="安装 Multica CLI" cmd={INSTALL_CMD} />
+        <Step n={2} label="启动守护进程" cmd={SETUP_CMD} />
       </CardContent>
     </Card>
   );

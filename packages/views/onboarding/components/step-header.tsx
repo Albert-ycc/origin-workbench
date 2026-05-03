@@ -43,7 +43,7 @@ export function StepHeader({ currentStep }: { currentStep: OnboardingStep }) {
       aria-valuemin={1}
       aria-valuemax={total}
       aria-valuenow={safeIndex + 1}
-      aria-label={`Step ${safeIndex + 1} of ${total}`}
+      aria-label={`第 ${safeIndex + 1} 步，共 ${total} 步`}
       className="flex w-full items-center justify-between py-2"
     >
       <div className="flex items-center gap-2">
@@ -65,7 +65,7 @@ export function StepHeader({ currentStep }: { currentStep: OnboardingStep }) {
         })}
       </div>
       <span className="text-xs font-medium text-muted-foreground">
-        Step {safeIndex + 1} of {total}
+        第 {safeIndex + 1} 步，共 {total} 步
       </span>
     </div>
   );

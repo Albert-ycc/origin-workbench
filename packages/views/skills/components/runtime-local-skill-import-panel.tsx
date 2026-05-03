@@ -90,7 +90,7 @@ function SkillItem({
           </p>
         </div>
         <Badge variant="outline" className="shrink-0">
-          {skill.file_count} file{skill.file_count === 1 ? "" : "s"}
+          {skill.file_count} 个文件
         </Badge>
       </button>
 
@@ -98,7 +98,7 @@ function SkillItem({
         <div className="space-y-2.5 border-t bg-card px-4 py-3">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">
-              Workspace skill name
+              工作区技能名称
             </Label>
             <Input
               value={name}
@@ -109,12 +109,12 @@ function SkillItem({
           </div>
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">
-              Description
+              描述
             </Label>
             <Textarea
               value={description}
               onChange={(e) => onDescriptionChange(e.target.value)}
-              placeholder="Optional — describe when an agent should use this skill."
+              placeholder="可选：说明智能体什么时候该使用这个技能。"
               rows={2}
               className="resize-none text-sm"
             />
@@ -226,11 +226,11 @@ export function RuntimeLocalSkillImportPanel({
         qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) }),
         qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) }),
       ]);
-      toast.success("Skill imported");
+      toast.success("技能已导入");
       onImported?.(result.skill);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to import skill",
+        error instanceof Error ? error.message : "导入技能失败",
       );
     } finally {
       setImporting(false);
@@ -254,10 +254,10 @@ export function RuntimeLocalSkillImportPanel({
       return (
         <div className="rounded-lg border border-dashed px-4 py-10 text-center">
           <p className="text-sm text-muted-foreground">
-            No local runtimes available
+            暂无可用的本地运行环境
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Connect a local runtime to browse and import its local skills.
+            连接本地运行环境后，即可浏览并导入其中的本地技能。
           </p>
         </div>
       );
@@ -266,7 +266,7 @@ export function RuntimeLocalSkillImportPanel({
       return (
         <div className="rounded-lg border border-dashed px-4 py-10 text-center">
           <p className="text-sm text-muted-foreground">
-            Choose a runtime to continue
+            选择一个运行环境继续
           </p>
         </div>
       );
@@ -275,7 +275,7 @@ export function RuntimeLocalSkillImportPanel({
       return (
         <div className="flex items-start gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-          Runtime must be online to browse local skills.
+          运行环境必须在线，才能浏览本地技能。
         </div>
       );
     }
@@ -297,7 +297,7 @@ export function RuntimeLocalSkillImportPanel({
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {skillsQuery.error instanceof Error
             ? skillsQuery.error.message
-            : "Failed to load runtime local skills"}
+            : "加载运行环境本地技能失败"}
         </div>
       );
     }
@@ -305,16 +305,16 @@ export function RuntimeLocalSkillImportPanel({
       return (
         <div className="flex items-start gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          This runtime provider does not expose local skill inventory yet.
+          这个运行环境提供方暂不支持暴露本地技能清单。
         </div>
       );
     }
     if (runtimeSkills.length === 0) {
       return (
         <div className="rounded-lg border border-dashed px-4 py-10 text-center">
-          <p className="text-sm text-muted-foreground">No local skills found</p>
+          <p className="text-sm text-muted-foreground">未找到本地技能</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            This runtime does not have any discoverable local skills yet.
+            这个运行环境暂时没有可发现的本地技能。
           </p>
         </div>
       );
@@ -349,13 +349,13 @@ export function RuntimeLocalSkillImportPanel({
         }`}
       >
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Runtime</Label>
+          <Label className="text-xs text-muted-foreground">运行环境</Label>
           <Select
             value={selectedRuntimeId}
             onValueChange={(v) => v && setSelectedRuntimeId(v)}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select a local runtime">
+              <SelectValue placeholder="选择本地运行环境">
                 {selectedRuntime ? runtimeLabel(selectedRuntime) : null}
               </SelectValue>
             </SelectTrigger>
@@ -397,8 +397,7 @@ export function RuntimeLocalSkillImportPanel({
       >
         {middle}
         <p className="mt-3 text-xs text-muted-foreground">
-          Symlinks, unreadable files, oversized files, and very large bundles
-          are ignored during import.
+          导入时会忽略符号链接、无法读取的文件、超大文件和体积过大的目录。
         </p>
       </div>
 
@@ -407,14 +406,14 @@ export function RuntimeLocalSkillImportPanel({
         <div className="min-w-0 flex-1 text-xs text-muted-foreground">
           {selectedSkill ? (
             <>
-              Ready to import{" "}
+              准备将{" "}
               <span className="font-medium text-foreground">
                 {name.trim() || selectedSkill.name}
               </span>{" "}
-              into this workspace.
+              导入到当前工作区。
             </>
           ) : (
-            "Select a skill to continue."
+            "选择一个技能继续。"
           )}
         </div>
         <Button
@@ -426,12 +425,12 @@ export function RuntimeLocalSkillImportPanel({
           {importing ? (
             <>
               <Loader2 className="h-3 w-3 animate-spin" />
-              Importing…
+              正在导入…
             </>
           ) : (
             <>
               <Download className="h-3 w-3" />
-              Import to Workspace
+              导入到工作区
             </>
           )}
         </Button>

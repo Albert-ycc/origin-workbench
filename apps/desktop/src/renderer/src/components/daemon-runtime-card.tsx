@@ -104,7 +104,7 @@ export function DaemonRuntimeCard() {
     const result = await window.daemonAPI.start();
     if (!result.success) {
       setActionLoading(false);
-      toast.error("Failed to start daemon", { description: result.error });
+      toast.error("守护进程启动失败", { description: result.error });
     }
   }, []);
 
@@ -115,7 +115,7 @@ export function DaemonRuntimeCard() {
     setActionLoading(true);
     const result = await window.daemonAPI.stop();
     if (!result.success) {
-      toast.error("Failed to stop daemon", { description: result.error });
+      toast.error("守护进程停止失败", { description: result.error });
     }
   }, []);
 
@@ -133,14 +133,14 @@ export function DaemonRuntimeCard() {
     setActionLoading(true);
     const result = await window.daemonAPI.restart();
     if (!result.success) {
-      toast.error("Failed to restart daemon", { description: result.error });
+      toast.error("守护进程重启失败", { description: result.error });
       return;
     }
     // Success feedback — the daemon takes a few seconds to come back online,
     // and the only other UI signal is the state badge flipping briefly. A
     // toast confirms the click was received and tells the user what to expect.
-    toast.success("Restarting daemon", {
-      description: "Runtimes will be back online in a few seconds.",
+    toast.success("正在重启守护进程", {
+      description: "运行环境会在几秒后恢复在线。",
     });
   }, []);
 
@@ -166,7 +166,7 @@ export function DaemonRuntimeCard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="size-4 text-muted-foreground" />
-            Local daemon
+            本地守护进程
             <span className="inline-flex items-center gap-1.5 rounded-md border bg-background px-1.5 py-0.5 text-xs font-normal">
               <span
                 className={cn(
@@ -202,7 +202,7 @@ export function DaemonRuntimeCard() {
                     onClick={() => setPanelOpen(true)}
                   >
                     <ScrollText className="size-3.5 mr-1.5" />
-                    View logs
+                    查看日志
                   </Button>
                   <Button
                     size="sm"
@@ -211,7 +211,7 @@ export function DaemonRuntimeCard() {
                     disabled={actionLoading}
                   >
                     <RotateCw className="size-3.5 mr-1.5" />
-                    Restart
+                    重启
                   </Button>
                   <Button
                     size="sm"
@@ -220,7 +220,7 @@ export function DaemonRuntimeCard() {
                     disabled={actionLoading}
                   >
                     <Square className="size-3.5 mr-1.5" />
-                    Stop
+                    停止
                   </Button>
                 </>
               )}
@@ -236,7 +236,7 @@ export function DaemonRuntimeCard() {
                   ) : (
                     <Play className="size-3.5 mr-1.5" />
                   )}
-                  Start
+                  启动
                 </Button>
               )}
 
@@ -248,7 +248,7 @@ export function DaemonRuntimeCard() {
                   disabled={actionLoading}
                 >
                   <RotateCw className="size-3.5 mr-1.5" />
-                  Retry setup
+                  重试设置
                 </Button>
               )}
 
@@ -296,9 +296,6 @@ function StopConfirmDialog({
   affectedCount: number;
   onConfirm: () => void;
 }) {
-  const plural = affectedCount === 1 ? "" : "s";
-  const verb = affectedCount === 1 ? "is" : "are";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm" showCloseButton={false}>
@@ -308,22 +305,20 @@ function StopConfirmDialog({
           </div>
           <DialogHeader className="flex-1 gap-1">
             <DialogTitle className="text-sm font-semibold">
-              Stop daemon with {affectedCount} active task{plural}?
+              停止守护进程并中断 {affectedCount} 个活跃任务？
             </DialogTitle>
             <DialogDescription className="text-xs leading-relaxed">
-              {affectedCount} task{plural} {verb} currently running on this
-              device. Stopping now will interrupt {affectedCount === 1 ? "it" : "them"}{" "}
-              — affected tasks get marked <strong>failed</strong> once the
-              timeout hits. The daemon won&apos;t auto-restart.
+              当前有 {affectedCount} 个任务正在这台设备上运行。现在停止会中断这些任务，
+              超时后相关任务会被标记为 <strong>失败</strong>。守护进程不会自动重启。
             </DialogDescription>
           </DialogHeader>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            取消
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            Stop daemon
+            停止守护进程
           </Button>
         </DialogFooter>
       </DialogContent>

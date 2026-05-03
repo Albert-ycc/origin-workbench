@@ -45,12 +45,12 @@ export function CloudWaitlistExpand({
     try {
       await joinCloudWaitlist(email.trim(), reason.trim());
       toast.success(
-        "You're on the list. We'll email when cloud runtimes are live.",
+        "你已加入名单。云端运行环境开放后我们会邮件通知。",
       );
       onSubmitted();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to join waitlist",
+        err instanceof Error ? err.message : "加入候补名单失败",
       );
     } finally {
       setSubmitting(false);
@@ -60,12 +60,9 @@ export function CloudWaitlistExpand({
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-muted/40 p-5">
       <p className="text-[13.5px] leading-[1.55] text-foreground/85">
-        Cloud runtimes aren&apos;t live yet. Leave your email and we&apos;ll
-        reach out when they are.{" "}
+        云端运行环境暂未开放。留下邮箱，开放后我们会联系你。{" "}
         <span className="text-foreground/70">
-          Heads-up: agents can&apos;t execute tasks without a runtime — if
-          you hit Skip now, your workspace is read-only until you come back
-          and install one.
+          注意：没有运行环境时智能体无法执行任务。如果现在跳过，工作区会保持只读，直到你回来安装运行环境。
         </span>
       </p>
 
@@ -74,7 +71,7 @@ export function CloudWaitlistExpand({
           htmlFor="waitlist-email"
           className="text-xs font-medium text-muted-foreground"
         >
-          Email
+          邮箱
         </Label>
         <Input
           id="waitlist-email"
@@ -98,9 +95,9 @@ export function CloudWaitlistExpand({
           htmlFor="waitlist-reason"
           className="text-xs font-medium text-muted-foreground"
         >
-          Why cloud?
+          为什么需要云端？
           <span className="ml-2 font-normal text-muted-foreground/70">
-            Optional
+            可选
           </span>
         </Label>
         <Textarea
@@ -108,7 +105,7 @@ export function CloudWaitlistExpand({
           value={reason}
           disabled={submitted}
           onChange={(e) => setReason(e.target.value)}
-          placeholder="e.g. we want agents running 24/7, or my team works across different devices."
+          placeholder="例如：我希望智能体 24 小时运行，或团队需要跨设备协作。"
           rows={3}
           maxLength={REASON_MAX}
         />
@@ -120,11 +117,11 @@ export function CloudWaitlistExpand({
           {submitted ? (
             <>
               <Check className="h-4 w-4" />
-              You&apos;re on the list
+              已加入名单
             </>
           ) : (
             <>
-              Join waitlist
+              加入候补名单
               <ArrowRight className="h-4 w-4" />
             </>
           )}

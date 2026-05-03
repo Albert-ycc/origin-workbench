@@ -66,15 +66,15 @@ export function UpdateNotification() {
             <ArrowDownToLine className="size-4 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">New version available</p>
+            <p className="text-sm font-medium">发现新版本</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              v{state.version} is ready to download
+              v{state.version} 已可下载
             </p>
             <button
               onClick={handleDownload}
               className="mt-2 inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              Download update
+              下载更新
             </button>
           </div>
         </div>
@@ -86,7 +86,7 @@ export function UpdateNotification() {
             <ArrowDownToLine className="size-4 text-primary animate-pulse" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Downloading update...</p>
+            <p className="text-sm font-medium">正在下载更新...</p>
             <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-300"
@@ -106,9 +106,9 @@ export function UpdateNotification() {
             <RefreshCw className="size-4 text-success" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Update ready</p>
+            <p className="text-sm font-medium">更新已准备好</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Restart to apply the update
+              重启后应用更新
             </p>
             <div className="mt-2 flex items-center gap-1.5">
               {/* Secondary "See changes" — gives the user a reason to
@@ -117,16 +117,20 @@ export function UpdateNotification() {
                   bridge so the URL hits the same allow-list as every
                   other outbound link. */}
               <button
-                onClick={() => window.desktopAPI.openExternal("https://multica.ai/changelog")}
+                onClick={() =>
+                  window.desktopAPI.openExternal(
+                    "https://github.com/Albert-ycc/origin-workbench/releases/latest",
+                  )
+                }
                 className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
               >
-                See changes
+                查看变更
               </button>
               <button
                 onClick={handleInstall}
                 className="inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
               >
-                Restart now
+                立即重启
               </button>
             </div>
           </div>

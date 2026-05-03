@@ -8,7 +8,6 @@ import { DialogTitle } from "@multica/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@multica/ui/components/ui/dropdown-menu";
 import { Button } from "@multica/ui/components/ui/button";
@@ -29,6 +28,10 @@ import {
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import type { Agent } from "@multica/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
+import {
+  AvatarNamePickerEmpty,
+  AvatarNamePickerItem,
+} from "../common/actor-picker/avatar-name-picker";
 import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
 import { useAuthStore } from "@multica/core/auth";
 import { memberListOptions } from "@multica/core/workspace/queries";
@@ -137,6 +140,7 @@ export function AgentCreatePanel({
   const [justSent, setJustSent] = useState(false);
   const [sentCount, setSentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
 
   // Image paste/drop support: route uploads through the same helper Advanced
   // uses, so users can paste screenshots straight into the prompt and the
@@ -167,7 +171,7 @@ export function AgentCreatePanel({
       await api.quickCreateIssue({ agent_id: agentId, prompt: md });
       setLastAgentId(agentId);
       setLastMode("agent");
-      toast.success("Sent to agent — you'll get an inbox notification when it's done", {
+      toast.success("已发送给智能体，完成后你会在收件箱收到通知", {
         duration: 4000,
       });
       if (keepOpen) {
@@ -195,7 +199,7 @@ export function AgentCreatePanel({
           min_version?: string;
         };
         if (body.code === "agent_unavailable") {
-          setError(body.reason || "Agent is unavailable. Pick another agent.");
+          setError(body.reason || "智能体当前不可用，请选择其他智能体。");
           setSubmitting(false);
           return;
         }
@@ -206,13 +210,13 @@ export function AgentCreatePanel({
           // consistency.
           const cur = body.current_version || "unknown";
           setError(
-            `This agent's daemon CLI (${cur}) is below the required ${body.min_version || MIN_QUICK_CREATE_CLI_VERSION}. Upgrade the daemon to use Create with agent.`,
+            `这个智能体的守护进程 CLI（${cur}）低于要求的 ${body.min_version || MIN_QUICK_CREATE_CLI_VERSION}。请升级守护进程后再使用智能体创建。`,
           );
           setSubmitting(false);
           return;
         }
       }
-      setError("Failed to submit. Try again.");
+      setError("提交失败，请重试。");
     } finally {
       setSubmitting(false);
     }
@@ -238,14 +242,14 @@ export function AgentCreatePanel({
 
   return (
     <>
-        <DialogTitle className="sr-only">Quick create issue</DialogTitle>
+        <DialogTitle className="sr-only">快速创建任务</DialogTitle>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-3 pb-2 shrink-0">
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">{workspaceName}</span>
             <ChevronRight className="size-3 text-muted-foreground/50" />
-            <span className="font-medium">Create with agent</span>
+            <span className="font-medium">交给智能体创建</span>
           </div>
           {/* Native `title` instead of Base UI Tooltip — Tooltip opens on
               keyboard focus, and the dialog's focus trap briefly lands focus
@@ -254,8 +258,8 @@ export function AgentCreatePanel({
           <button
             type="button"
             onClick={onClose}
-            title="Close"
-            aria-label="Close"
+            title="关闭"
+            aria-label="关闭"
             className="rounded-sm p-1.5 opacity-70 hover:opacity-100 hover:bg-accent/60 transition-all cursor-pointer"
           >
             <XIcon className="size-4" />
@@ -264,15 +268,15 @@ export function AgentCreatePanel({
 
         {/* Agent picker */}
         <div className="px-5 pt-1 pb-2 shrink-0">
-          <DropdownMenu>
+          <DropdownMenu open={agentPickerOpen} onOpenChange={setAgentPickerOpen}>
             <DropdownMenuTrigger
               render={
                 <button
                   type="button"
-                  aria-label="Select agent"
+                  aria-label="选择智能体"
                   className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer rounded-sm px-1.5 py-1 -ml-1.5 hover:bg-accent/60"
                 >
-                  <span>Created by</span>
+                  <span>创建者</span>
                   {selectedAgent ? (
                     <span className="flex items-center gap-1.5 text-foreground">
                       <ActorAvatar
@@ -283,36 +287,34 @@ export function AgentCreatePanel({
                       {selectedAgent.name}
                     </span>
                   ) : (
-                    <span>Pick an agent…</span>
+                    <span>选择智能体…</span>
                   )}
                 </button>
               }
             />
             <DropdownMenuContent align="start" className="w-64 max-h-72 overflow-y-auto">
               {visibleAgents.length === 0 ? (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  No agents available.
-                </div>
+                <AvatarNamePickerEmpty>
+                  暂无可用智能体。
+                </AvatarNamePickerEmpty>
               ) : (
                 visibleAgents.map((a: Agent) => (
-                  <DropdownMenuItem
+                  <AvatarNamePickerItem
                     key={a.id}
-                    onClick={() => {
+                    actorType="agent"
+                    actorId={a.id}
+                    label={a.name}
+                    description={
+                      a.description ||
+                      (a.visibility === "private" ? "私有智能体" : "工作区智能体")
+                    }
+                    selected={agentId === a.id}
+                    onSelect={() => {
                       setAgentId(a.id);
                       setError(null);
+                      setAgentPickerOpen(false);
                     }}
-                    className="flex items-center gap-2"
-                  >
-                    <ActorAvatar
-                      actorType="agent"
-                      actorId={a.id}
-                      size={16}
-                    />
-                    <span className="flex-1 truncate">{a.name}</span>
-                    {agentId === a.id && (
-                      <Check className="size-3.5 text-muted-foreground" />
-                    )}
-                  </DropdownMenuItem>
+                  />
                 ))
               )}
             </DropdownMenuContent>
@@ -322,8 +324,8 @@ export function AgentCreatePanel({
         {selectedAgent && versionBlocked && (
           <div className="mx-5 mb-2 shrink-0 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
             {versionCheck.state === "missing"
-              ? `This agent's daemon doesn't report a CLI version. Create with agent needs multica CLI ≥ ${versionCheck.min}. Upgrade the daemon and reconnect, or switch to manual create.`
-              : `This agent's daemon CLI is ${versionCheck.current} — Create with agent needs ≥ ${versionCheck.min}. Upgrade the daemon, or switch to manual create.`}
+              ? `这个智能体的守护进程没有上报 CLI 版本。智能体创建需要 multica CLI ≥ ${versionCheck.min}。请升级守护进程并重新连接，或切换为手动创建。`
+              : `这个智能体的守护进程 CLI 是 ${versionCheck.current}，智能体创建需要 ≥ ${versionCheck.min}。请升级守护进程，或切换为手动创建。`}
           </div>
         )}
 
@@ -341,7 +343,7 @@ export function AgentCreatePanel({
           <ContentEditor
             ref={editorRef}
             defaultValue={initialPrompt}
-            placeholder='Tell the agent what to do, e.g. "let Bohan fix the inbox loading slowness in the Web project"'
+            placeholder='告诉智能体要做什么，例如：“让 Bohan 修复 Web 项目中收件箱加载慢的问题”'
             onUpdate={(md) => setHasContent(md.trim().length > 0)}
             onUploadFile={handleUploadFile}
             onSubmit={submit}
@@ -364,7 +366,7 @@ export function AgentCreatePanel({
             />
             {keepOpen && sentCount > 0 && (
               <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                {sentCount} sent
+                已发送 {sentCount} 条
               </span>
             )}
           </div>
@@ -372,11 +374,11 @@ export function AgentCreatePanel({
             <button
               type="button"
               onClick={switchToManual}
-              title="Switch to manual create — fill the fields yourself"
+              title="切换为手动创建，自行填写字段"
               className="flex shrink-0 items-center gap-1.5 text-xs px-2 py-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer"
             >
               <ArrowLeftRight className="size-3.5" />
-              Switch to Manual
+              切换为手动
             </button>
             <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <Switch
@@ -384,7 +386,7 @@ export function AgentCreatePanel({
                 checked={keepOpen}
                 onCheckedChange={setKeepOpen}
               />
-              Create another
+              连续创建
             </label>
             <Button
               size="sm"
@@ -392,14 +394,14 @@ export function AgentCreatePanel({
               disabled={!hasContent || !agentId || submitting || versionBlocked || uploading}
               title={
                 versionBlocked
-                  ? `Daemon CLI must be ≥ ${versionCheck.min}`
+                  ? `守护进程 CLI 必须 ≥ ${versionCheck.min}`
                   : undefined
               }
               className={justSent ? "min-w-28 !bg-emerald-600 !text-white" : "min-w-28"}
             >
-              {submitting ? "Sending…" : uploading ? "Uploading…" : justSent ? (
-                <span className="flex items-center gap-1"><Check className="size-3.5" />Sent</span>
-              ) : "Create (⌘↵)"}
+              {submitting ? "发送中…" : uploading ? "上传中…" : justSent ? (
+                <span className="flex items-center gap-1"><Check className="size-3.5" />已发送</span>
+              ) : "创建（⌘↵）"}
             </Button>
           </div>
         </div>

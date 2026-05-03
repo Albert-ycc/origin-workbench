@@ -53,37 +53,37 @@ interface AgentTemplate {
 const AGENT_TEMPLATES: readonly AgentTemplate[] = [
   {
     id: "coding",
-    label: "Coding Agent",
+    label: "编程智能体",
     defaultName: "Atlas",
     emoji: "⌘",
-    blurb: "Writes, refactors, and ships code. Reads your repo.",
+    blurb: "编写、重构并交付代码，会阅读你的代码仓库。",
     instructions:
       "You are a Coding Agent on a product team. Pick up coding issues — implement features, fix bugs, write tests, and open pull requests. Read the repository before you start, follow existing code conventions, and keep diffs focused. Ask for clarification when the acceptance criteria are ambiguous.",
   },
   {
     id: "planning",
-    label: "Planning Agent",
+    label: "规划智能体",
     defaultName: "Orion",
     emoji: "◐",
-    blurb: "Breaks down work, drafts specs, keeps the board tidy.",
+    blurb: "拆解工作、起草规格，并维护任务板秩序。",
     instructions:
       "You are a Planning Agent. Turn loose ideas and open issues into scoped, ready-to-execute work: break them down into subtasks, write acceptance criteria, and propose owners and sequencing. Prefer clarity over speed. When blocked by missing context, ask one specific question rather than guessing.",
   },
   {
     id: "writing",
-    label: "Writing Agent",
+    label: "写作智能体",
     defaultName: "Mira",
     emoji: "✎",
-    blurb: "Drafts, summarizes, researches. Long-form friendly.",
+    blurb: "负责起草、总结和研究，适合长文档工作。",
     instructions:
       "You are a Writing Agent. Draft documents, summarize long content, and research topics on the web when needed. Structure your output as finished prose a reader can use directly — not an outline. Cite sources when you draw from them. Match the tone the user establishes in the issue.",
   },
   {
     id: "assistant",
-    label: "Assistant",
+    label: "通用助手",
     defaultName: "Vega",
     emoji: "✦",
-    blurb: "General-purpose. Good default when the task is unclear.",
+    blurb: "通用型智能体，适合任务还不明确时使用。",
     instructions:
       "You are a general-purpose teammate. Handle varied tasks — light coding, writing, research, planning — and stay pragmatic about scope. When the task is ambiguous, ask one clarifying question before diving in. Default to short, useful outputs over exhaustive ones.",
   },
@@ -131,7 +131,7 @@ export function StepAgent({
       await onCreated(agent);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to create agent",
+        err instanceof Error ? err.message : "创建智能体失败",
       );
       setCreating(false);
     }
@@ -154,7 +154,7 @@ export function StepAgent({
               className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back
+              返回
             </button>
           ) : (
             <span aria-hidden className="w-0" />
@@ -174,19 +174,17 @@ export function StepAgent({
         >
           <div className="mx-auto w-full max-w-[620px] px-6 py-10 sm:px-10 md:px-14 lg:px-0 lg:py-14">
             <div className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              Your first agent
+              你的第一个智能体
             </div>
             <h1 className="text-balance font-serif text-[36px] font-medium leading-[1.1] tracking-tight text-foreground">
-              Meet your first teammate.
+              认识你的第一位 AI 队友。
             </h1>
             <p className="mt-4 text-[15.5px] leading-[1.55] text-foreground/80">
-              Your answers point to a{" "}
+              根据你的回答，推荐使用
               <strong className="font-medium text-foreground">
                 {recommended.label}
               </strong>
-              . Pick whichever of the four fits you — each template ships
-              ready to take its first issue. You can retune its
-              instructions from the agent settings page later.
+              。你也可以从四个模板里自由选择；每个模板都能直接接手第一个任务，之后可以在智能体设置页调整指令。
             </p>
 
             <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -208,11 +206,11 @@ export function StepAgent({
             the agent IS this step. */}
         <footer className="flex shrink-0 items-center justify-between gap-4 bg-background px-6 py-4 sm:px-10 md:px-14 lg:px-16">
           <span className="hidden text-xs text-muted-foreground sm:block">
-            One agent is enough to start. Add more from the sidebar later.
+            一个智能体就足够开始。之后可以从侧栏添加更多。
           </span>
           <Button size="lg" onClick={handleCreate} disabled={creating}>
             {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-            Create {template.defaultName}
+            创建 {template.defaultName}
             <ArrowRight className="h-4 w-4" />
           </Button>
         </footer>
@@ -262,7 +260,7 @@ function TemplateCard({
         </span>
         {recommended && (
           <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-brand">
-            Recommended
+            推荐
           </span>
         )}
       </div>
@@ -283,49 +281,46 @@ function AboutAgentsSide() {
     <div className="flex max-w-[380px] flex-col gap-8">
       <section className="flex flex-col gap-4">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          What&apos;s an agent
+          什么是智能体
         </div>
         <h2 className="font-serif text-[22px] font-medium leading-[1.25] tracking-tight text-foreground">
-          An AI teammate that lives in your workspace.
+          它是驻留在工作区里的 AI 队友。
         </h2>
         <p className="text-[14px] leading-[1.6] text-foreground/80">
-          Agents show up in every assignee picker, just like any other
-          colleague — except they can work 24/7 on whatever runtime you
-          give them.
+          智能体会像其他同事一样出现在负责人选择器里；区别是，只要有运行环境，它可以全天候执行任务。
         </p>
       </section>
 
       <section className="flex flex-col gap-4">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          Ways to work with an agent
+          和智能体协作的方式
         </div>
         <div className="flex flex-col gap-4">
           <WayItem
             glyph="→"
-            title="Assign it an issue"
-            body="It picks up the task and reports back in the thread."
+            title="给它分配任务"
+            body="它会接手任务，并在讨论串里汇报进展。"
           />
           <WayItem
             glyph="@"
-            title="@mention in a comment"
-            body="Pull it into a conversation for a quick take."
+            title="在评论里 @提及"
+            body="把它拉进对话，让它快速给出判断。"
           />
           <WayItem
             glyph="◯"
-            title="Chat one-on-one"
-            body="Ask quick questions without creating an issue."
+            title="一对一聊天"
+            body="无需创建任务，也能快速提问。"
           />
           <WayItem
             glyph="↻"
-            title="Put it on Autopilot"
-            body="Daily triage, weekly digest, monthly audit — on a schedule."
+            title="加入自动巡航"
+            body="每日分诊、每周摘要、每月审计，都可以按计划执行。"
           />
         </div>
       </section>
 
       <p className="text-[13px] leading-[1.55] text-muted-foreground">
-        Add more agents anytime. A small team of specialized agents beats
-        one jack-of-all-trades.
+        之后可随时添加更多智能体。由多个专门智能体组成的小团队，通常比一个全能型智能体更好用。
       </p>
 
       <a
@@ -334,7 +329,7 @@ function AboutAgentsSide() {
         rel="noopener noreferrer"
         className="self-start text-[13px] text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
       >
-        Creating your first agent →
+        创建你的第一个智能体 →
       </a>
     </div>
   );

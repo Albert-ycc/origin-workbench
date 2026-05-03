@@ -12,7 +12,14 @@ import { AutopilotDetailPage } from "./pages/autopilot-detail-page";
 import { SkillDetailPage } from "./pages/skill-detail-page";
 import { AgentDetailPage } from "./pages/agent-detail-page";
 import { RuntimeDetailPage } from "./pages/runtime-detail-page";
+import { TeamDetailPage } from "./pages/team-detail-page";
 import { IssuesPage } from "@multica/views/issues/components";
+import { WorkbenchPage } from "@multica/views/workbench";
+import { IdeasPage } from "@multica/views/ideas";
+import { CouncilsPage } from "@multica/views/councils";
+import { ExplorationsPage } from "@multica/views/explorations";
+import { MissionsPage } from "@multica/views/missions";
+import { TeamsPage } from "@multica/views/teams";
 import { ProjectsPage } from "@multica/views/projects/components";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
@@ -21,9 +28,8 @@ import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { AgentsPage } from "@multica/views/agents";
 import { InboxPage } from "@multica/views/inbox";
 import { SettingsPage } from "@multica/views/settings";
-import { Download, Server } from "lucide-react";
+import { Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
-import { UpdatesSettingsTab } from "./components/updates-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 
 /**
@@ -82,61 +88,72 @@ export const appRoutes: RouteObject[] = [
         path: ":workspaceSlug",
         element: <WorkspaceRouteLayout />,
         children: [
-          { index: true, element: <Navigate to="issues" replace /> },
-          { path: "issues", element: <IssuesPage />, handle: { title: "Issues" } },
+          { index: true, element: <Navigate to="workbench" replace /> },
+          { path: "workbench", element: <WorkbenchPage />, handle: { title: "原点工作台" } },
+          { path: "ideas", element: <IdeasPage />, handle: { title: "想法池" } },
+          { path: "councils", element: <CouncilsPage />, handle: { title: "会议室" } },
+          { path: "missions", element: <MissionsPage />, handle: { title: "任务中枢" } },
+          { path: "explorations", element: <ExplorationsPage />, handle: { title: "分叉探索" } },
+          { path: "issues", element: <IssuesPage />, handle: { title: "任务" } },
           {
             path: "issues/:id",
             element: <IssueDetailPage />,
-            handle: { title: "Issue" },
+            handle: { title: "任务" },
           },
           {
             path: "projects",
             element: <ProjectsPage />,
-            handle: { title: "Projects" },
+            handle: { title: "项目" },
           },
           {
             path: "projects/:id",
             element: <ProjectDetailPage />,
-            handle: { title: "Project" },
+            handle: { title: "项目" },
           },
           {
             path: "autopilots",
             element: <AutopilotsPage />,
-            handle: { title: "Autopilot" },
+            handle: { title: "自动巡航" },
           },
           {
             path: "autopilots/:id",
             element: <AutopilotDetailPage />,
-            handle: { title: "Autopilot" },
+            handle: { title: "自动巡航" },
           },
           {
             path: "my-issues",
             element: <MyIssuesPage />,
-            handle: { title: "My Issues" },
+            handle: { title: "我的任务" },
           },
           {
             path: "runtimes",
             element: <DesktopRuntimesPage />,
-            handle: { title: "Runtimes" },
+            handle: { title: "能力池" },
           },
           {
             path: "runtimes/:id",
             element: <RuntimeDetailPage />,
-            handle: { title: "Runtime" },
+            handle: { title: "能力池" },
           },
-          { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
+          { path: "skills", element: <SkillsPage />, handle: { title: "技能" } },
           {
             path: "skills/:id",
             element: <SkillDetailPage />,
-            handle: { title: "Skill" },
+            handle: { title: "技能" },
           },
-          { path: "agents", element: <AgentsPage />, handle: { title: "Agents" } },
+          { path: "agents", element: <AgentsPage />, handle: { title: "智能体" } },
           {
             path: "agents/:id",
             element: <AgentDetailPage />,
-            handle: { title: "Agent" },
+            handle: { title: "智能体" },
           },
-          { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
+          { path: "teams", element: <TeamsPage />, handle: { title: "团队" } },
+          {
+            path: "teams/:id",
+            element: <TeamDetailPage />,
+            handle: { title: "团队" },
+          },
+          { path: "inbox", element: <InboxPage />, handle: { title: "收件箱" } },
           {
             path: "settings",
             element: (
@@ -144,20 +161,14 @@ export const appRoutes: RouteObject[] = [
                 extraAccountTabs={[
                   {
                     value: "daemon",
-                    label: "Daemon",
+                    label: "守护进程",
                     icon: Server,
                     content: <DaemonSettingsTab />,
-                  },
-                  {
-                    value: "updates",
-                    label: "Updates",
-                    icon: Download,
-                    content: <UpdatesSettingsTab />,
                   },
                 ]}
               />
             ),
-            handle: { title: "Settings" },
+            handle: { title: "设置" },
           },
         ],
       },

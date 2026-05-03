@@ -106,13 +106,13 @@ export function InvitationsPage() {
       // wsList[0]: that could teleport the user into an unrelated old
       // workspace they happen to also belong to.
       push(
-        targetWs ? paths.workspace(targetWs.slug).issues() : paths.newWorkspace(),
+        targetWs ? paths.workspace(targetWs.slug).root() : paths.newWorkspace(),
       );
     } catch (e) {
       setError(
         e instanceof Error
           ? e.message
-          : "Failed to process invitations. Please try again.",
+          : "处理邀请失败，请重试。",
       );
       // Partial success: any accepts that landed before the failure ALREADY
       // set onboarded_at on the backend (the AcceptInvitation transaction
@@ -157,12 +157,12 @@ export function InvitationsPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Mail className="h-6 w-6 text-muted-foreground" />
             </div>
-            <h2 className="text-lg font-semibold">No pending invitations</h2>
+            <h2 className="text-lg font-semibold">暂无待处理邀请</h2>
             <p className="text-sm text-muted-foreground text-center">
-              Continue to set up your own workspace.
+              继续创建你自己的工作区。
             </p>
             <Button onClick={() => push(paths.onboarding())}>
-              Continue to setup
+              继续设置
             </Button>
           </CardContent>
         </Card>
@@ -172,10 +172,10 @@ export function InvitationsPage() {
 
   const submitLabel =
     selected.size === 0
-      ? "Skip and set up my own workspace"
+      ? "跳过并创建自己的工作区"
       : selected.size === 1
-        ? "Join 1 workspace"
-        : `Join ${selected.size} workspaces`;
+        ? "加入 1 个工作区"
+        : `加入 ${selected.size} 个工作区`;
 
   return (
     <InvitationsShell>
@@ -187,11 +187,10 @@ export function InvitationsPage() {
             </div>
             <div className="space-y-1">
               <h2 className="text-xl font-semibold">
-                You&apos;ve been invited
+                你收到了邀请
               </h2>
               <p className="text-sm text-muted-foreground">
-                Pick the workspaces you want to join. You can always handle the
-                rest later from the sidebar.
+                选择你想加入的工作区。其余邀请之后也可以在侧栏处理。
               </p>
             </div>
           </div>
@@ -212,7 +211,7 @@ export function InvitationsPage() {
             onClick={handleSubmit}
             disabled={submitting}
           >
-            {submitting ? "Joining..." : submitLabel}
+            {submitting ? "加入中..." : submitLabel}
           </Button>
 
           {error && (
@@ -233,7 +232,7 @@ function InvitationRow({
   checked: boolean;
   onToggle: () => void;
 }) {
-  const inviter = invitation.inviter_name || invitation.inviter_email || "Someone";
+  const inviter = invitation.inviter_name || invitation.inviter_email || "有人";
   return (
     <li>
       <label
@@ -246,11 +245,11 @@ function InvitationRow({
         />
         <div className="flex-1 min-w-0 space-y-1">
           <div className="font-medium truncate">
-            {invitation.workspace_name ?? "Workspace"}
+            {invitation.workspace_name ?? "工作区"}
           </div>
           <div className="text-xs text-muted-foreground truncate">
-            {inviter} invited you as{" "}
-            {invitation.role === "admin" ? "an admin" : "a member"}
+            {inviter} 邀请你成为
+            {invitation.role === "admin" ? "管理员" : "成员"}
           </div>
         </div>
       </label>
@@ -270,7 +269,7 @@ function InvitationsShell({ children }: { children: ReactNode }) {
         onClick={logout}
       >
         <LogOut />
-        Log out
+        退出登录
       </Button>
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
         {children}

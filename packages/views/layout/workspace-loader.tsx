@@ -23,10 +23,10 @@ export function WorkspaceLoader({ name }: { name?: string | null }) {
         <MulticaIcon className="size-8 animate-pulse" />
         {name ? (
           <p className="text-sm text-muted-foreground">
-            Loading <span className="font-medium text-foreground">{name}</span>…
+            正在加载 <span className="font-medium text-foreground">{name}</span>…
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground">Loading workspace…</p>
+          <p className="text-sm text-muted-foreground">正在加载工作区…</p>
         )}
       </div>
     </div>

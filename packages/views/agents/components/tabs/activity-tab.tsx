@@ -179,15 +179,15 @@ function NowSection({
 }) {
   return (
     <Section
-      title="Now"
+      title="当前"
       subtitle={
         tasks.length === 0
-          ? "No active work"
-          : `${tasks.length} active task${tasks.length === 1 ? "" : "s"}`
+          ? "暂无进行中的工作"
+          : `${tasks.length} 个进行中任务`
       }
     >
       {tasks.length === 0 ? (
-        <EmptyText>This agent isn&apos;t running anything right now.</EmptyText>
+        <EmptyText>这个智能体当前没有运行任务。</EmptyText>
       ) : (
         <TaskList
           tasks={tasks}
@@ -215,9 +215,9 @@ function Last30dSection({
       : 100;
 
   return (
-    <Section title="Last 30 days" subtitle="Performance">
+    <Section title="最近 30 天" subtitle="表现">
       {totalRuns === 0 ? (
-        <EmptyText>No completions in the last 30 days.</EmptyText>
+        <EmptyText>最近 30 天暂无完成记录。</EmptyText>
       ) : (
         // Layout: number is the hero, sparkline is a garnish on the
         // right. Reversed from "chart hero + tiny number" because at
@@ -233,22 +233,22 @@ function Last30dSection({
                 {totalRuns}
               </span>
               <span className="text-sm text-muted-foreground">
-                run{totalRuns === 1 ? "" : "s"}
+                次运行
               </span>
             </div>
             <div className="text-xs text-muted-foreground">
-              {successPct}% success
+              成功率 {successPct}%
               {avgDurationMs > 0 && (
                 <>
                   <Sep />
-                  <span>avg {formatDurationMs(avgDurationMs)}</span>
+                  <span>平均 {formatDurationMs(avgDurationMs)}</span>
                 </>
               )}
               {totalFailed > 0 && (
                 <>
                   <Sep />
                   <span className="text-destructive">
-                    {totalFailed} failed
+                    {totalFailed} 次失败
                   </span>
                 </>
               )}
@@ -292,14 +292,14 @@ function RecentWorkSection({
   // "Show more" — not the raw on-the-wire row count.
   const subtitle =
     tasks.length === 0
-      ? "Nothing finished yet"
+      ? "暂无完成记录"
       : totalCount > tasks.length
-        ? `${tasks.length} of ${totalCount}`
-        : `${tasks.length} latest`;
+        ? `${tasks.length} / ${totalCount}`
+        : `最近 ${tasks.length} 条`;
   return (
-    <Section title="Recent work" subtitle={subtitle}>
+    <Section title="最近工作" subtitle={subtitle}>
       {tasks.length === 0 ? (
-        <EmptyText>This agent hasn&apos;t completed anything yet.</EmptyText>
+        <EmptyText>这个智能体还没有完成过任务。</EmptyText>
       ) : (
         <>
           <TaskList
@@ -314,7 +314,7 @@ function RecentWorkSection({
               onClick={onShowMore}
               className="mt-2 self-start rounded text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              Show more →
+              显示更多 →
             </button>
           )}
         </>
@@ -387,7 +387,7 @@ function TaskRow({
       // through useRealtimeSync's `task:` prefix path which already
       // invalidates snapshot + per-agent + per-issue task lists.
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to cancel task");
+      toast.error(e instanceof Error ? e.message : "取消任务失败");
       setCancelling(false);
     }
   };
@@ -404,13 +404,13 @@ function TaskRow({
   const sourceFallback = !hasIssue
     ? task.kind === "quick_create"
       ? isTerminalStatus
-        ? "Quick create"
-        : "Creating issue"
+        ? "快速创建"
+        : "正在创建任务"
       : task.chat_session_id
-        ? "Chat session"
+        ? "聊天会话"
         : task.autopilot_run_id
-          ? "Autopilot run"
-          : "Untracked"
+          ? "自动巡航运行"
+          : "未追踪"
     : null;
 
   // Origin marker — issue / chat / autopilot / untracked. The issue
@@ -425,12 +425,12 @@ function TaskRow({
         ? Workflow
         : CircleHelp;
   const sourceLabel = hasIssue
-    ? "Issue"
+    ? "任务"
     : task.chat_session_id
-      ? "Chat"
+      ? "聊天"
       : task.autopilot_run_id
-        ? "Autopilot"
-        : "Untracked";
+        ? "自动巡航"
+        : "未追踪";
 
   const timeText =
     timeMode === "active"
@@ -492,14 +492,14 @@ function TaskRow({
                   <span className="truncate text-sm">
                     {issue?.title ??
                       (hasIssue
-                        ? `Issue ${task.issue_id.slice(0, 8)}…`
-                        : (sourceFallback ?? "Untracked"))}
+                        ? `任务 ${task.issue_id.slice(0, 8)}…`
+                        : (sourceFallback ?? "未追踪"))}
                   </span>
                 }
               />
               <TooltipContent className="max-w-md">
                 <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
-                  Triggered by
+                  触发来源
                 </div>
                 <div className="mt-0.5 whitespace-pre-wrap text-xs">
                   {task.trigger_summary}
@@ -510,8 +510,8 @@ function TaskRow({
             <span className="truncate text-sm">
               {issue?.title ??
                 (hasIssue
-                  ? `Issue ${task.issue_id.slice(0, 8)}…`
-                  : (sourceFallback ?? "Untracked"))}
+                  ? `任务 ${task.issue_id.slice(0, 8)}…`
+                  : (sourceFallback ?? "未追踪"))}
             </span>
           )}
         </div>
@@ -541,12 +541,12 @@ function TaskRow({
           <Tooltip>
             <TooltipTrigger
               render={<AppLink href={paths.issueDetail(task.issue_id)} />}
-              aria-label="Open issue"
+              aria-label="打开任务"
               className="flex items-center justify-center rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
             >
               <ArrowUpRight className="h-3.5 w-3.5" />
             </TooltipTrigger>
-            <TooltipContent>Open issue</TooltipContent>
+            <TooltipContent>打开任务</TooltipContent>
           </Tooltip>
         )}
         {showTranscript && (
@@ -554,7 +554,7 @@ function TaskRow({
             task={task}
             agentName={agent.name}
             isLive={isRunning}
-            title="View transcript"
+            title="查看执行记录"
           />
         )}
         {showCancel && (
@@ -565,7 +565,7 @@ function TaskRow({
                   type="button"
                   onClick={handleCancel}
                   disabled={cancelling}
-                  aria-label="Cancel task"
+                  aria-label="取消任务"
                 />
               }
               className="flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
@@ -573,7 +573,7 @@ function TaskRow({
               <X className="h-3.5 w-3.5" />
             </TooltipTrigger>
             <TooltipContent>
-              {cancelling ? "Cancelling…" : "Cancel task"}
+              {cancelling ? "正在取消…" : "取消任务"}
             </TooltipContent>
           </Tooltip>
         )}
@@ -617,12 +617,12 @@ function Sep() {
 
 function activeTaskTimeText(task: AgentTask): string {
   if (task.status === "running" && task.started_at) {
-    return `Started ${timeAgo(task.started_at)}`;
+    return `${timeAgo(task.started_at)}开始`;
   }
   if (task.status === "dispatched" && task.dispatched_at) {
-    return `Dispatched ${timeAgo(task.dispatched_at)}`;
+    return `${timeAgo(task.dispatched_at)}分发`;
   }
-  return `Queued ${timeAgo(task.created_at)}`;
+  return `${timeAgo(task.created_at)}排队`;
 }
 
 /**

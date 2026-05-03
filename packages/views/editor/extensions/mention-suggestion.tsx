@@ -324,7 +324,7 @@ function MentionRow({
       />
       <span className="truncate font-medium">{item.label}</span>
       {item.type === "agent" && (
-        <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5">Agent</Badge>
+        <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1.5">智能体</Badge>
       )}
     </button>
   );

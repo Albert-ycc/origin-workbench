@@ -91,21 +91,21 @@ export type AutopilotDialogProps =
 // ---------------------------------------------------------------------------
 
 const FREQUENCY_OPTIONS: { value: TriggerFrequency; label: string }[] = [
-  { value: "hourly", label: "Every hour" },
-  { value: "daily", label: "Every day" },
-  { value: "weekdays", label: "Every weekday" },
-  { value: "weekly", label: "Every week" },
-  { value: "custom", label: "Custom cron" },
+  { value: "hourly", label: "每小时" },
+  { value: "daily", label: "每天" },
+  { value: "weekdays", label: "每个工作日" },
+  { value: "weekly", label: "每周" },
+  { value: "custom", label: "自定义 Cron" },
 ];
 
 const DAY_OPTIONS: { value: number; label: string; short: string }[] = [
-  { value: 0, label: "Sunday", short: "Sun" },
-  { value: 1, label: "Monday", short: "Mon" },
-  { value: 2, label: "Tuesday", short: "Tue" },
-  { value: 3, label: "Wednesday", short: "Wed" },
-  { value: 4, label: "Thursday", short: "Thu" },
-  { value: 5, label: "Friday", short: "Fri" },
-  { value: 6, label: "Saturday", short: "Sat" },
+  { value: 0, label: "周日", short: "日" },
+  { value: 1, label: "周一", short: "一" },
+  { value: 2, label: "周二", short: "二" },
+  { value: 3, label: "周三", short: "三" },
+  { value: 4, label: "周四", short: "四" },
+  { value: 5, label: "周五", short: "五" },
+  { value: 6, label: "周六", short: "六" },
 ];
 
 const TIMEZONE_OPTIONS = [
@@ -137,14 +137,14 @@ const OUTPUT_MODES: {
 }[] = [
   {
     value: "create_issue",
-    label: "Create issue",
-    description: "Each run creates a tracked issue",
+    label: "创建任务",
+    description: "每次运行都会创建一个可追踪任务",
     Icon: FilePlus2,
   },
   {
     value: "run_only",
-    label: "Run only",
-    description: "Silent run, no issue created",
+    label: "仅运行",
+    description: "静默执行，不创建任务",
     Icon: Play,
   },
 ];
@@ -201,22 +201,22 @@ function formatCountdown(target: Date, now: Date): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m`;
-  return "<1m";
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
+  if (minutes > 0) return `${minutes} 分钟`;
+  return "<1 分钟";
 }
 
 function formatNextRunAbsolute(date: Date, timezone: string): string {
   try {
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat("zh-CN", {
       timeZone: timezone,
       weekday: "short",
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      hour12: true,
+      hour12: false,
     }).format(date);
   } catch {
     return date.toLocaleString();
@@ -322,8 +322,8 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
           scheduleOk = false;
         }
         onOpenChange(false);
-        if (scheduleOk) toast.success("Autopilot created");
-        else toast.error("Autopilot created, but schedule failed to save");
+        if (scheduleOk) toast.success("自动巡航已创建");
+        else toast.error("自动巡航已创建，但计划保存失败");
       } else {
         await updateAutopilot.mutateAsync({
           id: props.autopilotId,
@@ -356,11 +356,11 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
           }
         }
         onOpenChange(false);
-        if (scheduleOk) toast.success("Autopilot updated");
-        else toast.error("Autopilot updated, but schedule failed to save");
+        if (scheduleOk) toast.success("自动巡航已更新");
+        else toast.error("自动巡航已更新，但计划保存失败");
       }
     } catch {
-      toast.error(isCreate ? "Failed to create autopilot" : "Failed to update autopilot");
+      toast.error(isCreate ? "创建自动巡航失败" : "更新自动巡航失败");
     } finally {
       setSubmitting(false);
     }
@@ -382,7 +382,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
         )}
       >
         <DialogTitle className="sr-only">
-          {isCreate ? "New Autopilot" : "Edit Autopilot"}
+          {isCreate ? "新建自动巡航" : "编辑自动巡航"}
         </DialogTitle>
 
         {/* Header */}
@@ -393,11 +393,11 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
                 <Rocket className="size-3" />
               </span>
               <span className="font-medium text-foreground">
-                {isCreate ? "New autopilot" : "Edit autopilot"}
+                {isCreate ? "新建自动巡航" : "编辑自动巡航"}
               </span>
             </div>
             <span className="text-muted-foreground/60">·</span>
-            <span className="text-muted-foreground">A recurring AI task</span>
+            <span className="text-muted-foreground">周期性 AI 任务</span>
             {workspaceName && (
               <>
                 <ChevronRight className="size-3 text-muted-foreground/40" />
@@ -417,7 +417,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
                   </button>
                 }
               />
-              <TooltipContent side="bottom">{isExpanded ? "Collapse" : "Expand"}</TooltipContent>
+              <TooltipContent side="bottom">{isExpanded ? "收起" : "展开"}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
@@ -430,7 +430,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
                   </button>
                 }
               />
-              <TooltipContent side="bottom">Close</TooltipContent>
+              <TooltipContent side="bottom">关闭</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -446,7 +446,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
               <TitleEditor
                 autoFocus={isCreate}
                 defaultValue={initial.title ?? ""}
-                placeholder="Autopilot name"
+                placeholder="自动巡航名称"
                 className="text-2xl font-semibold tracking-tight"
                 onChange={setTitle}
                 onSubmit={handleSubmit}
@@ -455,10 +455,10 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
 
             <div className="px-6 pb-2 shrink-0 flex items-baseline gap-2">
               <span className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                Runbook
+                执行说明
               </span>
               <span className="text-xs text-muted-foreground/80">
-                Read by the agent on every run
+                智能体每次运行都会读取
               </span>
             </div>
 
@@ -466,7 +466,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
               <div className="h-full overflow-y-auto rounded-lg border border-border bg-background transition-colors focus-within:border-input px-4 py-3">
                 <ContentEditor
                   defaultValue={initial.description ?? ""}
-                  placeholder={`# Goal\nWhat should the agent accomplish?\n\n# Context\nWho is this for? Any constraints?\n\n# Steps\n1. …\n2. …`}
+                  placeholder={`# 目标\n希望智能体完成什么？\n\n# 背景\n这是给谁用的？有什么约束？\n\n# 步骤\n1. …\n2. …`}
                   onUpdate={setDescription}
                   debounceMs={300}
                   showBubbleMenu={false}
@@ -492,7 +492,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
               disabled={schedulePillDisabled}
               disabledReason={
                 schedulePillDisabled
-                  ? "This autopilot has multiple schedules — edit them in the detail page."
+                  ? "这个自动巡航有多个计划，请到详情页编辑。"
                   : undefined
               }
             />
@@ -504,21 +504,21 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
             <Zap className="size-3.5 text-amber-500 shrink-0" />
             <span className="truncate">
-              Once saved, runs automatically until paused.
+              保存后会自动运行，直到你暂停它。
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              取消
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
               {submitting
                 ? isCreate
-                  ? "Creating..."
-                  : "Saving..."
+                  ? "创建中..."
+                  : "保存中..."
                 : isCreate
-                ? "Create autopilot"
-                : "Save"}
+                ? "创建自动巡航"
+                : "保存"}
             </Button>
           </div>
         </div>
@@ -552,7 +552,7 @@ function AgentSection({
 }) {
   return (
     <div>
-      <SectionLabel>Agent</SectionLabel>
+      <SectionLabel>智能体</SectionLabel>
       <AgentPicker
         agentId={selectedId || null}
         onChange={onChange}
@@ -579,7 +579,7 @@ function AgentSection({
             )}
             <span className="flex-1 min-w-0">
               <span className="block text-sm font-medium truncate">
-                {selectedName ?? "Select agent"}
+                {selectedName ?? "选择智能体"}
               </span>
               {selectedDescription && (
                 <span className="block text-xs text-muted-foreground truncate">
@@ -604,7 +604,7 @@ function OutputModeSection({
 }) {
   return (
     <div>
-      <SectionLabel>Output mode</SectionLabel>
+      <SectionLabel>输出方式</SectionLabel>
       <div className="space-y-1.5">
         {OUTPUT_MODES.map((o) => {
           const selected = o.value === mode;
@@ -667,7 +667,7 @@ function ScheduleSection({
 
   return (
     <div>
-      <SectionLabel>Schedule</SectionLabel>
+      <SectionLabel>计划</SectionLabel>
       <div
         className={cn(
           "space-y-2",
@@ -752,7 +752,7 @@ function ScheduleSection({
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1">
             <Clock className="size-3 shrink-0" />
             <span className="truncate">
-              Next run:{" "}
+              下次运行：{" "}
               <span className="text-foreground">
                 {formatNextRunAbsolute(next, config.timezone)}
               </span>

@@ -45,7 +45,7 @@ import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { availabilityConfig } from "../presence";
-import { AgentDetailInspector } from "./agent-detail-inspector";
+import { AgentHero } from "./agent-hero";
 import { AgentOverviewPane } from "./agent-overview-pane";
 
 interface AgentDetailPageProps {
@@ -88,9 +88,9 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     try {
       await api.updateAgent(id, data as UpdateAgentRequest);
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
-      toast.success("Agent updated");
+      toast.success("智能体已更新");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update agent");
+      toast.error(e instanceof Error ? e.message : "更新智能体失败");
       throw e;
     }
   };
@@ -99,9 +99,9 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     try {
       await api.archiveAgent(id);
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
-      toast.success("Agent archived");
+      toast.success("智能体已归档");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to archive agent");
+      toast.error(e instanceof Error ? e.message : "归档智能体失败");
     }
   };
 
@@ -109,9 +109,9 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     try {
       await api.restoreAgent(id);
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
-      toast.success("Agent restored");
+      toast.success("智能体已恢复");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to restore agent");
+      toast.error(e instanceof Error ? e.message : "恢复智能体失败");
     }
   };
 
@@ -124,15 +124,15 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   if (!agent) {
     return (
       <div className="flex flex-1 min-h-0 flex-col">
-        <BackHeader paths={paths.agents()} title="Agents" />
+        <BackHeader paths={paths.agents()} title="智能体" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
           <AlertCircle className="h-8 w-8 text-destructive" />
           <div>
-            <p className="text-sm font-medium">Agent not found</p>
+            <p className="text-sm font-medium">未找到智能体</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {agentsError instanceof Error
                 ? agentsError.message
-                : "This agent may have been archived or deleted."}
+                : "这个智能体可能已归档或删除。"}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -142,14 +142,14 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
               size="sm"
               onClick={() => refetchAgents()}
             >
-              Try again
+              重试
             </Button>
             <Button
               type="button"
               size="sm"
               onClick={() => navigation.push(paths.agents())}
             >
-              Back to agents
+              返回智能体
             </Button>
           </div>
         </div>
@@ -189,7 +189,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-6 py-2 text-xs text-muted-foreground">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1">
-            This agent is archived. It cannot be assigned or mentioned.
+            这个智能体已归档，无法被分配或提及。
           </span>
           {canEdit.allowed && (
             <Button
@@ -198,14 +198,14 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
               className="h-6 text-xs"
               onClick={() => handleRestore(agent.id)}
             >
-              Restore
+              恢复
             </Button>
           )}
         </div>
       )}
 
-      <div className="grid flex-1 min-h-0 grid-cols-[320px_minmax(0,1fr)] gap-4 p-6">
-        <AgentDetailInspector
+      <div className="flex flex-1 min-h-0 flex-col">
+        <AgentHero
           agent={agent}
           runtime={runtime}
           owner={owner}
@@ -216,12 +216,13 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
           canEdit={canEdit.allowed}
           onUpdate={handleUpdate}
         />
-
-        <AgentOverviewPane
-          agent={agent}
-          runtimes={runtimes}
-          onUpdate={handleUpdate}
-        />
+        <div className="flex flex-1 min-h-0 flex-col p-4">
+          <AgentOverviewPane
+            agent={agent}
+            runtimes={runtimes}
+            onUpdate={handleUpdate}
+          />
+        </div>
       </div>
 
       {confirmArchive && (
@@ -238,12 +239,11 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
               </div>
               <DialogHeader className="flex-1 gap-1">
                 <DialogTitle className="text-sm font-semibold">
-                  Archive agent?
+                  归档智能体？
                 </DialogTitle>
                 <DialogDescription className="text-xs">
-                  &quot;{agent.name}&quot; will be archived. It won&apos;t be
-                  assignable or mentionable, but all history is preserved. You
-                  can restore it later.
+                  &quot;{agent.name}&quot; 将被归档。它不会再被分配或提及，
+                  但历史记录会保留，之后也可以恢复。
                 </DialogDescription>
               </DialogHeader>
             </div>
@@ -252,7 +252,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
                 variant="ghost"
                 onClick={() => setConfirmArchive(false)}
               >
-                Cancel
+                取消
               </Button>
               <Button
                 variant="destructive"
@@ -262,7 +262,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
                   navigation.push(paths.agents());
                 }}
               >
-                Archive
+                归档
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -300,7 +300,7 @@ function DetailHeader({
           className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Agents
+          智能体
         </AppLink>
         <span className="text-muted-foreground/40">/</span>
         <h1 className="truncate text-sm font-medium">{agent.name}</h1>
@@ -327,7 +327,7 @@ function DetailHeader({
               onClick={onArchive}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Archive Agent
+              归档智能体
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

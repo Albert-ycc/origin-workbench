@@ -53,7 +53,7 @@ export function MemberProfileCard({ userId }: MemberProfileCardProps) {
 
   if (!member) {
     return (
-      <div className="text-xs text-muted-foreground">Member unavailable</div>
+      <div className="text-xs text-muted-foreground">成员不可用</div>
     );
   }
 

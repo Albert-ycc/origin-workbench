@@ -23,8 +23,7 @@ import { useWindowOverlayStore, type WindowOverlay } from "@/stores/window-overl
  * with what the user actually sees.
  *
  * PostHog's `capture_pageview: true` auto-capture is intentionally off (see
- * `initAnalytics`) so this component owns the event shape, matching the web
- * implementation in `apps/web/components/pageview-tracker.tsx`.
+ * `initAnalytics`) so this component owns the event shape for the desktop shell.
  */
 export function PageviewTracker() {
   const user = useAuthStore((s) => s.user);

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Camera, Loader2, Pencil } from "lucide-react";
+import { Camera, Loader2, Pencil, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type {
   Agent,
@@ -37,6 +37,8 @@ import {
 } from "@multica/ui/components/ui/popover";
 import { PropRow } from "../../common/prop-row";
 import { availabilityConfig } from "../presence";
+import { AvatarPicker } from "../../common/avatar-picker";
+import { AVATAR_SET } from "../../common/avatar-set";
 import { CharCounter } from "./char-counter";
 import { ConcurrencyPicker } from "./inspector/concurrency-picker";
 import { ModelPicker } from "./inspector/model-picker";
@@ -108,8 +110,8 @@ export function AgentDetailInspector({
       {/* Properties — editable when canEdit. When the current user lacks
           permission, each picker self-renders a static read-only display so
           the value is visible but not interactive. */}
-      <Section label="Properties">
-        <PropRow label="Runtime" interactive={false}>
+      <Section label="属性">
+        <PropRow label="运行环境" interactive={false}>
           <RuntimePicker
             value={agent.runtime_id}
             runtimes={runtimes}
@@ -119,7 +121,7 @@ export function AgentDetailInspector({
             onChange={(id) => update({ runtime_id: id })}
           />
         </PropRow>
-        <PropRow label="Model" interactive={false}>
+        <PropRow label="模型" interactive={false}>
           <ModelPicker
             runtimeId={agent.runtime_id}
             runtimeOnline={!!isOnline}
@@ -128,14 +130,14 @@ export function AgentDetailInspector({
             onChange={(m) => update({ model: m })}
           />
         </PropRow>
-        <PropRow label="Visibility" interactive={false}>
+        <PropRow label="可见性" interactive={false}>
           <VisibilityPicker
             value={agent.visibility}
             canEdit={canEdit}
             onChange={(v) => update({ visibility: v })}
           />
         </PropRow>
-        <PropRow label="Concurrency" interactive={false}>
+        <PropRow label="并发数" interactive={false}>
           <ConcurrencyPicker
             value={agent.max_concurrent_tasks}
             canEdit={canEdit}
@@ -145,9 +147,9 @@ export function AgentDetailInspector({
       </Section>
 
       {/* Details — read-only (no hover, no chip styling — these aren't clickable) */}
-      <Section label="Details">
+      <Section label="详情">
         {owner && (
-          <PropRow label="Owner" interactive={false}>
+          <PropRow label="所有者" interactive={false}>
             <span className="flex min-w-0 items-center gap-1.5">
               <ActorAvatar
                 actorType="member"
@@ -158,12 +160,12 @@ export function AgentDetailInspector({
             </span>
           </PropRow>
         )}
-        <PropRow label="Created" interactive={false}>
+        <PropRow label="创建时间" interactive={false}>
           <span className="text-muted-foreground">
             {timeAgo(agent.created_at)}
           </span>
         </PropRow>
-        <PropRow label="Updated" interactive={false}>
+        <PropRow label="更新时间" interactive={false}>
           <span className="text-muted-foreground">
             {timeAgo(agent.updated_at)}
           </span>
@@ -174,7 +176,7 @@ export function AgentDetailInspector({
       <div className="flex flex-col border-b px-5 py-4">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Skills
+            技能
           </span>
           <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">
             {agent.skills.length}
@@ -248,6 +250,9 @@ function AvatarEditor({
     );
   }
 
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [savingPreset, setSavingPreset] = useState<string | null>(null);
+
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -256,37 +261,98 @@ function AvatarEditor({
       const result = await upload(file);
       if (!result) return;
       await onUpdate({ avatar_url: result.link });
-      toast.success("Avatar updated");
+      toast.success("头像已更新");
+      setPickerOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to upload avatar");
+      toast.error(err instanceof Error ? err.message : "上传头像失败");
     }
   };
 
+  const handlePreset = async (url: string, label: string) => {
+    if (uploading || savingPreset) return;
+    setSavingPreset(url);
+    try {
+      await onUpdate({ avatar_url: url });
+      toast.success(`已切换为「${label}」`);
+      setPickerOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "更新头像失败");
+    } finally {
+      setSavingPreset(null);
+    }
+  };
+
+  const isBusy = uploading || savingPreset !== null;
+
   return (
     <>
-      <button
-        type="button"
-        // rounded-lg matches the standard agent avatar treatment used in
-        // list rows. Avoid rounded-full — circles are reserved for humans.
-        className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-        aria-label="Change avatar"
-      >
-        <ActorAvatar
-          actorType="agent"
-          actorId={agent.id}
-          size={56}
-          className="rounded-none"
+      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              // rounded-lg matches the standard agent avatar treatment used in
+              // list rows. Avoid rounded-full — circles are reserved for humans.
+              className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              disabled={isBusy}
+              aria-label="更换头像"
+            >
+              <ActorAvatar
+                actorType="agent"
+                actorId={agent.id}
+                size={56}
+                className="rounded-none"
+              />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                {isBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                ) : (
+                  <Camera className="h-4 w-4 text-white" />
+                )}
+              </div>
+            </button>
+          }
         />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-          {uploading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-white" />
-          ) : (
-            <Camera className="h-4 w-4 text-white" />
-          )}
-        </div>
-      </button>
+        <PopoverContent className="w-80 p-3" align="start" sideOffset={8}>
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold">从预设选</div>
+              <div className="text-[11px] text-muted-foreground">
+                洛蕾莱风格 · 30 个预设
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isBusy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" />
+              )}
+              上传自定义
+            </Button>
+          </div>
+          <AvatarPicker
+            value={agent.avatar_url ?? undefined}
+            onChange={(url) => {
+              const name = AVATAR_SET.find((p) => p.url === url)?.name ?? "新头像";
+              void handlePreset(url, name);
+            }}
+            idPrefix="agent-inspector-avatar"
+            tileSize={56}
+          />
+          {savingPreset ? (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              保存中...
+            </div>
+          ) : null}
+        </PopoverContent>
+      </Popover>
       <input
         ref={fileInputRef}
         type="file"
@@ -319,7 +385,7 @@ function NameAndDescription({
           </span>
         ) : (
           <span className="text-xs italic leading-relaxed text-muted-foreground/50">
-            No description
+            暂无描述
           </span>
         )}
       </div>
@@ -332,9 +398,9 @@ function NameAndDescription({
         value={agent.name}
         onSave={(v) => onUpdate({ name: v.trim() })}
         kind="input"
-        title="Rename agent"
-        placeholder="Agent name"
-        validate={(v) => (v.trim().length > 0 ? null : "Name is required")}
+        title="重命名智能体"
+        placeholder="智能体名称"
+        validate={(v) => (v.trim().length > 0 ? null : "名称不能为空")}
       >
         {(triggerProps) => (
           <button
@@ -387,7 +453,7 @@ function DescriptionEditor({
         {value ? (
           <span className="text-muted-foreground">{value}</span>
         ) : (
-          <span className="italic text-muted-foreground/50">No description</span>
+          <span className="italic text-muted-foreground/50">暂无描述</span>
         )}
         <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
       </button>
@@ -439,14 +505,14 @@ function DescriptionEditorBody({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Edit description</DialogTitle>
+        <DialogTitle>编辑描述</DialogTitle>
       </DialogHeader>
       <div className="flex flex-col gap-2">
         <textarea
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="What does this agent do?"
+          placeholder="这个智能体做什么？"
           rows={6}
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose();
@@ -466,14 +532,14 @@ function DescriptionEditorBody({
           onClick={onClose}
           disabled={saving}
         >
-          Cancel
+          取消
         </Button>
         <Button
           size="sm"
           onClick={() => void commit()}
           disabled={saving || overLimit || !dirty}
         >
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "保存"}
         </Button>
       </DialogFooter>
     </>
@@ -591,7 +657,7 @@ function InlineEditPopover({
               onClick={() => setOpen(false)}
               disabled={saving}
             >
-              Cancel
+              取消
             </Button>
             <Button
               size="sm"
@@ -601,7 +667,7 @@ function InlineEditPopover({
               {saving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                "Save"
+                "保存"
               )}
             </Button>
           </div>

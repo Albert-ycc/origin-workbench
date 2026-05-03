@@ -42,7 +42,7 @@ export function DueDatePicker({
                 {date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
               </span>
             ) : (
-              <span className="text-muted-foreground">Due date</span>
+              <span className="text-muted-foreground">截止时间</span>
             )}
           </>
         )}

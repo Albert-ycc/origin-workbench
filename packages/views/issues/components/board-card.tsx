@@ -68,7 +68,7 @@ export const BoardCardContent = memo(function BoardCardContent({
     (updates: Partial<UpdateIssueRequest>) => {
       updateIssueMutation.mutate(
         { id: issue.id, ...updates },
-        { onError: () => toast.error("Failed to update issue") },
+        { onError: () => toast.error("更新任务失败") },
       );
     },
     [issue.id, updateIssueMutation],

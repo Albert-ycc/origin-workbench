@@ -35,7 +35,7 @@ export function LabsTab() {
       );
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Failed to update setting",
+        e instanceof Error ? e.message : "更新设置失败",
       );
     } finally {
       setSaving(false);
@@ -61,14 +61,14 @@ export function LabsTab() {
                     htmlFor="co-authored-by"
                     className="text-sm font-medium"
                   >
-                    Co-authored-by trailer
+                    Co-authored-by 提交尾注
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    Automatically add{" "}
+                    自动为智能体创建的提交添加{" "}
                     <code className="rounded bg-muted px-1 py-0.5 text-xs">
                       Co-authored-by: multica-agent &lt;github@multica.ai&gt;
                     </code>{" "}
-                    to commits made by agents.
+                    。
                   </p>
                 </div>
               </div>

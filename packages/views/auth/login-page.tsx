@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -22,79 +23,83 @@ import { useAuthStore } from "@multica/core/auth";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { api } from "@multica/core/api";
 import type { User } from "@multica/core/types";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { AvatarPicker, defaultAvatarFor } from "../common/avatar-picker";
 
 interface GoogleAuthConfig {
   clientId: string;
   redirectUri: string;
-  /** Opaque state passed through Google OAuth (e.g. "platform:desktop"). */
   state?: string;
 }
 
 interface CliCallbackConfig {
-  /** Validated localhost callback URL */
   url: string;
-  /** Opaque state to pass back to CLI */
   state: string;
 }
 
 interface LoginPageProps {
-  /** Logo element rendered above the title */
   logo?: ReactNode;
-  /** Called after successful login. The workspace list is seeded into React
-   *  Query before this fires, so the caller can compute a destination URL. */
   onSuccess: () => void;
-  /** Google OAuth config. Omit to disable Google login. */
   google?: GoogleAuthConfig;
-  /** CLI callback config for authorizing CLI tools. */
   cliCallback?: CliCallbackConfig;
-  /** Called after a token is obtained (e.g. to set cookies). */
   onTokenObtained?: () => void;
-  /** Override Google login handler (e.g. desktop opens browser externally). When provided, renders the Google button even if `google` config is omitted. */
   onGoogleLogin?: () => void;
-  /** Slot rendered at the bottom of the sign-in card, below the
-   *  Google button. The web shell uses it for a "Prefer the desktop
-   *  app?" prompt; desktop omits it (a download prompt inside the app
-   *  would be absurd). */
   extra?: ReactNode;
+  mode?: "web" | "local";
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const LAST_NAME_KEY = "origin_last_signin_name";
+const LAST_AVATAR_KEY = "origin_last_signin_avatar";
+
+function readStorage(key: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStorage(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore quota and private-mode failures; login itself should continue.
+  }
+}
 
 function redirectToCliCallback(url: string, token: string, state: string) {
   const separator = url.includes("?") ? "&" : "?";
   window.location.href = `${url}${separator}token=${encodeURIComponent(token)}&state=${encodeURIComponent(state)}`;
 }
 
-/**
- * Validate that a CLI callback URL points to a safe host over HTTP.
- * Allows localhost and private/LAN IPs (RFC 1918) to support self-hosted setups
- * on local VMs while blocking arbitrary public hosts.
- */
 export function validateCliCallback(cliCallback: string): boolean {
   try {
     const cbUrl = new URL(cliCallback);
     if (cbUrl.protocol !== "http:") return false;
-    const h = cbUrl.hostname;
-    if (h === "localhost" || h === "127.0.0.1") return true;
-    // Allow RFC 1918 private IPs: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
-    if (/^10\./.test(h)) return true;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-    if (/^192\.168\./.test(h)) return true;
+
+    const host = cbUrl.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+      return true;
+    }
+
+    const parts = host.split(".").map((part) => Number(part));
+    if (
+      parts.length !== 4 ||
+      parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+    ) {
+      return false;
+    }
+
+    const [a, b] = parts as [number, number, number, number];
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
     return false;
   } catch {
     return false;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function LoginPage({
   logo,
@@ -104,7 +109,148 @@ export function LoginPage({
   onTokenObtained,
   onGoogleLogin,
   extra,
+  mode = "web",
 }: LoginPageProps) {
+  if (mode === "local") {
+    return (
+      <LocalLoginPage
+        logo={logo}
+        onSuccess={onSuccess}
+        onTokenObtained={onTokenObtained}
+        extra={extra}
+      />
+    );
+  }
+
+  return (
+    <WebLoginPage
+      logo={logo}
+      onSuccess={onSuccess}
+      google={google}
+      cliCallback={cliCallback}
+      onTokenObtained={onTokenObtained}
+      onGoogleLogin={onGoogleLogin}
+      extra={extra}
+    />
+  );
+}
+
+function LocalLoginPage({
+  logo,
+  onSuccess,
+  onTokenObtained,
+  extra,
+}: Pick<LoginPageProps, "logo" | "onSuccess" | "onTokenObtained" | "extra">) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(() => readStorage(LAST_NAME_KEY));
+  // Default avatar is deterministic based on the (possibly empty) saved name.
+  // Once the user types a different name in the form, the previously-selected
+  // avatar from localStorage stays put — only the *initial* default tracks the
+  // saved name, so we don't yank the avatar around on every keystroke.
+  const [avatar, setAvatar] = useState(
+    () => readStorage(LAST_AVATAR_KEY) || defaultAvatarFor(readStorage(LAST_NAME_KEY)),
+  );
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("先给自己起个名字");
+      return;
+    }
+    if (trimmed.length > 32) {
+      setError("名字最多 32 个字符");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await useAuthStore.getState().localSignIn(trimmed, avatar);
+      writeStorage(LAST_NAME_KEY, trimmed);
+      writeStorage(LAST_AVATAR_KEY, avatar);
+      const wsList = await api.listWorkspaces();
+      qc.setQueryData(workspaceKeys.list(), wsList);
+      onTokenObtained?.();
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "进入工作台失败");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-md">
+        <CardHeader className="items-center text-center">
+          {logo ? <div className="mb-3">{logo}</div> : null}
+          <CardTitle className="text-xl">欢迎来到原点工作台</CardTitle>
+          <CardDescription>
+            本地的智能体工作台。给自己起个名字，选个头像，就能进。
+          </CardDescription>
+        </CardHeader>
+
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-5">
+            <div>
+              <div className="mb-2 text-sm font-medium">头像</div>
+              <AvatarPicker
+                value={avatar}
+                onChange={setAvatar}
+                idPrefix="signin-avatar"
+                tileSize={52}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="signin-name" className="mb-2 block">
+                名字
+              </Label>
+              <Input
+                id="signin-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="你怎么称呼自己？"
+                maxLength={32}
+                autoFocus
+                disabled={loading}
+              />
+            </div>
+
+            {error ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
+
+            <Button
+              type="submit"
+              className="h-10 w-full"
+              disabled={loading || !name.trim()}
+            >
+              {loading ? <Loader2 className="size-4 animate-spin" /> : null}
+              进入工作台
+            </Button>
+          </CardContent>
+
+          {extra ? <CardFooter>{extra}</CardFooter> : null}
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function WebLoginPage({
+  logo,
+  onSuccess,
+  google,
+  cliCallback,
+  onTokenObtained,
+  onGoogleLogin,
+  extra,
+}: Omit<LoginPageProps, "mode">) {
   const qc = useQueryClient();
   const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
   const [email, setEmail] = useState("");
@@ -113,17 +259,11 @@ export function LoginPage({
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [existingUser, setExistingUser] = useState<User | null>(null);
-  // Tracks how the existing session was detected so handleCliAuthorize
-  // uses the matching token source (cookie → issueCliToken, localStorage → direct).
   const authSourceRef = useRef<"cookie" | "localStorage">("cookie");
 
-  // Check for existing session when CLI callback is present.
-  // Prioritises cookie auth (= current browser session) to avoid authorising
-  // the CLI with a stale or mismatched localStorage token.
   useEffect(() => {
     if (!cliCallback) return;
 
-    // Ensure no stale bearer token interferes — we want to test the cookie first.
     api.setToken(null);
 
     api
@@ -134,7 +274,6 @@ export function LoginPage({
         setStep("cli_confirm");
       })
       .catch(() => {
-        // Cookie auth failed — fall back to localStorage token
         const token = localStorage.getItem("multica_token");
         if (!token) return;
 
@@ -153,7 +292,6 @@ export function LoginPage({
       });
   }, [cliCallback]);
 
-  // Cooldown timer for resend
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
@@ -164,7 +302,7 @@ export function LoginPage({
     async (e?: React.FormEvent) => {
       e?.preventDefault();
       if (!email) {
-        setError("Email is required");
+        setError("邮箱不能为空");
         return;
       }
       setLoading(true);
@@ -178,7 +316,7 @@ export function LoginPage({
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to send code. Make sure the server is running.",
+            : "发送验证码失败，请确认服务正在运行。",
         );
       } finally {
         setLoading(false);
@@ -194,7 +332,6 @@ export function LoginPage({
       setError("");
       try {
         if (cliCallback) {
-          // CLI path: get token directly for the redirect URL
           const { token } = await api.verifyCode(email, value);
           localStorage.setItem("multica_token", token);
           api.setToken(token);
@@ -203,19 +340,13 @@ export function LoginPage({
           return;
         }
 
-        // Normal path: seed the workspace list into the Query cache so the
-        // caller's onSuccess can read it synchronously to compute a destination
-        // URL (first workspace's slug, or /workspaces/new for zero-workspace
-        // users).
         await useAuthStore.getState().verifyCode(email, value);
         const wsList = await api.listWorkspaces();
         qc.setQueryData(workspaceKeys.list(), wsList);
         onTokenObtained?.();
         onSuccess();
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Invalid or expired code",
-        );
+        setError(err instanceof Error ? err.message : "验证码无效或已过期");
         setCode("");
         setLoading(false);
       }
@@ -230,9 +361,7 @@ export function LoginPage({
       await useAuthStore.getState().sendCode(email);
       setCooldown(60);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to resend code",
-      );
+      setError(err instanceof Error ? err.message : "重新发送验证码失败");
     }
   };
 
@@ -244,12 +373,10 @@ export function LoginPage({
       let token: string;
 
       if (authSourceRef.current === "localStorage") {
-        // Session was detected via localStorage — reuse that token directly.
         const stored = localStorage.getItem("multica_token");
         if (!stored) throw new Error("token missing");
         token = stored;
       } else {
-        // Session was detected via cookie — obtain a bearer token from the server.
         const res = await api.issueCliToken();
         token = res.token;
       }
@@ -257,7 +384,7 @@ export function LoginPage({
       onTokenObtained?.();
       redirectToCliCallback(cliCallback.url, token, cliCallback.state);
     } catch {
-      setError("Failed to authorize CLI. Please log in again.");
+      setError("CLI 授权失败，请重新登录。");
       setExistingUser(null);
       setStep("email");
       setLoading(false);
@@ -270,6 +397,7 @@ export function LoginPage({
       return;
     }
     if (!google) return;
+
     const params = new URLSearchParams({
       client_id: google.clientId,
       redirect_uri: google.redirectUri,
@@ -282,23 +410,19 @@ export function LoginPage({
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   };
 
-  // -------------------------------------------------------------------------
-  // CLI confirm step
-  // -------------------------------------------------------------------------
-
   if (step === "cli_confirm" && existingUser) {
     return (
       <div className="flex min-h-svh items-center justify-center">
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
-            {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">Authorize CLI</CardTitle>
+            {logo ? <div className="mx-auto mb-4">{logo}</div> : null}
+            <CardTitle className="text-2xl">授权 CLI</CardTitle>
             <CardDescription>
-              Allow the CLI to access Multica as{" "}
+              允许 CLI 以{" "}
               <span className="font-medium text-foreground">
                 {existingUser.email}
-              </span>
-              ?
+              </span>{" "}
+              的身份访问 Multica？
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -308,7 +432,7 @@ export function LoginPage({
               className="w-full"
               size="lg"
             >
-              {loading ? "Authorizing..." : "Authorize"}
+              {loading ? "授权中..." : "授权"}
             </Button>
             <Button
               variant="ghost"
@@ -318,28 +442,26 @@ export function LoginPage({
                 setStep("email");
               }}
             >
-              Use a different account
+              使用其他账号
             </Button>
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Code verification step
-  // -------------------------------------------------------------------------
-
   if (step === "code") {
     return (
       <div className="flex min-h-svh items-center justify-center">
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
-            {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">Check your email</CardTitle>
+            {logo ? <div className="mx-auto mb-4">{logo}</div> : null}
+            <CardTitle className="text-2xl">查看邮箱</CardTitle>
             <CardDescription>
-              We sent a verification code to{" "}
-              <span className="font-medium text-foreground">{email}</span>
+              我们已向{" "}
+              <span className="font-medium text-foreground">{email}</span>{" "}
+              发送验证码
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
@@ -348,7 +470,7 @@ export function LoginPage({
               value={code}
               onChange={(value) => {
                 setCode(value);
-                if (value.length === 6) handleVerify(value);
+                if (value.length === 6) void handleVerify(value);
               }}
               disabled={loading}
             >
@@ -361,17 +483,15 @@ export function LoginPage({
                 <InputOTPSlot index={5} />
               </InputOTPGroup>
             </InputOTP>
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
                 onClick={handleResend}
                 disabled={cooldown > 0}
-                className="text-primary underline-offset-4 hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
+                className="text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
               >
-                {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+                {cooldown > 0 ? `${cooldown} 秒后可重发` : "重新发送验证码"}
               </button>
             </div>
           </CardContent>
@@ -386,7 +506,7 @@ export function LoginPage({
                 setError("");
               }}
             >
-              Back
+              返回
             </Button>
           </CardFooter>
         </Card>
@@ -394,24 +514,18 @@ export function LoginPage({
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Email step
-  // -------------------------------------------------------------------------
-
   return (
     <div className="flex min-h-svh items-center justify-center">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          {logo && <div className="mx-auto mb-4">{logo}</div>}
-          <CardTitle className="text-2xl">Sign in to Multica</CardTitle>
-          <CardDescription>
-            Enter your email to get a login code
-          </CardDescription>
+          {logo ? <div className="mx-auto mb-4">{logo}</div> : null}
+          <CardTitle className="text-2xl">登录 Multica</CardTitle>
+          <CardDescription>输入邮箱获取登录验证码</CardDescription>
         </CardHeader>
         <CardContent>
           <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="login-email">Email</Label>
+              <Label htmlFor="login-email">邮箱</Label>
               <Input
                 id="login-email"
                 type="email"
@@ -422,9 +536,7 @@ export function LoginPage({
                 required
               />
             </div>
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </form>
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
@@ -435,16 +547,16 @@ export function LoginPage({
             size="lg"
             disabled={!email || loading}
           >
-            {loading ? "Sending code..." : "Continue"}
+            {loading ? "发送中..." : "继续"}
           </Button>
-          {(google || onGoogleLogin) && (
+          {(google || onGoogleLogin) ? (
             <>
               <div className="relative w-full">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">or</span>
+                  <span className="bg-card px-2 text-muted-foreground">或</span>
                 </div>
               </div>
               <Button
@@ -473,11 +585,11 @@ export function LoginPage({
                     fill="#EA4335"
                   />
                 </svg>
-                Continue with Google
+                使用 Google 继续
               </Button>
             </>
-          )}
-          {extra && <div className="w-full pt-1 text-center">{extra}</div>}
+          ) : null}
+          {extra ? <div className="w-full pt-1 text-center">{extra}</div> : null}
         </CardFooter>
       </Card>
     </div>

@@ -31,15 +31,15 @@ export function SetParentIssueModal({
       onOpenChange={(v) => {
         if (!v) onClose();
       }}
-      title="Set parent issue"
-      description="Search for an issue to set as the parent of this issue"
+      title="设置父任务"
+      description="搜索要设置为当前任务父级的任务"
       excludeIds={excludeIds}
       onSelect={(selected) => {
         updateIssue.mutate(
           { id: issueId, parent_issue_id: selected.id },
-          { onError: () => toast.error("Failed to update issue") },
+          { onError: () => toast.error("更新任务失败") },
         );
-        toast.success(`Set ${selected.identifier} as parent issue`);
+        toast.success(`已将 ${selected.identifier} 设置为父任务`);
       }}
     />
   );

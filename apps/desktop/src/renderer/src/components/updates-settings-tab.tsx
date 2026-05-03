@@ -29,16 +29,15 @@ export function UpdatesSettingsTab() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold">Updates</h2>
+      <h2 className="text-lg font-semibold">更新</h2>
       <p className="text-sm text-muted-foreground mt-1">
-        The desktop app checks for new versions automatically once an hour and
-        shortly after launch.
+        桌面应用会在启动后和每小时自动检查新版本。
       </p>
 
       <div className="mt-6 divide-y">
         <div className="flex items-center justify-between gap-6 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-medium">Current version</p>
+            <p className="text-sm font-medium">当前版本</p>
             <p className="text-sm text-muted-foreground mt-0.5 font-mono">
               v{currentVersion}
             </p>
@@ -47,22 +46,20 @@ export function UpdatesSettingsTab() {
 
         <div className="flex items-start justify-between gap-6 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-medium">Check for updates</p>
+            <p className="text-sm font-medium">检查更新</p>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Trigger a check now instead of waiting for the next automatic
-              poll. Available updates appear as a notification in the corner.
+              立即检查一次，不必等待下一次自动轮询。有可用更新时会在角落提示。
             </p>
             {state.status === "up-to-date" && (
               <p className="text-sm text-muted-foreground mt-2 inline-flex items-center gap-1.5">
                 <Check className="size-3.5 text-success" />
-                You&apos;re on the latest version.
+                当前已是最新版本。
               </p>
             )}
             {state.status === "available" && (
               <p className="text-sm text-muted-foreground mt-2 inline-flex items-center gap-1.5">
                 <ArrowDownToLine className="size-3.5 text-primary" />
-                v{state.latestVersion} is available — see the download prompt
-                in the corner.
+                v{state.latestVersion} 可用，请查看角落里的下载提示。
               </p>
             )}
             {state.status === "error" && (
@@ -82,10 +79,10 @@ export function UpdatesSettingsTab() {
               {state.status === "checking" ? (
                 <>
                   <Loader2 className="size-3.5 animate-spin" />
-                  Checking…
+                  正在检查…
                 </>
               ) : (
-                "Check now"
+                "立即检查"
               )}
             </Button>
           </div>

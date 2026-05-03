@@ -47,7 +47,7 @@ export function CompactRuntimeRow({
           "h-2 w-2 shrink-0 rounded-full",
           online ? "bg-success" : "bg-muted-foreground/40",
         )}
-        aria-label={online ? "Online" : "Offline"}
+        aria-label={online ? "在线" : "离线"}
       />
     </div>
   );

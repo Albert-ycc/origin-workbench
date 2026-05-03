@@ -6,6 +6,7 @@ import { ModalRegistry } from "../modals/registry";
 import { AppSidebar } from "./app-sidebar";
 import { DashboardGuard } from "./dashboard-guard";
 import { WorkspacePresencePrefetch } from "./workspace-presence-prefetch";
+import { ChineseUiLocalizer } from "../localization";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -32,6 +33,7 @@ export function DashboardLayout({
       }
     >
       <SidebarProvider className="h-svh">
+        <ChineseUiLocalizer />
         <WorkspacePresencePrefetch />
         <AppSidebar searchSlot={searchSlot} />
         <SidebarInset className="relative overflow-hidden">

@@ -39,9 +39,9 @@ export function RepositoriesTab() {
       qc.setQueryData(workspaceKeys.list(), (old: Workspace[] | undefined) =>
         old?.map((ws) => (ws.id === updated.id ? updated : ws)),
       );
-      toast.success("Repositories saved");
+      toast.success("代码仓库已保存");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save repositories");
+      toast.error(e instanceof Error ? e.message : "保存代码仓库失败");
     } finally {
       setSaving(false);
     }
@@ -64,12 +64,12 @@ export function RepositoriesTab() {
   return (
     <div className="space-y-8">
       <section className="space-y-4">
-        <h2 className="text-sm font-semibold">Repositories</h2>
+        <h2 className="text-sm font-semibold">代码仓库</h2>
 
         <Card>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Git repositories associated with this workspace. Agents use these to clone and work on code.
+              与这个工作区关联的 Git 代码仓库。智能体会用它们克隆代码并执行任务。
             </p>
 
             {repos.map((repo, index) => (
@@ -99,7 +99,7 @@ export function RepositoriesTab() {
               <div className="flex items-center justify-between pt-1">
                 <Button variant="outline" size="sm" onClick={handleAddRepo}>
                   <Plus className="h-3 w-3" />
-                  Add repository
+                  添加代码仓库
                 </Button>
                 <Button
                   size="sm"
@@ -107,14 +107,14 @@ export function RepositoriesTab() {
                   disabled={saving}
                 >
                   <Save className="h-3 w-3" />
-                  {saving ? "Saving..." : "Save"}
+                  {saving ? "保存中..." : "保存"}
                 </Button>
               </div>
             )}
 
             {!canManageWorkspace && (
               <p className="text-xs text-muted-foreground">
-                Only admins and owners can manage repositories.
+                只有管理员和所有者可以管理代码仓库。
               </p>
             )}
           </CardContent>

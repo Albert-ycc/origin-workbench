@@ -79,29 +79,27 @@ export function StepWelcome({
             <div className="flex items-center gap-2.5">
               <MulticaIcon className="size-5 text-foreground" noSpin />
               <span className="font-serif text-xl font-medium tracking-tight">
-                Welcome to Multica
+                欢迎使用 Multica
               </span>
             </div>
 
             <h1 className="text-balance font-serif text-5xl font-medium leading-[1.04] tracking-tight sm:text-6xl">
-              Your AI teammates,
+              你的 AI 队友，
               <br />
-              in <em className="italic text-brand">one workspace.</em>
+              都在<em className="italic text-brand">一个工作区。</em>
             </h1>
 
             <div className="flex flex-col gap-4">
               <p className="text-lg leading-relaxed text-foreground/85">
-                Assign them work like you&apos;d assign a colleague — they
-                pick it up, update status, and comment when done.
+                像分配给同事一样给它们派活：它们会接任务、更新状态，并在完成后评论反馈。
               </p>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {isWeb ? (
                   <>
-                    Desktop bundles the runtime — nothing to install.
-                    Continue on web to connect your own CLI.
+                    桌面版内置运行环境，几乎不用配置。继续使用网页端，则需要连接你自己的 CLI。
                   </>
                 ) : (
-                  "By the end, a real agent will be replying to your first issue."
+                  "完成引导后，一个真实智能体会回复你的第一个任务。"
                 )}
               </p>
             </div>
@@ -124,7 +122,7 @@ export function StepWelcome({
                     className={buttonVariants({ size: "lg" })}
                   >
                     <Download className="h-4 w-4" />
-                    Download Desktop
+                    下载桌面版
                   </a>
                   <Button
                     size="lg"
@@ -135,7 +133,7 @@ export function StepWelcome({
                     {pending === "next" && (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     )}
-                    Continue on web
+                    继续使用网页端
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </>
@@ -148,7 +146,7 @@ export function StepWelcome({
                   {pending === "next" && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
-                  Start exploring
+                  开始探索
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               )}
@@ -162,7 +160,7 @@ export function StepWelcome({
                   {pending === "skip" && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
-                  I&apos;ve done this before
+                  我之前设置过
                 </Button>
               )}
             </div>
@@ -180,8 +178,7 @@ export function StepWelcome({
         <DragStrip />
         <div className="flex flex-1 flex-col items-center justify-center gap-7 px-8 py-8">
           <p className="max-w-[440px] text-balance text-center font-serif text-[15px] italic leading-snug text-muted-foreground">
-            Every issue, every thread, every decision — shared by your team and
-            agents.
+            每个任务、每段讨论、每个决策，都由你的团队和智能体共享。
           </p>
           <WelcomeIllustration />
         </div>
@@ -209,9 +206,8 @@ function WelcomeIllustration() {
         issueId="MCA-42"
         content={
           <>
-            <Mention>@Content Agent</Mention> can you draft a short launch
-            post? Pull from <Mention>@Research Agent</Mention>&apos;s interview
-            findings.
+            <Mention>@内容智能体</Mention> 帮我起草一篇简短发布帖。请引用
+            <Mention>@研究智能体</Mention> 的访谈结论。
           </>
         }
       />
@@ -221,8 +217,7 @@ function WelcomeIllustration() {
         issueId="MCA-42"
         content={
           <>
-            On it. Pulling Research&apos;s quotes, drafting around the
-            &ldquo;time saved&rdquo; angle…
+            收到。正在提取 Research 的引用，并围绕“节省时间”角度起草…
           </>
         }
         status="in_progress"
@@ -231,7 +226,7 @@ function WelcomeIllustration() {
         className="translate-x-8 rotate-[1.6deg]"
         actor={{ kind: "agent", name: "Research Agent", provider: "hermes" }}
         issueId="MCA-38"
-        content="This week's user interviews summarized — 12 calls, 4 recurring themes, 3 pull-quotes."
+        content="本周用户访谈已总结：12 次通话、4 个高频主题、3 条可引用观点。"
         status="done"
         timestamp="15 min ago"
       />
@@ -239,7 +234,7 @@ function WelcomeIllustration() {
         className="-translate-x-6 -rotate-[0.8deg]"
         actor={{ kind: "agent", name: "Review Agent", provider: "openclaw" }}
         issueId="MCA-42"
-        content="Reviewed Monday's draft — left 4 notes on tone. Standing by for the new one."
+        content="已审核周一草稿，并留下 4 条语气建议。等待新版。"
         status="in_review"
       />
       <MockActivityCard
@@ -248,8 +243,7 @@ function WelcomeIllustration() {
         issueId="MCA-35"
         content={
           <>
-            Shipped the export feature <Mention>@you</Mention> flagged.
-            Preview link in the PR.
+            你标记的导出功能已交付。预览链接在 PR 里。
           </>
         }
         status="done"

@@ -38,9 +38,9 @@ export function RuntimeDetailPage({ runtimeId }: { runtimeId: string }) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
         <Server className="h-10 w-10 text-muted-foreground/30" />
-        <p className="mt-3 text-sm">Runtime not found</p>
+        <p className="mt-3 text-sm">未找到能力来源</p>
         <p className="mt-1 text-xs text-muted-foreground/70">
-          It may have been deleted or you may not have access.
+          它可能已被删除，或你没有访问权限。
         </p>
       </div>
     );

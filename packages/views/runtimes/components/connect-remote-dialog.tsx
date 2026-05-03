@@ -122,7 +122,7 @@ multica config set app_url https://multica.ai`;
 
 const LOGIN_CMD = "multica login --token <YOUR_TOKEN>";
 
-const START_CMD = `multica daemon start --device-name "my-ec2-instance"
+const START_CMD = `multica daemon start --device-name "local-sidecar"
 multica daemon status`;
 
 function CodeBlock({
@@ -171,10 +171,9 @@ function InstructionsStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Connect a remote machine</DialogTitle>
+        <DialogTitle>添加能力来源</DialogTitle>
         <DialogDescription>
-          Run these commands on your remote machine (e.g. AWS EC2) to install the
-          Multica CLI and register it as a runtime.
+          用守护进程把本机或受你控制的机器注册到能力池。当前只做能力发现和绑定，不在数据库保存 API Key。
         </DialogDescription>
       </DialogHeader>
 
@@ -184,7 +183,7 @@ function InstructionsStep({
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Terminal className="h-3.5 w-3.5" />
-              1. Install the CLI
+              1. 安装 CLI
             </div>
             <CodeBlock
               code={INSTALL_CMD}
@@ -198,7 +197,7 @@ function InstructionsStep({
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Server className="h-3.5 w-3.5" />
-              2. Configure
+              2. 指向本地服务
             </div>
             <CodeBlock
               code={CONFIGURE_CMD}
@@ -211,7 +210,7 @@ function InstructionsStep({
           {/* Step 3: Login */}
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              3. Login with a personal access token
+              3. 使用访问令牌授权
             </div>
             <CodeBlock
               code={LOGIN_CMD}
@@ -220,18 +219,18 @@ function InstructionsStep({
               onCopy={onCopy}
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Create one in{" "}
+              令牌只用于注册守护进程，可在{" "}
               <span className="font-medium text-foreground">
-                Settings → Tokens
+                设置 → 令牌
               </span>
-              .
+              中创建。
             </p>
           </div>
 
           {/* Step 4: Start daemon */}
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              4. Start the daemon
+              4. 启动能力扫描
             </div>
             <CodeBlock
               code={START_CMD}
@@ -246,14 +245,12 @@ function InstructionsStep({
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
               <div className="text-[11px] leading-relaxed text-muted-foreground">
-                <span className="font-medium text-foreground">Security: </span>
-                Use an EC2 IAM role or least-privilege credentials. Never put
-                root keys into agent{" "}
+                <span className="font-medium text-foreground">安全提示：</span>
+                外部 API Provider 暂不在这里录入。后续只接 Keychain 或本地加密凭据，不会把密钥写入数据库明文或日志。不要把 root 密钥放进智能体{" "}
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
                   custom_env
                 </code>
-                . The daemon uses outbound connections only — no inbound ports
-                needed.
+                。守护进程只使用出站连接，不需要开放入站端口。
               </div>
             </div>
           </div>
@@ -262,35 +259,34 @@ function InstructionsStep({
           <details className="group pb-1">
             <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
               <Wrench className="h-3.5 w-3.5" />
-              Troubleshooting
+              排障
               <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
             </summary>
             <ul className="mt-1.5 list-disc space-y-0.5 pl-8 text-[11px] text-muted-foreground">
               <li>
-                Check status:{" "}
+                检查状态：{" "}
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
                   multica daemon status
                 </code>
               </li>
               <li>
-                View logs:{" "}
+                查看日志：{" "}
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
                   multica daemon logs -f
                 </code>
               </li>
               <li>
-                Verify provider:{" "}
+                验证提供方：{" "}
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
                   claude --version
                 </code>
               </li>
               <li>
-                Desktop auto-scans only your local machine. Remote machines must
-                run{" "}
+                桌面版会自动扫描本机已登录的 Claude Code、Codex、Gemini、Cursor 等能力。其他机器必须单独运行{" "}
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
                   multica daemon
                 </code>{" "}
-                separately.
+                。
               </li>
             </ul>
           </details>
@@ -299,10 +295,10 @@ function InstructionsStep({
 
       <DialogFooter>
         <Button variant="ghost" onClick={onClose}>
-          Cancel
+          取消
         </Button>
         <Button onClick={onNext}>
-          I&apos;ve started the daemon
+          我已启动能力扫描
           <ChevronRight className="h-3.5 w-3.5" />
         </Button>
       </DialogFooter>
@@ -318,10 +314,9 @@ function WaitingStep({ onBack }: { onBack: () => void }) {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Waiting for runtime…</DialogTitle>
+        <DialogTitle>正在等待能力来源…</DialogTitle>
         <DialogDescription>
-          Listening for your remote daemon to register. This page updates
-          automatically — no need to refresh.
+          正在等待守护进程注册到能力池。页面会自动更新，无需刷新。
         </DialogDescription>
       </DialogHeader>
 
@@ -332,13 +327,13 @@ function WaitingStep({ onBack }: { onBack: () => void }) {
           <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
             multica daemon status
           </code>{" "}
-          on the remote machine to verify it&apos;s running.
+          验证守护进程是否正在运行。
         </p>
       </div>
 
       <DialogFooter>
         <Button variant="ghost" onClick={onBack}>
-          Back
+          返回
         </Button>
       </DialogFooter>
     </>
@@ -359,10 +354,9 @@ function SuccessStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Runtime connected!</DialogTitle>
+        <DialogTitle>能力来源已连接</DialogTitle>
         <DialogDescription>
-          Your remote machine has registered as a runtime. You can now create an
-          agent that dispatches tasks to it.
+          新的能力来源已经进入能力池。下一步可以创建或编辑智能体，并显式绑定到这项能力。
         </DialogDescription>
       </DialogHeader>
 
@@ -375,11 +369,11 @@ function SuccessStep({
       <DialogFooter>
         {onGoToRuntime && (
           <Button variant="ghost" onClick={onGoToRuntime}>
-            View runtime
+            查看能力来源
           </Button>
         )}
         <Button onClick={onGoToAgents}>
-          Create an agent
+          创建智能体
           <ChevronRight className="h-3.5 w-3.5" />
         </Button>
       </DialogFooter>

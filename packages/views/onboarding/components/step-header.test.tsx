@@ -10,11 +10,11 @@ describe("StepHeader", () => {
     expect(dots).toHaveLength(ONBOARDING_STEP_ORDER.length);
   });
 
-  it("shows 'Step N of M' text matching the current step's position", () => {
+  it("shows step count text matching the current step's position", () => {
     // workspace is index 1 (0-indexed) → Step 2 of 5
     render(<StepHeader currentStep="workspace" />);
     expect(
-      screen.getByText(`Step 2 of ${ONBOARDING_STEP_ORDER.length}`),
+      screen.getByText(`第 2 步，共 ${ONBOARDING_STEP_ORDER.length} 步`),
     ).toBeInTheDocument();
   });
 
@@ -31,7 +31,7 @@ describe("StepHeader", () => {
     // must not crash. Assert the defensive fallback lands on step 1.
     render(<StepHeader currentStep={"bogus" as never} />);
     expect(
-      screen.getByText(`Step 1 of ${ONBOARDING_STEP_ORDER.length}`),
+      screen.getByText(`第 1 步，共 ${ONBOARDING_STEP_ORDER.length} 步`),
     ).toBeInTheDocument();
   });
 });

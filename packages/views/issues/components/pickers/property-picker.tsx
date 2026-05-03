@@ -165,7 +165,7 @@ export function PropertyPicker({
               }}
               onKeyDown={handleKeyDown}
               placeholder={searchPlaceholder}
-              aria-label="Filter options"
+              aria-label="筛选选项"
               className="w-full bg-transparent text-sm placeholder:text-muted-foreground outline-none"
             />
           </div>

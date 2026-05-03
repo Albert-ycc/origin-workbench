@@ -82,7 +82,7 @@ export function OtherOptionCard({
       >
         <RadioMark selected={selected} />
         <span className="text-[14.5px] font-normal leading-tight text-foreground">
-          Other
+          其他
         </span>
       </button>
       {selected && (
