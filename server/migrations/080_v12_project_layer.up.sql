@@ -99,8 +99,7 @@ END $$;
 TRUNCATE TABLE
     mission_assignment,
     mission_event,
-    mission_team_member,
-    mission_team,
+    mission_plan_item,
     mission,
     idea_nurture_note,
     idea,
