@@ -36,6 +36,16 @@ func init() {
 	rootCmd.PersistentFlags().String("workspace-id", "", "Workspace ID (env: MULTICA_WORKSPACE_ID)")
 	rootCmd.PersistentFlags().String("profile", "", "Configuration profile name (e.g. dev) — isolates config, daemon state, and workspaces")
 
+	// Origin product-surface commands (PRD §14). Group them at the top so
+	// agents and humans see Origin concepts before the legacy issue/autopilot
+	// stack.
+	missionCmd.GroupID = groupCore
+	ideaCmd.GroupID = groupCore
+	councilCmd.GroupID = groupCore
+	explorationCmd.GroupID = groupCore
+	toolBindingCmd.GroupID = groupCore
+	mailboxCmd.GroupID = groupCore
+
 	// Core commands
 	issueCmd.GroupID = groupCore
 	projectCmd.GroupID = groupCore
@@ -58,6 +68,16 @@ func init() {
 	configCmd.GroupID = groupAdditional
 	updateCmd.GroupID = groupAdditional
 	versionCmd.GroupID = groupAdditional
+
+	// Origin product-surface verbs first, so `multica --help` leads with
+	// the user-visible concepts (Mission / Idea / Council / Exploration /
+	// Tool Binding / Mailbox) rather than the legacy issue/autopilot stack.
+	rootCmd.AddCommand(missionCmd)
+	rootCmd.AddCommand(ideaCmd)
+	rootCmd.AddCommand(councilCmd)
+	rootCmd.AddCommand(explorationCmd)
+	rootCmd.AddCommand(toolBindingCmd)
+	rootCmd.AddCommand(mailboxCmd)
 
 	rootCmd.AddCommand(issueCmd)
 	rootCmd.AddCommand(projectCmd)

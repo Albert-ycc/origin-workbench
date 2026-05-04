@@ -998,10 +998,10 @@ func TestInjectRuntimeConfigDirectsMultiLineWritesToStdin(t *testing.T) {
 
 	for _, want := range []string{
 		"multi-line content",
-		"MUST pipe via stdin",
+		"Pipe content via stdin",
 		"--content-stdin",
 		"<<'COMMENT'",
-		"`--description`",
+		"long descriptions",
 		"--description-stdin",
 	} {
 		if !strings.Contains(s, want) {
@@ -1064,8 +1064,7 @@ func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
 		"Autopilot in run-only mode",
 		"Autopilot run ID: `run-1`",
 		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
-		"Your final assistant output is captured automatically as the autopilot run result",
+		"Your final assistant output is captured automatically as the run result",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("autopilot runtime config missing %q\n---\n%s", want, s)
