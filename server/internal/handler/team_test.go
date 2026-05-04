@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -449,6 +450,84 @@ func TestMissionCaptainDelegationCreatesMissionAssignmentAndEvent(t *testing.T) 
 	}
 }
 
+func TestPromoteIdeaCreatesMissionAndMarksIdeaPromoted(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	captainID := createTeamTestAgent(t, "Idea Promote Captain")
+	memberID := createTeamTestAgent(t, "Idea Promote Member")
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/ideas", map[string]any{
+		"title":       "把想法升级成 Mission",
+		"description": "原始想法描述。\n需要把养护笔记带入 Mission 简报。",
+		"tags":        []string{"origin", "mission"},
+	})
+	testHandler.CreateIdea(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIdea: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var ideaResp IdeaDetailResponse
+	if err := json.NewDecoder(w.Body).Decode(&ideaResp); err != nil {
+		t.Fatalf("decode idea: %v", err)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/ideas/"+ideaResp.Idea.ID+"/notes", map[string]any{
+		"kind":    "new_angle",
+		"summary": "养护后的关键角度",
+		"body":    "建议先确认负责人，再拆成两步执行。",
+	})
+	req = withURLParam(req, "id", ideaResp.Idea.ID)
+	testHandler.CreateIdeaNote(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIdeaNote: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/ideas/"+ideaResp.Idea.ID+"/promote", map[string]any{
+		"title":            "想法升级后的 Mission",
+		"captain_agent_id": captainID,
+		"member_agent_ids": []string{memberID},
+	})
+	req = withURLParam(req, "id", ideaResp.Idea.ID)
+	testHandler.PromoteIdea(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PromoteIdea: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var promoteResp PromoteIdeaResponse
+	if err := json.NewDecoder(w.Body).Decode(&promoteResp); err != nil {
+		t.Fatalf("decode promote response: %v", err)
+	}
+	if promoteResp.Idea.Status != "promoted" {
+		t.Fatalf("idea status = %q, want promoted", promoteResp.Idea.Status)
+	}
+	if promoteResp.Idea.PromotedMissionID == nil || *promoteResp.Idea.PromotedMissionID != promoteResp.Mission.Mission.ID {
+		t.Fatalf("promoted_mission_id mismatch: idea=%+v mission=%s", promoteResp.Idea.PromotedMissionID, promoteResp.Mission.Mission.ID)
+	}
+	if promoteResp.Mission.Mission.Title != "想法升级后的 Mission" {
+		t.Fatalf("mission title = %q", promoteResp.Mission.Mission.Title)
+	}
+	if promoteResp.Mission.Mission.CaptainAgentID != captainID {
+		t.Fatalf("captain id = %s, want %s", promoteResp.Mission.Mission.CaptainAgentID, captainID)
+	}
+	if len(promoteResp.Mission.PlanItems) == 0 {
+		t.Fatal("expected promoted mission to have plan items")
+	}
+
+	var messageBody string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT content FROM chat_message
+		WHERE chat_session_id = $1 AND role = 'user'
+		ORDER BY created_at ASC LIMIT 1
+	`, promoteResp.Mission.Mission.ChatSessionID).Scan(&messageBody); err != nil {
+		t.Fatalf("load promoted mission brief: %v", err)
+	}
+	if !strings.Contains(messageBody, "来源 Idea") || !strings.Contains(messageBody, "养护后的关键角度") {
+		t.Fatalf("mission brief should include idea context and nurture notes, got: %s", messageBody)
+	}
+}
+
 func TestMissionMemberCompletionCreatesTimelineAndMemoryCandidate(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -799,5 +878,350 @@ func TestCompleteTeamMessageAutoCreatesSkillCandidateAndConfirm(t *testing.T) {
 	}
 	if eventCount < 2 {
 		t.Fatalf("expected skill candidate timeline events, got %d", eventCount)
+	}
+}
+
+func TestAdjournCouncilSessionRelaysConclusionToSourceChat(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	convenerAgentID := createTeamTestAgent(t, "Council Convener")
+	memberAID := createTeamTestAgent(t, "Council Member A")
+	memberBID := createTeamTestAgent(t, "Council Member B")
+
+	// Direct Chat session that will be the council's "source" — adjourn must
+	// drop a recap message back into this chat so the user sees the result
+	// in the original thread.
+	var chatSessionID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO chat_session (workspace_id, agent_id, creator_id, title)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, parseUUID(testWorkspaceID), parseUUID(convenerAgentID), parseUUID(testUserID), "Source Direct Chat").Scan(&chatSessionID); err != nil {
+		t.Fatalf("insert source chat: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM chat_session WHERE id = $1`, parseUUID(chatSessionID))
+	})
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/council-sessions", map[string]any{
+		"topic":                  "营养库 schema 单表 vs 分表",
+		"convener_agent_id":      convenerAgentID,
+		"source_chat_session_id": chatSessionID,
+		"participant_agent_ids":  []string{memberAID, memberBID},
+	})
+	testHandler.CreateCouncilSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateCouncilSession: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created CouncilSessionDetailResponse
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode council create response: %v", err)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/council-sessions/"+created.Session.ID+"/adjourn", map[string]any{
+		"conclusion": "选单表方案，按 client_id 加复合索引。",
+	})
+	req = withURLParam(req, "id", created.Session.ID)
+	testHandler.AdjournCouncilSession(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("AdjournCouncilSession: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var relayContent string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT content FROM chat_message
+		WHERE chat_session_id = $1 AND role = 'assistant'
+		ORDER BY created_at DESC LIMIT 1
+	`, parseUUID(chatSessionID)).Scan(&relayContent); err != nil {
+		t.Fatalf("load relay message from source chat: %v", err)
+	}
+
+	for _, want := range []string{
+		"Council 结论",
+		"营养库 schema 单表 vs 分表",
+		"Council Convener",
+		"Council Member A",
+		"Council Member B",
+		"选单表方案",
+	} {
+		if !strings.Contains(relayContent, want) {
+			t.Fatalf("relay message missing %q\nfull content:\n%s", want, relayContent)
+		}
+	}
+}
+
+func TestToolBindingMissionLifecycle(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	captainID := createTeamTestAgent(t, "Tool Binding Captain")
+
+	// Need a real Mission to bind against. Cheaper than wiring CreateMission
+	// from scratch — just stamp one row via SQL with the minimum required FKs.
+	var teamID, sessionID, missionID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO team (workspace_id, name, description, captain_agent_id, created_by_user_id)
+		VALUES ($1, 'Tool Binding Team', '', $2, $3)
+		RETURNING id
+	`, parseUUID(testWorkspaceID), parseUUID(captainID), parseUUID(testUserID)).Scan(&teamID); err != nil {
+		t.Fatalf("insert team: %v", err)
+	}
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO chat_session (workspace_id, team_id, agent_id, creator_id, title)
+		VALUES ($1, $2, NULL, $3, 'Tool Binding Mission Room')
+		RETURNING id
+	`, parseUUID(testWorkspaceID), parseUUID(teamID), parseUUID(testUserID)).Scan(&sessionID); err != nil {
+		t.Fatalf("insert chat_session: %v", err)
+	}
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO mission (workspace_id, team_id, captain_agent_id, created_by_user_id, title, prompt, status, risk_level, execution_mode, chat_session_id)
+		VALUES ($1, $2, $3, $4, 'Tool Binding Mission', 'check tool bindings', 'planning', 'low', 'auto', $5)
+		RETURNING id
+	`, parseUUID(testWorkspaceID), parseUUID(teamID), parseUUID(captainID), parseUUID(testUserID), parseUUID(sessionID)).Scan(&missionID); err != nil {
+		t.Fatalf("insert mission: %v", err)
+	}
+	// mission.team_id is ON DELETE RESTRICT, so the cleanup must drop mission
+	// (and any tool_binding pointing at it) BEFORE the team. Reverse order
+	// of insert. chat_session falls away via CASCADE on team delete.
+	t.Cleanup(func() {
+		ctx := context.Background()
+		testPool.Exec(ctx, `DELETE FROM tool_binding WHERE mission_id = $1`, parseUUID(missionID))
+		testPool.Exec(ctx, `DELETE FROM mission WHERE id = $1`, parseUUID(missionID))
+		testPool.Exec(ctx, `DELETE FROM team WHERE id = $1`, parseUUID(teamID))
+	})
+
+	// Create a binding scoped to this mission.
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/tool-bindings", map[string]any{
+		"tool_type":    "lark_doc",
+		"resource_ref": map[string]any{"url": "https://x.feishu.cn/docx/abc"},
+		"label":        "营养库 PRD",
+		"mission_id":   missionID,
+	})
+	testHandler.CreateToolBinding(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateToolBinding: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created ToolBindingResponse
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode binding: %v", err)
+	}
+	if created.WriteEnabled {
+		t.Fatal("new binding must default write_enabled=false (PRD §14.9.3)")
+	}
+	if created.MissionID == nil || *created.MissionID != missionID {
+		t.Fatalf("mission_id mismatch: got %+v want %s", created.MissionID, missionID)
+	}
+
+	// Listing by mission_id must surface this row and only this row's subject.
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodGet, "/api/tool-bindings?mission_id="+missionID, nil)
+	testHandler.ListToolBindings(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListToolBindings: expected 200, got %d", w.Code)
+	}
+	var listed ListToolBindingsResponse
+	if err := json.NewDecoder(w.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if listed.Total != 1 || listed.Bindings[0].ID != created.ID {
+		t.Fatalf("expected exactly the new binding in mission filter, got %+v", listed)
+	}
+
+	// Toggle write_enabled — that is the high-risk action and must be its own
+	// explicit step, not implicit at create time.
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPatch, "/api/tool-bindings/"+created.ID, map[string]any{
+		"write_enabled": true,
+	})
+	req = withURLParam(req, "id", created.ID)
+	testHandler.UpdateToolBinding(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("UpdateToolBinding: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var updated ToolBindingResponse
+	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated: %v", err)
+	}
+	if !updated.WriteEnabled {
+		t.Fatal("write_enabled must flip to true after explicit PATCH")
+	}
+
+	// Reject creating a binding without any subject (CHECK on the table).
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/tool-bindings", map[string]any{
+		"tool_type":    "lark_doc",
+		"resource_ref": map[string]any{"url": "https://x.feishu.cn/docx/zzz"},
+	})
+	testHandler.CreateToolBinding(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("missing-subject create should be 400, got %d", w.Code)
+	}
+
+	// Reject invalid tool_type.
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/tool-bindings", map[string]any{
+		"tool_type":    "slack_channel",
+		"resource_ref": map[string]any{"url": "x"},
+		"mission_id":   missionID,
+	})
+	testHandler.CreateToolBinding(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid tool_type should be 400, got %d", w.Code)
+	}
+
+	// Delete — and verify it disappears from the mission filter.
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodDelete, "/api/tool-bindings/"+created.ID, nil)
+	req = withURLParam(req, "id", created.ID)
+	testHandler.DeleteToolBinding(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DeleteToolBinding: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodGet, "/api/tool-bindings?mission_id="+missionID, nil)
+	testHandler.ListToolBindings(w, req)
+	var afterDelete ListToolBindingsResponse
+	json.NewDecoder(w.Body).Decode(&afterDelete)
+	if afterDelete.Total != 0 {
+		t.Fatalf("expected mission filter to be empty after delete, got %d", afterDelete.Total)
+	}
+}
+
+func TestToolBindingRejectsSubjectOutsideWorkspace(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	// A well-formed UUID that doesn't exist in this workspace stands in for
+	// the cross-workspace case — the require* helpers can't tell the two
+	// apart and reject both. Prevents a caller from leaking another
+	// workspace's binding URLs by guessing its mission_id / idea_id.
+	const foreignID = "00000000-0000-0000-0000-0000000000aa"
+
+	t.Run("create with foreign mission_id is 404", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		req := newRequest(http.MethodPost, "/api/tool-bindings", map[string]any{
+			"tool_type":    "lark_doc",
+			"resource_ref": map[string]any{"url": "https://x.feishu.cn/docx/abc"},
+			"mission_id":   foreignID,
+		})
+		testHandler.CreateToolBinding(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for foreign mission_id, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("list with foreign mission_id is 404", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		req := newRequest(http.MethodGet, "/api/tool-bindings?mission_id="+foreignID, nil)
+		testHandler.ListToolBindings(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for foreign mission filter, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("create with foreign idea_id is 404", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		req := newRequest(http.MethodPost, "/api/tool-bindings", map[string]any{
+			"tool_type":    "obsidian_note",
+			"resource_ref": map[string]any{"path": "/x.md"},
+			"idea_id":      foreignID,
+		})
+		testHandler.CreateToolBinding(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for foreign idea_id, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("create with foreign council_session_id is 404", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		req := newRequest(http.MethodPost, "/api/tool-bindings", map[string]any{
+			"tool_type":          "figma_file",
+			"resource_ref":       map[string]any{"url": "https://figma.com/f"},
+			"council_session_id": foreignID,
+		})
+		testHandler.CreateToolBinding(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for foreign council_session_id, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+}
+
+func TestExplorationRejectsRelatedRefsOutsideWorkspace(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	const foreignID = "00000000-0000-0000-0000-0000000000bb"
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/explorations", map[string]any{
+		"topic":              "should fail",
+		"related_mission_id": foreignID,
+	})
+	testHandler.CreateExploration(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("foreign related_mission_id: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/explorations", map[string]any{
+		"topic":           "should fail",
+		"related_idea_id": foreignID,
+	})
+	testHandler.CreateExploration(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("foreign related_idea_id: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdjournCouncilSessionWithoutSourceChatStaysSilent(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	convenerAgentID := createTeamTestAgent(t, "Solo Convener")
+
+	// No source_chat_session_id — adjourn should not write to any chat.
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/council-sessions", map[string]any{
+		"topic":             "Standalone session",
+		"convener_agent_id": convenerAgentID,
+	})
+	testHandler.CreateCouncilSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateCouncilSession: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created CouncilSessionDetailResponse
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode council create response: %v", err)
+	}
+
+	// Snapshot global chat_message count before adjourn — adjourn must not
+	// add any message anywhere when there is no source chat.
+	var beforeCount int
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM chat_message`).Scan(&beforeCount); err != nil {
+		t.Fatalf("count chat_message before: %v", err)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/council-sessions/"+created.Session.ID+"/adjourn", map[string]any{
+		"conclusion": "no relay expected",
+	})
+	req = withURLParam(req, "id", created.Session.ID)
+	testHandler.AdjournCouncilSession(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("AdjournCouncilSession: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var afterCount int
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM chat_message`).Scan(&afterCount); err != nil {
+		t.Fatalf("count chat_message after: %v", err)
+	}
+	if afterCount != beforeCount {
+		t.Fatalf("expected no chat_message rows added when source_chat_session_id is null; before=%d after=%d", beforeCount, afterCount)
 	}
 }

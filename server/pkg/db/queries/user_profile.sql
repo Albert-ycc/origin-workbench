@@ -6,6 +6,15 @@
 SELECT * FROM user_profile
 WHERE workspace_id = $1 AND user_id = $2;
 
+-- name: GetWorkspacePrimaryUserProfile :one
+-- Origin runs as single-user / single-workspace, so each workspace has at
+-- most one user_profile row. Daemon-side prompt injection grabs that single
+-- row by workspace_id without needing to resolve a user_id from each task.
+SELECT * FROM user_profile
+WHERE workspace_id = $1
+ORDER BY created_at ASC
+LIMIT 1;
+
 -- name: UpsertUserProfile :one
 INSERT INTO user_profile (
     workspace_id, user_id,

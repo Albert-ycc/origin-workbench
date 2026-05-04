@@ -775,19 +775,63 @@ func (h *Handler) UpdateMission(w http.ResponseWriter, r *http.Request) {
 	if req.ExecutionMode != nil {
 		params.ExecutionMode = pgtype.Text{String: normalizeExecutionMode(*req.ExecutionMode), Valid: true}
 	}
+	// Re-validating team / captain on update mirrors the CreateMission rules
+	// so a PATCH cannot silently link a Mission to another workspace's team
+	// or to an agent that does not belong to the chosen team. Without this
+	// the FK alone would accept the write — there is no cross-workspace
+	// constraint at the DB level.
+	var newTeamID, newCaptainID pgtype.UUID
 	if req.TeamID != nil && *req.TeamID != "" {
 		teamID, ok := parseUUIDOrBadRequest(w, *req.TeamID, "team_id")
 		if !ok {
 			return
 		}
+		team, err := h.Queries.GetTeamInWorkspace(r.Context(), db.GetTeamInWorkspaceParams{
+			ID:          teamID,
+			WorkspaceID: mission.WorkspaceID,
+		})
+		if err != nil || team.ArchivedAt.Valid {
+			writeError(w, http.StatusBadRequest, "team not found in this workspace")
+			return
+		}
 		params.TeamID = teamID
+		newTeamID = teamID
 	}
 	if req.CaptainAgentID != nil && *req.CaptainAgentID != "" {
 		captainID, ok := parseUUIDOrBadRequest(w, *req.CaptainAgentID, "captain_agent_id")
 		if !ok {
 			return
 		}
+		captain, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID:          captainID,
+			WorkspaceID: mission.WorkspaceID,
+		})
+		if err != nil || captain.ArchivedAt.Valid {
+			writeError(w, http.StatusBadRequest, "captain must be an active agent in this workspace")
+			return
+		}
 		params.CaptainAgentID = captainID
+		newCaptainID = captainID
+	}
+	// captain must belong to the (possibly newly chosen) team. CreateMission
+	// enforces this; UpdateMission must too or PATCH becomes a backdoor.
+	effectiveTeamID := mission.TeamID
+	if newTeamID.Valid {
+		effectiveTeamID = newTeamID
+	}
+	effectiveCaptainID := mission.CaptainAgentID
+	if newCaptainID.Valid {
+		effectiveCaptainID = newCaptainID
+	}
+	if newTeamID.Valid || newCaptainID.Valid {
+		member, err := h.Queries.IsTeamMember(r.Context(), db.IsTeamMemberParams{
+			TeamID:  effectiveTeamID,
+			AgentID: effectiveCaptainID,
+		})
+		if err != nil || !member {
+			writeError(w, http.StatusBadRequest, "captain must belong to the selected team")
+			return
+		}
 	}
 
 	updated, err := h.Queries.UpdateMission(r.Context(), params)

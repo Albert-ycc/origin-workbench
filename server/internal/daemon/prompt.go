@@ -10,7 +10,16 @@ import (
 // BuildPrompt constructs the task prompt for an agent CLI.
 // Keep this minimal — detailed instructions live in CLAUDE.md / AGENTS.md
 // injected by execenv.InjectRuntimeConfig.
+//
+// Origin §14.10: when task.OperatorPreferences is set, its content is
+// prepended as the closest layer of the system prompt — agents must read it
+// before doing anything else so user-written preferences override defaults.
 func BuildPrompt(task Task) string {
+	body := buildPromptBody(task)
+	return prependOperatorPreferences(task.OperatorPreferences, body)
+}
+
+func buildPromptBody(task Task) string {
 	if task.ChatSessionID != "" {
 		return buildChatPrompt(task)
 	}
@@ -27,6 +36,36 @@ func BuildPrompt(task Task) string {
 	b.WriteString("You are running as a local coding agent for a Multica workspace.\n\n")
 	fmt.Fprintf(&b, "Your assigned issue ID is: %s\n\n", task.IssueID)
 	fmt.Fprintf(&b, "Start by running `multica issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
+	return b.String()
+}
+
+// prependOperatorPreferences puts the user's identity card and communication
+// style at the very top of the prompt so it dominates default behavior. When
+// the profile is empty (user never filled the settings tab), the body is
+// returned unchanged — no marker, no orphan header.
+func prependOperatorPreferences(prefs *OperatorPreferences, body string) string {
+	if prefs == nil {
+		return body
+	}
+	role := strings.TrimSpace(prefs.RoleCard)
+	style := strings.TrimSpace(prefs.CommunicationStyle)
+	if role == "" && style == "" {
+		return body
+	}
+	var b strings.Builder
+	b.WriteString("[Operator preferences — read first, override defaults]\n")
+	if role != "" {
+		b.WriteString("Operator: ")
+		b.WriteString(role)
+		b.WriteString("\n")
+	}
+	if style != "" {
+		b.WriteString("Communication style:\n")
+		b.WriteString(style)
+		b.WriteString("\n")
+	}
+	b.WriteString("[End operator preferences]\n\n")
+	b.WriteString(body)
 	return b.String()
 }
 

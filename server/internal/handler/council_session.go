@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -436,7 +438,7 @@ func (h *Handler) UpdateCouncilSession(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AdjournCouncilSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	session, _, ok := h.loadCouncilSessionDetail(w, r, id)
+	session, participants, ok := h.loadCouncilSessionDetail(w, r, id)
 	if !ok {
 		return
 	}
@@ -465,7 +467,135 @@ func (h *Handler) AdjournCouncilSession(w http.ResponseWriter, r *http.Request) 
 	}
 	resp := councilSessionToResponse(adjourned)
 	h.publish(protocol.EventCouncilAdjourned, uuidToString(adjourned.WorkspaceID), "member", userID, map[string]any{"session": resp})
+
+	// Origin §14.5 — relay the conclusion back to whichever Direct Chat
+	// originally convened the council so the user sees it in the original
+	// thread instead of needing to remember to revisit /councils. Failures
+	// here are logged but do not roll back the adjourn — the council itself
+	// is the source of truth and the relay is a UX nicety.
+	if adjourned.SourceChatSessionID.Valid {
+		h.relayCouncilAdjournmentToSource(r, adjourned, participants, userID)
+	}
+
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// relayCouncilAdjournmentToSource appends an assistant-role message to the
+// Direct Chat that opened this council. Best-effort: any error is logged and
+// the request still returns success because the council was adjourned.
+func (h *Handler) relayCouncilAdjournmentToSource(r *http.Request, session db.CouncilSession, participants []db.CouncilSessionParticipant, userID string) {
+	if !session.SourceChatSessionID.Valid {
+		return
+	}
+	ctx := r.Context()
+	chat, err := h.Queries.GetChatSessionInWorkspace(ctx, db.GetChatSessionInWorkspaceParams{
+		ID:          session.SourceChatSessionID,
+		WorkspaceID: session.WorkspaceID,
+	})
+	if err != nil {
+		slog.Warn("council relay: source chat not found",
+			"council_id", uuidToString(session.ID),
+			"source_chat_id", uuidToString(session.SourceChatSessionID),
+			"err", err,
+		)
+		return
+	}
+
+	body := buildCouncilAdjournNotice(
+		session,
+		h.councilConvenerLabel(ctx, session),
+		h.councilParticipantLabels(ctx, participants),
+	)
+
+	msg, err := h.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		ChatSessionID: chat.ID,
+		Role:          "assistant",
+		Content:       body,
+	})
+	if err != nil {
+		slog.Warn("council relay: failed to write source chat message",
+			"council_id", uuidToString(session.ID),
+			"source_chat_id", uuidToString(chat.ID),
+			"err", err,
+		)
+		return
+	}
+
+	h.publishChat(
+		protocol.EventChatMessage,
+		uuidToString(session.WorkspaceID),
+		"system",
+		userID,
+		uuidToString(chat.ID),
+		protocol.ChatMessagePayload{
+			ChatSessionID: uuidToString(chat.ID),
+			MessageID:     uuidToString(msg.ID),
+			Role:          "assistant",
+			Content:       body,
+			CreatedAt:     timestampToString(msg.CreatedAt),
+		},
+	)
+}
+
+// buildCouncilAdjournNotice composes the body of the relay message. The
+// format is intentionally compact and recognizable so the user can scan past
+// it in a long Direct Chat — and so future agents can cite it as context.
+func buildCouncilAdjournNotice(session db.CouncilSession, convenerLabel string, participantLabels []string) string {
+	var b strings.Builder
+	b.WriteString("【Council 结论】")
+	b.WriteString(strings.TrimSpace(session.Topic))
+	b.WriteString("\n召集人：")
+	if convenerLabel == "" {
+		b.WriteString("（未知）")
+	} else {
+		b.WriteString(convenerLabel)
+	}
+	if len(participantLabels) > 0 {
+		b.WriteString("\n参会者：")
+		b.WriteString(strings.Join(participantLabels, "、"))
+	}
+	b.WriteString("\n结论：")
+	conclusion := strings.TrimSpace(session.Conclusion)
+	if conclusion == "" {
+		b.WriteString("（未填写结论，见会议室记录）")
+	} else {
+		b.WriteString(conclusion)
+	}
+	return b.String()
+}
+
+// councilConvenerLabel resolves the convener's display name, preferring the
+// agent name when an agent convened the session, falling back to the user
+// when a human convened it. Best-effort lookups: on DB errors return "" and
+// let the notice say "（未知）" rather than blowing up the relay.
+func (h *Handler) councilConvenerLabel(ctx context.Context, session db.CouncilSession) string {
+	if session.ConvenerAgentID.Valid {
+		if agent, err := h.Queries.GetAgent(ctx, session.ConvenerAgentID); err == nil {
+			return agent.Name
+		}
+	}
+	if session.ConvenerUserID.Valid {
+		if user, err := h.Queries.GetUser(ctx, session.ConvenerUserID); err == nil {
+			return user.Name
+		}
+	}
+	return ""
+}
+
+// councilParticipantLabels resolves agent display names for each participant.
+// Skips silently on lookup failure so a single missing agent does not blank
+// the entire roster.
+func (h *Handler) councilParticipantLabels(ctx context.Context, participants []db.CouncilSessionParticipant) []string {
+	labels := make([]string, 0, len(participants))
+	for _, p := range participants {
+		if p.LeftAt.Valid {
+			continue
+		}
+		if agent, err := h.Queries.GetAgent(ctx, p.AgentID); err == nil && agent.Name != "" {
+			labels = append(labels, agent.Name)
+		}
+	}
+	return labels
 }
 
 func (h *Handler) ArchiveCouncilSession(w http.ResponseWriter, r *http.Request) {

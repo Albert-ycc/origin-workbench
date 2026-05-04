@@ -56,6 +56,33 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 	return i, err
 }
 
+const getWorkspacePrimaryUserProfile = `-- name: GetWorkspacePrimaryUserProfile :one
+SELECT id, workspace_id, user_id, role_card, communication_style, presence, preferences_source_path, created_at, updated_at FROM user_profile
+WHERE workspace_id = $1
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+// Origin runs as single-user / single-workspace, so each workspace has at
+// most one user_profile row. Daemon-side prompt injection grabs that single
+// row by workspace_id without needing to resolve a user_id from each task.
+func (q *Queries) GetWorkspacePrimaryUserProfile(ctx context.Context, workspaceID pgtype.UUID) (UserProfile, error) {
+	row := q.db.QueryRow(ctx, getWorkspacePrimaryUserProfile, workspaceID)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.RoleCard,
+		&i.CommunicationStyle,
+		&i.Presence,
+		&i.PreferencesSourcePath,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const upsertUserProfile = `-- name: UpsertUserProfile :one
 INSERT INTO user_profile (
     workspace_id, user_id,

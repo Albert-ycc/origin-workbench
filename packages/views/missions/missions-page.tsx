@@ -54,6 +54,7 @@ import { PageHeader } from "../layout/page-header";
 import { ActorAvatar } from "../common/actor-avatar";
 import { AvatarNamePickerItem } from "../common/actor-picker/avatar-name-picker";
 import { AppLink } from "../navigation";
+import { ToolBindingsPanel } from "../tool-bindings";
 
 const SAMPLE_PROMPTS = [
   "把这个仓库改造成 Origin 本地多智能体工作台，先跑通 Mission 到团队群聊的主流程。",
@@ -764,6 +765,13 @@ function MissionRightRail({
           )}
         </div>
       </section>
+
+      {selectedMission && (
+        <ToolBindingsPanel
+          subject={{ kind: "mission", id: selectedMission.id }}
+          className="mt-4"
+        />
+      )}
 
       <section className="mt-4 rounded-lg border bg-card p-4">
         <div className="flex items-center gap-2">

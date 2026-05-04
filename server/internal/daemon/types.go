@@ -70,6 +70,17 @@ type Task struct {
 	AutopilotSource         string                `json:"autopilot_source,omitempty"`          // manual, schedule, webhook, or api
 	AutopilotTriggerPayload json.RawMessage       `json:"autopilot_trigger_payload,omitempty"` // optional trigger payload for webhook/api runs
 	QuickCreatePrompt       string                `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
+	OperatorPreferences     *OperatorPreferences  `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
+}
+
+// OperatorPreferences carries the user-written identity card and communication
+// style that get prepended to every agent prompt as the closest layer of the
+// three-layer injection (UserProfile → Agent.long_context → Mission.bound_contexts).
+// Single-user / single-workspace assumption: server hydrates this from the
+// workspace's only user_profile row at claim time.
+type OperatorPreferences struct {
+	RoleCard           string `json:"role_card,omitempty"`
+	CommunicationStyle string `json:"communication_style,omitempty"`
 }
 
 // TeamDelegationData mirrors service.TeamDelegationContext without importing

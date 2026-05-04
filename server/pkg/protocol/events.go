@@ -122,6 +122,20 @@ const (
 	EventCouncilParticipantJoined = "council:participant_joined"
 	EventCouncilParticipantLeft   = "council:participant_left"
 
+	// Exploration events (Origin §14.7 Branching Exploration)
+	EventExplorationCreated        = "exploration:created"
+	EventExplorationUpdated        = "exploration:updated"
+	EventExplorationArchived       = "exploration:archived"
+	EventExplorationDeleted        = "exploration:deleted"
+	EventExplorationBranchCreated  = "exploration:branch_created"
+	EventExplorationBranchUpdated  = "exploration:branch_updated"
+	EventExplorationBranchDeleted  = "exploration:branch_deleted"
+
+	// ToolBinding events (Origin §14.9 — bind external tools to subjects)
+	EventToolBindingCreated = "tool_binding:created"
+	EventToolBindingUpdated = "tool_binding:updated"
+	EventToolBindingDeleted = "tool_binding:deleted"
+
 	// Autopilot events
 	EventAutopilotCreated  = "autopilot:created"
 	EventAutopilotUpdated  = "autopilot:updated"

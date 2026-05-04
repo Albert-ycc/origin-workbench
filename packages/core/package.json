@@ -53,6 +53,8 @@
     "./missions": "./missions/index.ts",
     "./ideas": "./ideas/index.ts",
     "./councils": "./councils/index.ts",
+    "./explorations": "./explorations/index.ts",
+    "./tool-bindings": "./tool-bindings/index.ts",
     "./user-profile": "./user-profile/index.ts",
     "./teams": "./teams/index.ts",
     "./permissions": "./permissions/index.ts",

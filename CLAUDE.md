@@ -7,8 +7,8 @@ This file guides AI agents working on the Origin repository.
 Origin is a local-first fork of Multica. The product direction is a
 single-user, desktop-first multi-agent workbench:
 
-- Mission / Idea / Council Session / Agent workflows are the primary product
-  surface.
+- Mission / Idea / Council Session / Branching Exploration / Tool Binding /
+  Agent / UserProfile workflows are the primary product surface.
 - The default user path is local nickname + avatar sign-in.
 - Desktop is the supported shell.
 - The upstream Web frontend, workspace invitation UI, cloud onboarding,

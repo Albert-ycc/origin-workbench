@@ -309,7 +309,7 @@ const listIdeas = `-- name: ListIdeas :many
 
 SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at FROM idea
 WHERE workspace_id = $1
-  AND status <> 'archived'
+  AND status NOT IN ('archived', 'promoted')
 ORDER BY
   CASE WHEN last_nurtured_at IS NULL THEN updated_at ELSE last_nurtured_at END DESC
 `
@@ -317,6 +317,9 @@ ORDER BY
 // =====================
 // Idea CRUD
 // =====================
+// "Active" pool excludes both archived (manually shelved) and promoted
+// (already became a Mission and moved on). The mutation cache mirrors this
+// by removing the promoted idea from the list — keep both ends in sync.
 func (q *Queries) ListIdeas(ctx context.Context, workspaceID pgtype.UUID) ([]Idea, error) {
 	rows, err := q.db.Query(ctx, listIdeas, workspaceID)
 	if err != nil {

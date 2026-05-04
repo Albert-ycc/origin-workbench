@@ -839,6 +839,30 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp := taskToResponse(*task)
+
+	// Origin §14.10 — hydrate user-written preferences as the closest prompt
+	// layer. Single-user / single-workspace, so we grab the workspace's only
+	// user_profile row by workspace_id. Empty values leave OperatorPreferences
+	// nil so the daemon-side prompt builder skips the preferences block
+	// instead of emitting an orphan header. Missing row is normal (user never
+	// opened settings) and silent; other errors get a warn so we can spot DB
+	// flakiness without failing the claim.
+	if profile, err := h.Queries.GetWorkspacePrimaryUserProfile(r.Context(), runtime.WorkspaceID); err == nil {
+		role := strings.TrimSpace(profile.RoleCard)
+		style := strings.TrimSpace(profile.CommunicationStyle)
+		if role != "" || style != "" {
+			resp.OperatorPreferences = &OperatorPreferencesData{
+				RoleCard:           role,
+				CommunicationStyle: style,
+			}
+		}
+	} else if !isNotFound(err) {
+		slog.Warn("failed to load operator preferences for task claim",
+			"workspace_id", runtimeWorkspaceID,
+			"runtime_id", runtimeID,
+			"err", err,
+		)
+	}
 	if agent, err := h.Queries.GetAgent(r.Context(), task.AgentID); err == nil {
 		skills := h.TaskService.LoadAgentSkills(r.Context(), task.AgentID)
 		var customEnv map[string]string

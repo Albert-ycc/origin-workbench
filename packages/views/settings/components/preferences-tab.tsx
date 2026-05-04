@@ -87,7 +87,7 @@ export function PreferencesTab() {
         <CardHeader>
           <CardTitle className="text-base">身份卡</CardTitle>
           <CardDescription>
-            一句话告诉智能体你是谁、在做什么。例如「资深 PM，负责医疗领域的产品设计，重点在儿童生长发育」。
+            一句话告诉智能体你是谁、在做什么。例如「前端工程师，主要做 React 后台」或「产品经理，负责一个 SaaS 工具」。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -111,7 +111,7 @@ export function PreferencesTab() {
         <CardHeader>
           <CardTitle className="text-base">沟通偏好</CardTitle>
           <CardDescription>
-            告诉智能体怎么跟你说话最舒服。比如「业务化语言不要技术术语堆砌」「不喜欢被问 A/B 选择题，给我立场」「段落式表达不要开头加粗总结词」等。
+            告诉智能体怎么跟你说话最舒服。比如「结论先说，少绕弯子」「能用代码举例就用代码」「英文技术术语保留不要翻译」等。
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -104,6 +104,8 @@ import type {
   CreateIdeaRequest,
   UpdateIdeaRequest,
   CreateIdeaNoteRequest,
+  PromoteIdeaRequest,
+  PromoteIdeaResponse,
   ListIdeasResponse,
   CouncilSession,
   CouncilSessionDetail,
@@ -115,6 +117,19 @@ import type {
   ListCouncilSessionsResponse,
   UserProfile,
   UpsertUserProfileRequest,
+  Exploration,
+  ExplorationBranch,
+  ExplorationDetail,
+  CreateExplorationRequest,
+  UpdateExplorationRequest,
+  CreateExplorationBranchRequest,
+  UpdateExplorationBranchRequest,
+  ListExplorationsResponse,
+  ToolBinding,
+  ToolBindingFilter,
+  CreateToolBindingRequest,
+  UpdateToolBindingRequest,
+  ListToolBindingsResponse,
   NotificationPreferenceResponse,
   NotificationPreferences,
 } from "../types";
@@ -1465,6 +1480,13 @@ export class ApiClient {
     await this.fetch(`/api/ideas/${ideaId}/notes/${noteId}`, { method: "DELETE" });
   }
 
+  async promoteIdea(id: string, data: PromoteIdeaRequest): Promise<PromoteIdeaResponse> {
+    return this.fetch(`/api/ideas/${id}/promote`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // ── Council Sessions (Origin on-demand multi-agent rooms) ────────────────
 
   async listCouncilSessions(status: "active" | "archived" = "active"): Promise<ListCouncilSessionsResponse> {
@@ -1527,5 +1549,99 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  // ── Explorations (Origin §14.7 — Branching Exploration) ──────────────────
+
+  async listExplorations(status: "active" | "archived" = "active"): Promise<ListExplorationsResponse> {
+    const query = status === "archived" ? "?status=archived" : "";
+    return this.fetch(`/api/explorations${query}`);
+  }
+
+  async getExploration(id: string): Promise<ExplorationDetail> {
+    return this.fetch(`/api/explorations/${id}`);
+  }
+
+  async createExploration(data: CreateExplorationRequest): Promise<ExplorationDetail> {
+    return this.fetch("/api/explorations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateExploration(id: string, data: UpdateExplorationRequest): Promise<Exploration> {
+    return this.fetch(`/api/explorations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveExploration(id: string): Promise<Exploration> {
+    return this.fetch(`/api/explorations/${id}/archive`, { method: "POST" });
+  }
+
+  async deleteExploration(id: string): Promise<void> {
+    await this.fetch(`/api/explorations/${id}`, { method: "DELETE" });
+  }
+
+  async createExplorationBranch(
+    explorationId: string,
+    data: CreateExplorationBranchRequest,
+  ): Promise<ExplorationBranch> {
+    return this.fetch(`/api/explorations/${explorationId}/branches`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateExplorationBranch(
+    explorationId: string,
+    branchId: string,
+    data: UpdateExplorationBranchRequest,
+  ): Promise<ExplorationBranch> {
+    return this.fetch(`/api/explorations/${explorationId}/branches/${branchId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteExplorationBranch(explorationId: string, branchId: string): Promise<void> {
+    await this.fetch(`/api/explorations/${explorationId}/branches/${branchId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // ── Tool Bindings (Origin §14.9 — bind external tools to subjects) ───────
+
+  async listToolBindings(filter: ToolBindingFilter = {}): Promise<ListToolBindingsResponse> {
+    const params = new URLSearchParams();
+    if (filter.mission_id) params.set("mission_id", filter.mission_id);
+    if (filter.agent_id) params.set("agent_id", filter.agent_id);
+    if (filter.idea_id) params.set("idea_id", filter.idea_id);
+    if (filter.council_session_id) params.set("council_session_id", filter.council_session_id);
+    const qs = params.toString();
+    return this.fetch(`/api/tool-bindings${qs ? `?${qs}` : ""}`);
+  }
+
+  async getToolBinding(id: string): Promise<ToolBinding> {
+    return this.fetch(`/api/tool-bindings/${id}`);
+  }
+
+  async createToolBinding(data: CreateToolBindingRequest): Promise<ToolBinding> {
+    return this.fetch("/api/tool-bindings", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateToolBinding(id: string, data: UpdateToolBindingRequest): Promise<ToolBinding> {
+    return this.fetch(`/api/tool-bindings/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteToolBinding(id: string): Promise<void> {
+    await this.fetch(`/api/tool-bindings/${id}`, { method: "DELETE" });
   }
 }

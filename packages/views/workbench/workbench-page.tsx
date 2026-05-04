@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bot,
@@ -20,12 +20,15 @@ import {
   Users,
 } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useAuthStore } from "@multica/core/auth";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+import { api } from "@multica/core/api";
+import { ideaKeys, ideaListOptions } from "@multica/core/ideas";
 import { missionListOptions } from "@multica/core/missions";
 import { deriveRuntimeHealth } from "@multica/core/runtimes";
 import { runtimeListOptions } from "@multica/core/runtimes/queries";
 import { agentListOptions } from "@multica/core/workspace/queries";
-import type { Agent, AgentRuntime, Mission } from "@multica/core/types";
+import type { Agent, AgentRuntime, Idea, Mission } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -42,6 +45,54 @@ type WorkbenchCardProps = {
   children: React.ReactNode;
   className?: string;
 };
+
+// ────────────────────────────────────────────────────────────────────────
+// Starter ideas — Origin §15.5 onboarding 重塑
+//
+// 上游 Multica 的 onboarding 创建一堆「Issue + Project」教用户怎么 assign
+// agent / 切 todo / 配 workspace context — 跟 Origin 主流程（Mission / Idea
+// / Council / ToolBinding）完全对不上，sidebar 里也已经把 issue/project 调
+// 试入口删了。这里提供 Origin 概念的 starter ideas，新用户首次落到 workbench
+// 时（且想法池为空）一次性 seed，让用户在自己熟悉的入口（想法池 / 升级
+// Mission / 会议室 / 分叉探索 / 工具绑定）里走一遍主流程。
+// ────────────────────────────────────────────────────────────────────────
+const STARTER_IDEAS: Array<{ title: string; description: string; tags: string[] }> = [
+  {
+    title: "把一条还没成形的想法养出来",
+    description:
+      "想法池是 Origin 的轻量孵化层——半成形的念头不必立刻变成 Mission。在上方输入框写下脑子里的一闪念（「周末把那个原型做了？」「营养库 schema 是不是要重做？」），它先停在这里。等想清楚了，点这条想法的「升级 Mission」按钮：会自动开一间团队房间，产品经理 Agent 把你养护过的笔记当成简报接手，开始拆任务。",
+    tags: ["新手任务"],
+  },
+  {
+    title: "去「设置 → 我的偏好」写一条身份卡",
+    description:
+      "Origin 的每个 Agent 在回话前都先读一遍你写的偏好。比一次次提醒「我是医疗 PM」「请用中文段落式表达」「不要开头加粗总结词」要省事得多。三句话就够：你是谁、最近在做什么、希望 Agent 怎么跟你说话。这是让 Agent 跟你节奏对得上最快的办法。",
+    tags: ["新手任务"],
+  },
+  {
+    title: "在会议室里召开一次多角色议事",
+    description:
+      "纠结的决定别一个人扛——比如「这个表单组件要不要重写」「飞书目录该怎么分」。点左侧「会议室」→ 新建 Council Session，挑产品经理 + 技术架构师 + 测试工程师，让他们各说各话。三档活跃度（quiet / concise / lively）控制 Agent 发言节奏。结束时写一句结论，Origin 会自动把会议结论回写到原来那条 Direct Chat。",
+    tags: ["新手任务"],
+  },
+  {
+    title: "用「分叉探索」做一次方案对比",
+    description:
+      "拿不准三个方案选哪个？去「分叉探索」开一个新探索，给每条方案建一个分支。每个分支必须填齐 7 个字段：方案核心 / 设计逻辑 / 关键决策 / 成本估算 / 风险点 / 适用条件 / 不适用条件。填齐后所有分支并排展开看，差别一目了然，选中标 winning 收尾。",
+    tags: ["新手任务"],
+  },
+  {
+    title: "给一个 Mission 绑定真实工作工具",
+    description:
+      "Mission 详情右栏的「绑定的工具」是 Origin 区别于纯 chat 工具的关键。把飞书 PRD URL、Figma 文件、Obsidian 笔记、本地仓库挂上去，Agent 拿到任务时直接知道资源在哪。默认只读——开「允许写入」开关后，Agent 才能反向推送修改回你的飞书或仓库。",
+    tags: ["新手任务"],
+  },
+];
+
+function starterSeedKey(userId: string | undefined): string | null {
+  if (!userId) return null;
+  return `origin:starter-ideas-seeded:${userId}`;
+}
 
 const statusCopy: Record<Mission["status"], string> = {
   draft: "草稿",
@@ -104,6 +155,55 @@ export function WorkbenchPage() {
   const { data: agents = [], isLoading: agentsLoading } = useQuery(agentListOptions(wsId));
   const { data: missions = [], isLoading: missionsLoading } = useQuery(missionListOptions(wsId));
   const { data: runtimes = [], isLoading: runtimesLoading } = useQuery(runtimeListOptions(wsId));
+  const { data: ideas = [], isLoading: ideasLoading } = useQuery(ideaListOptions(wsId));
+  const recentIdeas = useMemo(
+    () => ideas.filter((i) => i.status === "draft" || i.status === "nurturing").slice(0, 3),
+    [ideas],
+  );
+
+  // Origin 新手任务 seed —— 仅在首次落到工作台、且想法池真为空时种一组
+  // 引导任务到当前 workspace。用 localStorage 按 user.id 做幂等：用户归档完
+  // 自己的想法回到空池，不会再被 seed 一遍；切换账号则各自有自己的标记。
+  const userId = useAuthStore((s) => s.user?.id);
+  const qc = useQueryClient();
+  const seedingRef = useRef(false);
+  useEffect(() => {
+    if (!wsId || !userId) return;
+    if (ideasLoading) return;
+    if (seedingRef.current) return;
+    if (typeof window === "undefined") return;
+    const key = starterSeedKey(userId);
+    if (!key) return;
+    if (window.localStorage.getItem(key)) return;
+
+    if (ideas.length > 0) {
+      // 用户已经有自己的想法，跳过 seed 但记一下，避免他归档完后再被 seed。
+      window.localStorage.setItem(key, "skipped");
+      return;
+    }
+
+    seedingRef.current = true;
+    (async () => {
+      try {
+        for (const seed of STARTER_IDEAS) {
+          await api.createIdea({
+            title: seed.title,
+            description: seed.description,
+            source: "manual",
+            tags: seed.tags,
+          });
+        }
+        window.localStorage.setItem(key, "seeded");
+        qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
+      } catch (err) {
+        // 不打断 onboarding —— 失败时不写 localStorage，下次进 workbench
+        // 如果池子还空会自动重试一次。
+        // eslint-disable-next-line no-console
+        console.warn("[origin-starter] seed failed", err);
+        seedingRef.current = false;
+      }
+    })();
+  }, [wsId, userId, ideas.length, ideasLoading, qc]);
 
   const activeAgents = useMemo(() => agents.filter(isActiveAgent), [agents]);
   const favoriteAgents = activeAgents.slice(0, 5);
@@ -160,26 +260,50 @@ export function WorkbenchPage() {
               }
             >
               <div className="space-y-3">
-                <button
-                  type="button"
-                  className="w-full rounded-md border border-dashed bg-background p-3 text-left transition-colors hover:bg-muted/50"
+                <AppLink
+                  href={p.ideas()}
+                  className="block w-full rounded-md border border-dashed bg-background p-3 text-left transition-colors hover:bg-muted/50"
                 >
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Sparkles className="size-4 text-primary" />
                     捕捉一个未成型想法
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Phase 3 会接入真实 Idea 对象和一键转 Mission。
+                    跳到想法池快速记下，养护成熟后一键升级 Mission。
                   </p>
-                </button>
-                <div className="rounded-md bg-muted/40 p-3">
-                  <div className="text-xs font-medium text-muted-foreground">待产品化队列</div>
-                  <div className="mt-2 space-y-2 text-sm">
-                    <IdeaLine text="长期 Agent 单聊入口" />
-                    <IdeaLine text="Council Session 临时会议室" />
-                    <IdeaLine text="分叉探索和方案对比" />
+                </AppLink>
+                {ideasLoading ? (
+                  <StackSkeleton rows={3} />
+                ) : recentIdeas.length === 0 ? (
+                  <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+                    暂时没有在养护的想法。在上方写下第一条，养熟了一键升级。
                   </div>
-                </div>
+                ) : (
+                  <div className="rounded-md bg-muted/40 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-medium text-muted-foreground">最近养护</div>
+                      <Badge variant="outline" className="text-[10px]">
+                        {ideas.length} 条
+                      </Badge>
+                    </div>
+                    <ul className="mt-2 space-y-2 text-sm">
+                      {recentIdeas.map((idea) => (
+                        <li key={idea.id}>
+                          <AppLink
+                            href={p.ideas()}
+                            className="flex items-center gap-2 truncate transition-colors hover:text-primary"
+                          >
+                            <span className="size-1.5 shrink-0 rounded-full bg-primary/60" />
+                            <span className="truncate">{idea.title}</span>
+                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                              {ideaTone(idea)}
+                            </span>
+                          </AppLink>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </WorkbenchCard>
 
@@ -377,13 +501,17 @@ function Metric({ label, value, loading }: { label: string; value: number; loadi
   );
 }
 
-function IdeaLine({ text }: { text: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="size-1.5 rounded-full bg-primary/60" />
-      <span>{text}</span>
-    </div>
-  );
+function ideaTone(idea: Idea): string {
+  if (idea.status === "draft") return "草稿";
+  const stamp = idea.last_nurtured_at ?? idea.updated_at;
+  if (!stamp) return "养护中";
+  const diff = Date.now() - new Date(stamp).getTime();
+  if (Number.isNaN(diff)) return "养护中";
+  const day = 24 * 60 * 60 * 1000;
+  if (diff < day) return "今日";
+  if (diff < 7 * day) return `${Math.floor(diff / day)} 天`;
+  if (diff < 30 * day) return `${Math.floor(diff / (7 * day))} 周`;
+  return `${Math.floor(diff / (30 * day))} 月`;
 }
 
 function StackSkeleton({ rows }: { rows: number }) {

@@ -421,9 +421,38 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Patch("/", h.UpdateIdea)
 					r.Delete("/", h.DeleteIdea)
 					r.Post("/archive", h.ArchiveIdea)
+					r.Post("/promote", h.PromoteIdea)
 					r.Get("/notes", h.ListIdeaNotes)
 					r.Post("/notes", h.CreateIdeaNote)
 					r.Delete("/notes/{noteId}", h.DeleteIdeaNote)
+				})
+			})
+
+			// Explorations (Origin §14.7 — Branching Exploration with the
+			// 7-field comparison contract)
+			r.Route("/api/explorations", func(r chi.Router) {
+				r.Get("/", h.ListExplorations)
+				r.Post("/", h.CreateExploration)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetExploration)
+					r.Patch("/", h.UpdateExploration)
+					r.Delete("/", h.DeleteExploration)
+					r.Post("/archive", h.ArchiveExploration)
+					r.Post("/branches", h.CreateExplorationBranch)
+					r.Patch("/branches/{branchId}", h.UpdateExplorationBranch)
+					r.Delete("/branches/{branchId}", h.DeleteExplorationBranch)
+				})
+			})
+
+			// ToolBindings (Origin §14.9 — attach external tools to a
+			// Mission / Agent / Idea / Council)
+			r.Route("/api/tool-bindings", func(r chi.Router) {
+				r.Get("/", h.ListToolBindings)
+				r.Post("/", h.CreateToolBinding)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetToolBinding)
+					r.Patch("/", h.UpdateToolBinding)
+					r.Delete("/", h.DeleteToolBinding)
 				})
 			})
 

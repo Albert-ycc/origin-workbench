@@ -177,7 +177,16 @@ type AgentTaskResponse struct {
 	AutopilotSource         string                         `json:"autopilot_source,omitempty"`          // manual, schedule, webhook, or api
 	AutopilotTriggerPayload json.RawMessage                `json:"autopilot_trigger_payload,omitempty"` // optional trigger payload for webhook/api runs
 	QuickCreatePrompt       string                         `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
+	OperatorPreferences     *OperatorPreferencesData       `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
 	Kind                    string                         `json:"kind"`                                // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
+}
+
+// OperatorPreferencesData mirrors daemon.OperatorPreferences without importing
+// the daemon package into handler — JSON tags must stay in sync so the daemon
+// can decode the claim response.
+type OperatorPreferencesData struct {
+	RoleCard           string `json:"role_card,omitempty"`
+	CommunicationStyle string `json:"communication_style,omitempty"`
 }
 
 type TeamTaskMemberData struct {

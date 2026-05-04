@@ -298,6 +298,38 @@ type DaemonToken struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type Exploration struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	CreatedByUserID  pgtype.UUID        `json:"created_by_user_id"`
+	RelatedMissionID pgtype.UUID        `json:"related_mission_id"`
+	RelatedIdeaID    pgtype.UUID        `json:"related_idea_id"`
+	Topic            string             `json:"topic"`
+	Question         string             `json:"question"`
+	Status           string             `json:"status"`
+	Decision         string             `json:"decision"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ExplorationBranch struct {
+	ID            pgtype.UUID        `json:"id"`
+	ExplorationID pgtype.UUID        `json:"exploration_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	Title         string             `json:"title"`
+	CoreProposal  string             `json:"core_proposal"`
+	DesignLogic   string             `json:"design_logic"`
+	KeyDecisions  string             `json:"key_decisions"`
+	CostEstimate  string             `json:"cost_estimate"`
+	RiskPoints    string             `json:"risk_points"`
+	Fits          string             `json:"fits"`
+	DoesNotFit    string             `json:"does_not_fit"`
+	Verdict       string             `json:"verdict"`
+	SortOrder     int32              `json:"sort_order"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Feedback struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -605,6 +637,23 @@ type TeamMember struct {
 	AgentID  pgtype.UUID        `json:"agent_id"`
 	Role     string             `json:"role"`
 	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+}
+
+type ToolBinding struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	CreatedByUserID  pgtype.UUID        `json:"created_by_user_id"`
+	ToolType         string             `json:"tool_type"`
+	ResourceRef      []byte             `json:"resource_ref"`
+	Label            string             `json:"label"`
+	WriteEnabled     bool               `json:"write_enabled"`
+	MissionID        pgtype.UUID        `json:"mission_id"`
+	AgentID          pgtype.UUID        `json:"agent_id"`
+	IdeaID           pgtype.UUID        `json:"idea_id"`
+	CouncilSessionID pgtype.UUID        `json:"council_session_id"`
+	LastSyncedAt     pgtype.Timestamptz `json:"last_synced_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {

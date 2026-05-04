@@ -130,6 +130,8 @@ export type {
   CreateIdeaRequest,
   UpdateIdeaRequest,
   CreateIdeaNoteRequest,
+  PromoteIdeaRequest,
+  PromoteIdeaResponse,
   ListIdeasResponse,
 } from "./idea";
 export type {
@@ -146,3 +148,24 @@ export type {
   ListCouncilSessionsResponse,
 } from "./council-session";
 export type { UserProfile, Presence, UpsertUserProfileRequest } from "./user-profile";
+export type {
+  Exploration,
+  ExplorationStatus,
+  ExplorationBranch,
+  ExplorationBranchVerdict,
+  ExplorationDetail,
+  CreateExplorationRequest,
+  UpdateExplorationRequest,
+  CreateExplorationBranchRequest,
+  UpdateExplorationBranchRequest,
+  ListExplorationsResponse,
+} from "./exploration";
+export type {
+  ToolBinding,
+  ToolBindingType,
+  ToolBindingResourceRef,
+  ToolBindingFilter,
+  CreateToolBindingRequest,
+  UpdateToolBindingRequest,
+  ListToolBindingsResponse,
+} from "./tool-binding";

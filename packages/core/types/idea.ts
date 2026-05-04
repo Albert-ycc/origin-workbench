@@ -1,3 +1,10 @@
+import type {
+  CreateMissionPlanItemRequest,
+  MissionDetail,
+  MissionExecutionMode,
+  MissionRiskLevel,
+} from "./mission";
+
 export type IdeaStatus = "draft" | "nurturing" | "promoted" | "archived";
 export type IdeaSource = "manual" | "from_chat" | "from_external";
 export type IdeaNoteKind = "new_angle" | "related_history" | "external_reference" | "question";
@@ -58,6 +65,21 @@ export interface CreateIdeaNoteRequest {
   body?: string;
   author_agent_id?: string | null;
   references_payload?: unknown;
+}
+
+export interface PromoteIdeaRequest {
+  title?: string;
+  captain_agent_id: string;
+  member_agent_ids?: string[];
+  team_id?: string;
+  risk_level?: MissionRiskLevel;
+  execution_mode?: MissionExecutionMode;
+  plan_items?: CreateMissionPlanItemRequest[];
+}
+
+export interface PromoteIdeaResponse {
+  idea: Idea;
+  mission: MissionDetail;
 }
 
 export interface ListIdeasResponse {

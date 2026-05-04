@@ -353,6 +353,68 @@ func TestBuildPromptCommentTriggeredNoContent(t *testing.T) {
 	}
 }
 
+func TestBuildPromptInjectsOperatorPreferences(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildPrompt(Task{
+		ChatSessionID: "chat-1",
+		ChatMessage:   "帮我看一下这个 PRD",
+		OperatorPreferences: &OperatorPreferences{
+			RoleCard:           "医疗 PM，负责儿童生长发育",
+			CommunicationStyle: "中文段落式表达，禁用「不是…而是…」",
+		},
+	})
+
+	for _, want := range []string{
+		"[Operator preferences",
+		"医疗 PM，负责儿童生长发育",
+		"中文段落式表达，禁用",
+		"[End operator preferences]",
+		"帮我看一下这个 PRD",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q\nfull prompt: %s", want, prompt)
+		}
+	}
+
+	// Preferences must come before the regular body so they dominate defaults.
+	if idx := strings.Index(prompt, "[Operator preferences"); idx != 0 {
+		t.Fatalf("operator preferences must be at the very top, got idx=%d", idx)
+	}
+}
+
+func TestBuildPromptOmitsEmptyOperatorPreferences(t *testing.T) {
+	t.Parallel()
+
+	withNil := BuildPrompt(Task{
+		ChatSessionID: "chat-1",
+		ChatMessage:   "hello",
+	})
+	withEmpty := BuildPrompt(Task{
+		ChatSessionID:       "chat-1",
+		ChatMessage:         "hello",
+		OperatorPreferences: &OperatorPreferences{},
+	})
+	withWhitespace := BuildPrompt(Task{
+		ChatSessionID:       "chat-1",
+		ChatMessage:         "hello",
+		OperatorPreferences: &OperatorPreferences{RoleCard: "   ", CommunicationStyle: "\n\t "},
+	})
+
+	for label, prompt := range map[string]string{
+		"nil":        withNil,
+		"empty":      withEmpty,
+		"whitespace": withWhitespace,
+	} {
+		if strings.Contains(prompt, "[Operator preferences") {
+			t.Fatalf("%s: empty preferences must not emit a header", label)
+		}
+	}
+	if withNil != withEmpty || withEmpty != withWhitespace {
+		t.Fatalf("empty/whitespace preferences must produce identical prompts to nil:\nnil=%q\nempty=%q\nws=%q", withNil, withEmpty, withWhitespace)
+	}
+}
+
 func TestIsWorkspaceNotFoundError(t *testing.T) {
 	t.Parallel()
 

@@ -179,6 +179,11 @@ describe("ApiClient", () => {
     await client.deleteIdea("idea-1");
     await client.createIdeaNote("idea-1", { summary: "新视角", kind: "new_angle" });
     await client.deleteIdeaNote("idea-1", "note-1");
+    await client.promoteIdea("idea-1", {
+      title: "PRD 养鱼转 Mission",
+      captain_agent_id: "agent-1",
+      member_agent_ids: ["agent-2"],
+    });
 
     const calls = fetchMock.mock.calls.map(([url, init]) => ({
       url,
@@ -213,6 +218,15 @@ describe("ApiClient", () => {
         body: JSON.stringify({ summary: "新视角", kind: "new_angle" }),
       },
       { url: "https://api.example.test/api/ideas/idea-1/notes/note-1", method: "DELETE" },
+      {
+        url: "https://api.example.test/api/ideas/idea-1/promote",
+        method: "POST",
+        body: JSON.stringify({
+          title: "PRD 养鱼转 Mission",
+          captain_agent_id: "agent-1",
+          member_agent_ids: ["agent-2"],
+        }),
+      },
     ]);
   });
 
@@ -287,6 +301,140 @@ describe("ApiClient", () => {
         url: "https://api.example.test/api/council-sessions/c-1/participants/agent-3",
         method: "DELETE",
       },
+    ]);
+  });
+
+  it("issues HTTP contract for Origin Exploration endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ explorations: [], total: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listExplorations("active");
+    await client.listExplorations("archived");
+    await client.getExploration("e-1");
+    await client.createExploration({
+      topic: "营养库 schema 单表 vs 分表",
+      question: "选哪个更适合长期演化？",
+    });
+    await client.updateExploration("e-1", {
+      status: "converging",
+      decision: "倾向单表",
+    });
+    await client.archiveExploration("e-1");
+    await client.deleteExploration("e-1");
+    await client.createExplorationBranch("e-1", {
+      title: "分支 A · 单表",
+      core_proposal: "client_id 复合索引",
+    });
+    await client.updateExplorationBranch("e-1", "b-1", {
+      verdict: "winning",
+    });
+    await client.deleteExplorationBranch("e-1", "b-1");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+      body: init?.body,
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/explorations", method: "GET" },
+      { url: "https://api.example.test/api/explorations?status=archived", method: "GET" },
+      { url: "https://api.example.test/api/explorations/e-1", method: "GET" },
+      {
+        url: "https://api.example.test/api/explorations",
+        method: "POST",
+        body: JSON.stringify({
+          topic: "营养库 schema 单表 vs 分表",
+          question: "选哪个更适合长期演化？",
+        }),
+      },
+      {
+        url: "https://api.example.test/api/explorations/e-1",
+        method: "PATCH",
+        body: JSON.stringify({ status: "converging", decision: "倾向单表" }),
+      },
+      { url: "https://api.example.test/api/explorations/e-1/archive", method: "POST" },
+      { url: "https://api.example.test/api/explorations/e-1", method: "DELETE" },
+      {
+        url: "https://api.example.test/api/explorations/e-1/branches",
+        method: "POST",
+        body: JSON.stringify({
+          title: "分支 A · 单表",
+          core_proposal: "client_id 复合索引",
+        }),
+      },
+      {
+        url: "https://api.example.test/api/explorations/e-1/branches/b-1",
+        method: "PATCH",
+        body: JSON.stringify({ verdict: "winning" }),
+      },
+      {
+        url: "https://api.example.test/api/explorations/e-1/branches/b-1",
+        method: "DELETE",
+      },
+    ]);
+  });
+
+  it("issues HTTP contract for Origin Tool Binding endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ bindings: [], total: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listToolBindings();
+    await client.listToolBindings({ mission_id: "m-1" });
+    await client.getToolBinding("tb-1");
+    await client.createToolBinding({
+      tool_type: "lark_doc",
+      resource_ref: { url: "https://x.feishu.cn/docx/abc" },
+      label: "PRD",
+      mission_id: "m-1",
+    });
+    await client.updateToolBinding("tb-1", { write_enabled: true });
+    await client.deleteToolBinding("tb-1");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+      body: init?.body,
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/tool-bindings", method: "GET" },
+      { url: "https://api.example.test/api/tool-bindings?mission_id=m-1", method: "GET" },
+      { url: "https://api.example.test/api/tool-bindings/tb-1", method: "GET" },
+      {
+        url: "https://api.example.test/api/tool-bindings",
+        method: "POST",
+        body: JSON.stringify({
+          tool_type: "lark_doc",
+          resource_ref: { url: "https://x.feishu.cn/docx/abc" },
+          label: "PRD",
+          mission_id: "m-1",
+        }),
+      },
+      {
+        url: "https://api.example.test/api/tool-bindings/tb-1",
+        method: "PATCH",
+        body: JSON.stringify({ write_enabled: true }),
+      },
+      { url: "https://api.example.test/api/tool-bindings/tb-1", method: "DELETE" },
     ]);
   });
 });

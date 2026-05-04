@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -81,6 +82,21 @@ type CreateIdeaNoteRequest struct {
 	Body              string          `json:"body"`
 	AuthorAgentID     *string         `json:"author_agent_id"`
 	ReferencesPayload json.RawMessage `json:"references_payload"`
+}
+
+type PromoteIdeaRequest struct {
+	Title          string                         `json:"title"`
+	CaptainAgentID string                         `json:"captain_agent_id"`
+	MemberAgentIDs []string                       `json:"member_agent_ids"`
+	TeamID         string                         `json:"team_id"`
+	RiskLevel      string                         `json:"risk_level"`
+	ExecutionMode  string                         `json:"execution_mode"`
+	PlanItems      []CreateMissionPlanItemRequest `json:"plan_items"`
+}
+
+type PromoteIdeaResponse struct {
+	Idea    IdeaResponse          `json:"idea"`
+	Mission MissionDetailResponse `json:"mission"`
 }
 
 // =====================
@@ -361,8 +377,25 @@ func (h *Handler) UpdateIdea(w http.ResponseWriter, r *http.Request) {
 		if trimmed == "" {
 			clearNurturer = true
 		} else {
+			// Mirror CreateIdea — the nurturer must be an active agent in the
+			// same workspace as the idea. Without this check, a caller could
+			// PATCH in an agent_id from another workspace and silently
+			// cross-link the two.
+			workspaceID := h.resolveWorkspaceID(r)
+			wsUUID, wsOk := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+			if !wsOk {
+				return
+			}
 			uuid, ok := parseUUIDOrBadRequest(w, trimmed, "nurturer_agent_id")
 			if !ok {
+				return
+			}
+			agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+				ID:          uuid,
+				WorkspaceID: wsUUID,
+			})
+			if err != nil || agent.ArchivedAt.Valid {
+				writeError(w, http.StatusBadRequest, "nurturer must be an active agent in this workspace")
 				return
 			}
 			params.NurturerAgentID = uuid
@@ -537,4 +570,421 @@ func (h *Handler) DeleteIdeaNote(w http.ResponseWriter, r *http.Request) {
 		"note_id": uuidToString(noteUUID),
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// =====================
+// Promote Idea → Mission
+// =====================
+
+// promotedMissionPrompt 把 idea 的 description 与养护笔记拼成 Mission 的 prompt，
+// 让后续 task 派发时第一手就能拿到完整的孵化上下文。
+func promotedMissionPrompt(idea db.Idea, notes []db.IdeaNurtureNote) string {
+	var b strings.Builder
+	desc := strings.TrimSpace(idea.Description)
+	if desc == "" {
+		desc = strings.TrimSpace(idea.Title)
+	}
+	b.WriteString(desc)
+	if len(notes) > 0 {
+		b.WriteString("\n\n养护笔记：")
+		for _, n := range notes {
+			b.WriteString("\n- ")
+			b.WriteString(n.Summary)
+			if body := strings.TrimSpace(n.Body); body != "" {
+				b.WriteString("：")
+				b.WriteString(body)
+			}
+		}
+	}
+	return b.String()
+}
+
+// promotedMissionBrief 在 missionBrief 基础上加「来源 Idea」前置区块，
+// 让团队房间第一条消息就告诉负责人这个 Mission 是从哪条 Idea 升级来的、
+// 用户在养鱼期间留过哪些角度。
+func promotedMissionBrief(idea db.Idea, notes []db.IdeaNurtureNote, title, prompt string, plan []db.MissionPlanItem) string {
+	var b strings.Builder
+	b.WriteString("【Origin Mission · 来源 Idea】")
+	b.WriteString(title)
+	b.WriteString("\n\n来源 Idea：")
+	b.WriteString(idea.Title)
+	if desc := strings.TrimSpace(idea.Description); desc != "" {
+		b.WriteString("\n")
+		b.WriteString(desc)
+	}
+	if len(notes) > 0 {
+		b.WriteString("\n\n养护笔记：")
+		for _, n := range notes {
+			b.WriteString("\n- ")
+			b.WriteString(n.Summary)
+			if body := strings.TrimSpace(n.Body); body != "" {
+				b.WriteString("\n  ")
+				b.WriteString(strings.ReplaceAll(body, "\n", "\n  "))
+			}
+		}
+	}
+	b.WriteString("\n\n目标：\n")
+	b.WriteString(strings.TrimSpace(prompt))
+	if len(plan) > 0 {
+		b.WriteString("\n\n初始计划树：")
+		for i, item := range plan {
+			b.WriteString("\n")
+			fmt.Fprintf(&b, "%d. ", i+1)
+			b.WriteString(item.Title)
+			if item.Description != "" {
+				b.WriteString(" - ")
+				b.WriteString(item.Description)
+			}
+		}
+	}
+	b.WriteString("\n\n请你作为团队负责人，先确认是否需要调整计划，再拆解任务、明确成员分工。中高风险动作先向用户确认。")
+	return b.String()
+}
+
+// PromoteIdea 把一条养鱼池里的 Idea 升级为 Mission：复用 CreateMission 的事务序列，
+// 在事务尾部把 idea 标记 promoted、回写 promoted_mission_id，避免出现「状态已升但找不到 Mission」的孤儿。
+// 第一条群聊消息显式带「来源 Idea」前置区块，方便负责人秒速对齐上下文。
+func (h *Handler) PromoteIdea(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	idea, notes, ok := h.loadIdeaDetail(w, r, id)
+	if !ok {
+		return
+	}
+	if idea.Status == "promoted" || idea.Status == "archived" {
+		writeError(w, http.StatusBadRequest, "idea has already been promoted or archived")
+		return
+	}
+
+	var req PromoteIdeaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.CaptainAgentID = strings.TrimSpace(req.CaptainAgentID)
+	if req.CaptainAgentID == "" {
+		writeError(w, http.StatusBadRequest, "captain_agent_id is required")
+		return
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = strings.TrimSpace(idea.Title)
+	}
+	if title == "" {
+		title = "未命名任务"
+	}
+
+	workspaceID := h.resolveWorkspaceID(r)
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	captainUUID, ok := parseUUIDOrBadRequest(w, req.CaptainAgentID, "captain_agent_id")
+	if !ok {
+		return
+	}
+	captain, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+		ID:          captainUUID,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil || captain.ArchivedAt.Valid {
+		writeError(w, http.StatusBadRequest, "captain must be an active agent in this workspace")
+		return
+	}
+
+	memberUUIDs := make([]pgtype.UUID, 0, len(req.MemberAgentIDs))
+	seenMembers := map[string]bool{req.CaptainAgentID: true}
+	dedupedMemberIDs := make([]string, 0, len(req.MemberAgentIDs))
+	for _, raw := range req.MemberAgentIDs {
+		raw = strings.TrimSpace(raw)
+		if raw == "" || seenMembers[raw] {
+			continue
+		}
+		memberUUID, ok := parseUUIDOrBadRequest(w, raw, "member_agent_ids")
+		if !ok {
+			return
+		}
+		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID:          memberUUID,
+			WorkspaceID: wsUUID,
+		})
+		if err != nil || agent.ArchivedAt.Valid {
+			writeError(w, http.StatusBadRequest, "member agent must be active in this workspace")
+			return
+		}
+		seenMembers[raw] = true
+		memberUUIDs = append(memberUUIDs, memberUUID)
+		dedupedMemberIDs = append(dedupedMemberIDs, raw)
+	}
+
+	var team db.Team
+	if strings.TrimSpace(req.TeamID) != "" {
+		teamID, ok := parseUUIDOrBadRequest(w, req.TeamID, "team_id")
+		if !ok {
+			return
+		}
+		team, err = h.Queries.GetTeamInWorkspace(r.Context(), db.GetTeamInWorkspaceParams{
+			ID:          teamID,
+			WorkspaceID: wsUUID,
+		})
+		if err != nil || team.ArchivedAt.Valid {
+			writeError(w, http.StatusBadRequest, "team not found in this workspace")
+			return
+		}
+		if member, err := h.Queries.IsTeamMember(r.Context(), db.IsTeamMemberParams{TeamID: team.ID, AgentID: captainUUID}); err != nil || !member {
+			writeError(w, http.StatusBadRequest, "captain must belong to the selected team")
+			return
+		}
+	}
+
+	prompt := promotedMissionPrompt(idea, notes)
+	if len(req.PlanItems) == 0 {
+		req.PlanItems = defaultMissionPlanItems(prompt, req.CaptainAgentID, dedupedMemberIDs)
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to promote idea")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	if !team.ID.Valid {
+		team, err = qtx.CreateTeam(r.Context(), db.CreateTeamParams{
+			WorkspaceID:     wsUUID,
+			Name:            "任务小队 · " + title,
+			Description:     "由 Origin 想法池升级 Mission 时自动创建。",
+			CaptainAgentID:  captainUUID,
+			CreatedByUserID: parseUUID(userID),
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create mission team")
+			return
+		}
+	}
+
+	if _, err := qtx.AddTeamMember(r.Context(), db.AddTeamMemberParams{
+		TeamID:  team.ID,
+		AgentID: captainUUID,
+		Role:    "captain",
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to register mission captain")
+		return
+	}
+	if err := qtx.SetCaptainMember(r.Context(), db.SetCaptainMemberParams{
+		TeamID:  team.ID,
+		AgentID: captainUUID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to set mission captain")
+		return
+	}
+	if uuidToString(team.CaptainAgentID) != req.CaptainAgentID {
+		team, err = qtx.UpdateTeam(r.Context(), db.UpdateTeamParams{
+			ID:             team.ID,
+			CaptainAgentID: captainUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update mission team captain")
+			return
+		}
+	}
+	for _, memberID := range memberUUIDs {
+		if _, err := qtx.AddTeamMember(r.Context(), db.AddTeamMemberParams{
+			TeamID:  team.ID,
+			AgentID: memberID,
+			Role:    "member",
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to register mission member")
+			return
+		}
+	}
+
+	session, err := qtx.GetOrCreateTeamChatSession(r.Context(), db.GetOrCreateTeamChatSessionParams{
+		TeamID:      team.ID,
+		WorkspaceID: wsUUID,
+		CreatorID:   parseUUID(userID),
+		Title:       team.Name,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to open mission room")
+		return
+	}
+
+	mission, err := qtx.CreateMission(r.Context(), db.CreateMissionParams{
+		WorkspaceID:     wsUUID,
+		TeamID:          team.ID,
+		CaptainAgentID:  captainUUID,
+		CreatedByUserID: parseUUID(userID),
+		Title:           title,
+		Prompt:          prompt,
+		Summary:         "",
+		Outcome:         "",
+		Status:          "planning",
+		RiskLevel:       normalizeRiskLevel(req.RiskLevel),
+		ExecutionMode:   normalizeExecutionMode(req.ExecutionMode),
+		ChatSessionID:   session.ID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create mission")
+		return
+	}
+
+	planItems := make([]db.MissionPlanItem, 0, len(req.PlanItems))
+	for i, itemReq := range req.PlanItems {
+		var assigned pgtype.UUID
+		if itemReq.AssignedAgentID != nil && strings.TrimSpace(*itemReq.AssignedAgentID) != "" {
+			assignedUUID, ok := parseUUIDOrBadRequest(w, *itemReq.AssignedAgentID, "assigned_agent_id")
+			if !ok {
+				return
+			}
+			assigned = assignedUUID
+		}
+		planTitle := strings.TrimSpace(itemReq.Title)
+		if planTitle == "" {
+			planTitle = "未命名步骤"
+		}
+		planItem, err := qtx.CreateMissionPlanItem(r.Context(), db.CreateMissionPlanItemParams{
+			MissionID:       mission.ID,
+			Title:           planTitle,
+			Description:     itemReq.Description,
+			Phase:           normalizeMissionPhase(itemReq.Phase),
+			Status:          "todo",
+			Priority:        normalizeMissionPriority(itemReq.Priority),
+			RiskLevel:       normalizeRiskLevel(itemReq.RiskLevel),
+			SortOrder:       int32(i),
+			AssignedAgentID: assigned,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create mission plan")
+			return
+		}
+		planItems = append(planItems, planItem)
+	}
+
+	if _, err := qtx.CreateMissionEvent(r.Context(), db.CreateMissionEventParams{
+		MissionID:   mission.ID,
+		WorkspaceID: wsUUID,
+		ActorType:   "member",
+		ActorID:     parseUUID(userID),
+		Kind:        "mission_created",
+		Title:       "Mission 已从想法池升级",
+		Body:        prompt,
+		Payload: eventPayload(map[string]any{
+			"team_id":          uuidToString(team.ID),
+			"captain_agent_id": req.CaptainAgentID,
+			"member_agent_ids": dedupedMemberIDs,
+			"source_idea_id":   uuidToString(idea.ID),
+		}),
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create mission event")
+		return
+	}
+
+	msg, err := qtx.CreateTeamChatMessage(r.Context(), db.CreateTeamChatMessageParams{
+		ChatSessionID: session.ID,
+		Role:          "user",
+		Content:       promotedMissionBrief(idea, notes, title, prompt, planItems),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to seed mission room")
+		return
+	}
+
+	promotedIdea, err := qtx.PromoteIdeaToMission(r.Context(), db.PromoteIdeaToMissionParams{
+		ID:                idea.ID,
+		PromotedMissionID: mission.ID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to mark idea as promoted")
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to promote idea")
+		return
+	}
+
+	h.publishTeamMessage(workspaceID, "member", userID, msg, team.ID)
+
+	task, dispatchErr := h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, captain.ID)
+	finalStatus := "executing"
+	assignmentStatus := "dispatched"
+	var taskID pgtype.UUID
+	var captainPlanItemID pgtype.UUID
+	for _, item := range planItems {
+		if uuidToString(item.AssignedAgentID) == req.CaptainAgentID {
+			captainPlanItemID = item.ID
+			break
+		}
+	}
+	if !captainPlanItemID.Valid && len(planItems) > 0 {
+		captainPlanItemID = planItems[0].ID
+	}
+	if dispatchErr != nil {
+		finalStatus = "blocked"
+		assignmentStatus = "blocked"
+		h.appendTeamSystemMessage(r, workspaceID, userID, session.ID, team.ID, "负责人暂时无法接管这个 Mission："+dispatchErr.Error())
+	} else {
+		taskID = task.ID
+	}
+
+	assignment, err := h.Queries.CreateMissionAssignment(r.Context(), db.CreateMissionAssignmentParams{
+		MissionID:  mission.ID,
+		AgentID:    captain.ID,
+		Status:     assignmentStatus,
+		RiskLevel:  mission.RiskLevel,
+		Output:     "",
+		PlanItemID: captainPlanItemID,
+		TaskID:     taskID,
+	})
+	if err != nil {
+		slog.Warn("failed to create mission assignment", "mission_id", uuidToString(mission.ID), "error", err)
+	}
+	if _, err := h.Queries.CreateMissionEvent(r.Context(), db.CreateMissionEventParams{
+		MissionID:   mission.ID,
+		WorkspaceID: wsUUID,
+		ActorType:   "system",
+		Kind:        "captain_dispatched",
+		Title:       "负责人已接管",
+		Body:        "想法升级后的 Mission 简报已发送到团队房间，等待负责人拆解和派工。",
+		Payload: eventPayload(map[string]any{
+			"assignment_id": uuidToString(assignment.ID),
+			"task_id":       uuidToString(taskID),
+			"dispatch_error": func() string {
+				if dispatchErr == nil {
+					return ""
+				}
+				return dispatchErr.Error()
+			}(),
+		}),
+	}); err != nil {
+		slog.Warn("failed to create mission dispatch event", "mission_id", uuidToString(mission.ID), "error", err)
+	}
+
+	updated, err := h.Queries.UpdateMission(r.Context(), db.UpdateMissionParams{
+		ID:     mission.ID,
+		Status: pgtype.Text{String: finalStatus, Valid: true},
+	})
+	if err != nil {
+		updated = mission
+	}
+
+	members := h.listTeamMembersOrEmpty(r, team.ID)
+	assignments, _ := h.Queries.ListMissionAssignments(r.Context(), mission.ID)
+	events, _ := h.Queries.ListMissionEvents(r.Context(), mission.ID)
+	missionResp := missionDetailToResponse(updated, team, members, planItems, assignments, events)
+	ideaResp := ideaToResponse(promotedIdea)
+
+	h.publish(protocol.EventMissionCreated, workspaceID, "member", userID, map[string]any{"mission": missionResp.Mission})
+	h.publish(protocol.EventIdeaUpdated, workspaceID, "member", userID, map[string]any{"idea": ideaResp})
+
+	writeJSON(w, http.StatusCreated, PromoteIdeaResponse{
+		Idea:    ideaResp,
+		Mission: missionResp,
+	})
 }

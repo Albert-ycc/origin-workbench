@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useWorkspaceId } from "../hooks";
 import { ideaKeys } from "./queries";
+import { missionKeys } from "../missions/queries";
 import type {
   CreateIdeaRequest,
   CreateIdeaNoteRequest,
@@ -9,6 +10,9 @@ import type {
   IdeaDetail,
   IdeaNurtureNote,
   ListIdeasResponse,
+  ListMissionsResponse,
+  MissionDetail,
+  PromoteIdeaRequest,
   UpdateIdeaRequest,
 } from "../types";
 
@@ -115,6 +119,41 @@ export function useDeleteIdeaNote() {
           ? { ...old, notes: old.notes.filter((n) => n.id !== vars.noteId) }
           : old,
       );
+    },
+  });
+}
+
+export function usePromoteIdea() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & PromoteIdeaRequest) =>
+      api.promoteIdea(id, data),
+    onSuccess: ({ idea, mission }) => {
+      patchIdeaCaches(qc, wsId, idea);
+      qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId), (old) =>
+        old
+          ? {
+              ...old,
+              ideas: old.ideas.filter((i) => i.id !== idea.id),
+              total: Math.max(0, old.total - 1),
+            }
+          : old,
+      );
+      qc.setQueryData<ListMissionsResponse>(missionKeys.list(wsId), (old) =>
+        old && !old.missions.some((m) => m.id === mission.mission.id)
+          ? { ...old, missions: [mission.mission, ...old.missions], total: old.total + 1 }
+          : old,
+      );
+      qc.setQueryData<MissionDetail>(
+        missionKeys.detail(wsId, mission.mission.id),
+        mission,
+      );
+    },
+    onSettled: (_data, _error, vars) => {
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
+      qc.invalidateQueries({ queryKey: missionKeys.all(wsId) });
+      qc.invalidateQueries({ queryKey: ideaKeys.detail(wsId, vars.id) });
     },
   });
 }

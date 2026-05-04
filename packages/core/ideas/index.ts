@@ -6,4 +6,5 @@ export {
   useDeleteIdea,
   useCreateIdeaNote,
   useDeleteIdeaNote,
+  usePromoteIdea,
 } from "./mutations";
