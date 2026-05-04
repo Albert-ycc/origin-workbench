@@ -24,7 +24,7 @@ INSERT INTO tool_binding (
     $9::uuid,
     $10::uuid
 )
-RETURNING id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id
 `
 
 type CreateToolBindingParams struct {
@@ -69,6 +69,7 @@ func (q *Queries) CreateToolBinding(ctx context.Context, arg CreateToolBindingPa
 		&i.LastSyncedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -83,7 +84,7 @@ func (q *Queries) DeleteToolBinding(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getToolBindingInWorkspace = `-- name: GetToolBindingInWorkspace :one
-SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at FROM tool_binding
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -110,12 +111,13 @@ func (q *Queries) GetToolBindingInWorkspace(ctx context.Context, arg GetToolBind
 		&i.LastSyncedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listToolBindingsForAgent = `-- name: ListToolBindingsForAgent :many
-SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at FROM tool_binding
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
 WHERE agent_id = $1
 ORDER BY updated_at DESC
 `
@@ -144,6 +146,7 @@ func (q *Queries) ListToolBindingsForAgent(ctx context.Context, agentID pgtype.U
 			&i.LastSyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -156,7 +159,7 @@ func (q *Queries) ListToolBindingsForAgent(ctx context.Context, agentID pgtype.U
 }
 
 const listToolBindingsForCouncil = `-- name: ListToolBindingsForCouncil :many
-SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at FROM tool_binding
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
 WHERE council_session_id = $1
 ORDER BY updated_at DESC
 `
@@ -185,6 +188,7 @@ func (q *Queries) ListToolBindingsForCouncil(ctx context.Context, councilSession
 			&i.LastSyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -197,7 +201,7 @@ func (q *Queries) ListToolBindingsForCouncil(ctx context.Context, councilSession
 }
 
 const listToolBindingsForIdea = `-- name: ListToolBindingsForIdea :many
-SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at FROM tool_binding
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
 WHERE idea_id = $1
 ORDER BY updated_at DESC
 `
@@ -226,6 +230,7 @@ func (q *Queries) ListToolBindingsForIdea(ctx context.Context, ideaID pgtype.UUI
 			&i.LastSyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -238,7 +243,7 @@ func (q *Queries) ListToolBindingsForIdea(ctx context.Context, ideaID pgtype.UUI
 }
 
 const listToolBindingsForMission = `-- name: ListToolBindingsForMission :many
-SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at FROM tool_binding
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
 WHERE mission_id = $1
 ORDER BY updated_at DESC
 `
@@ -267,6 +272,7 @@ func (q *Queries) ListToolBindingsForMission(ctx context.Context, missionID pgty
 			&i.LastSyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -280,7 +286,7 @@ func (q *Queries) ListToolBindingsForMission(ctx context.Context, missionID pgty
 
 const listToolBindingsForWorkspace = `-- name: ListToolBindingsForWorkspace :many
 
-SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at FROM tool_binding
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
 WHERE workspace_id = $1
 ORDER BY updated_at DESC
 `
@@ -312,6 +318,7 @@ func (q *Queries) ListToolBindingsForWorkspace(ctx context.Context, workspaceID 
 			&i.LastSyncedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -331,7 +338,7 @@ UPDATE tool_binding SET
     last_synced_at = COALESCE($5, last_synced_at),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id
 `
 
 type UpdateToolBindingParams struct {
@@ -366,6 +373,7 @@ func (q *Queries) UpdateToolBinding(ctx context.Context, arg UpdateToolBindingPa
 		&i.LastSyncedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }

@@ -464,6 +464,23 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/{id}", h.GetMailboxItem)
 			})
 
+			// Project workspaces (Origin §17 — v1.2). Mounted under /api/v12/
+			// to avoid colliding with the legacy v1.0 /api/projects (issue
+			// classification path). Frontend uses these endpoints; v1.0 path
+			// kept for backwards compat only.
+			r.Route("/api/v12/projects", func(r chi.Router) {
+				r.Get("/", h.ListProjectsV12)
+				r.Post("/", h.CreateProjectV12)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetProjectV12)
+					r.Patch("/", h.UpdateProjectV12)
+					r.Post("/archive", h.ArchiveProjectV12)
+					r.Post("/memory-doc/append", h.AppendProjectMemoryDoc)
+					r.Get("/memories", h.ListAgentProjectMemoriesByProject)
+				})
+			})
+			r.Get("/api/v12/teams/{teamId}/projects", h.ListProjectsByTeamV12)
+
 			// Pins
 			r.Route("/api/pins", func(r chi.Router) {
 				r.Get("/", h.ListPins)

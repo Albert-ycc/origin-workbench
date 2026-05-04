@@ -14,7 +14,7 @@ import (
 const archiveIdea = `-- name: ArchiveIdea :one
 UPDATE idea SET status = 'archived', updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
 
 func (q *Queries) ArchiveIdea(ctx context.Context, id pgtype.UUID) (Idea, error) {
@@ -35,6 +35,7 @@ func (q *Queries) ArchiveIdea(ctx context.Context, id pgtype.UUID) (Idea, error)
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -44,7 +45,7 @@ UPDATE idea SET
     nurturer_agent_id = NULL,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
 
 func (q *Queries) ClearIdeaNurturer(ctx context.Context, id pgtype.UUID) (Idea, error) {
@@ -65,6 +66,7 @@ func (q *Queries) ClearIdeaNurturer(ctx context.Context, id pgtype.UUID) (Idea, 
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -77,7 +79,7 @@ INSERT INTO idea (
     $1, $2, $9::uuid,
     $3, $4, $5, $6, $7, $8
 )
-RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
 
 type CreateIdeaParams struct {
@@ -120,6 +122,7 @@ func (q *Queries) CreateIdea(ctx context.Context, arg CreateIdeaParams) (Idea, e
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -193,7 +196,7 @@ func (q *Queries) DeleteIdeaNurtureNoteInIdea(ctx context.Context, arg DeleteIde
 }
 
 const getIdeaInWorkspace = `-- name: GetIdeaInWorkspace :one
-SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at FROM idea
+SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id FROM idea
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -220,12 +223,13 @@ func (q *Queries) GetIdeaInWorkspace(ctx context.Context, arg GetIdeaInWorkspace
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listArchivedIdeas = `-- name: ListArchivedIdeas :many
-SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at FROM idea
+SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id FROM idea
 WHERE workspace_id = $1
   AND status = 'archived'
 ORDER BY updated_at DESC
@@ -255,6 +259,7 @@ func (q *Queries) ListArchivedIdeas(ctx context.Context, workspaceID pgtype.UUID
 			&i.LastNurturedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -307,7 +312,7 @@ func (q *Queries) ListIdeaNurtureNotes(ctx context.Context, ideaID pgtype.UUID) 
 
 const listIdeas = `-- name: ListIdeas :many
 
-SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at FROM idea
+SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id FROM idea
 WHERE workspace_id = $1
   AND status NOT IN ('archived', 'promoted')
 ORDER BY
@@ -344,6 +349,7 @@ func (q *Queries) ListIdeas(ctx context.Context, workspaceID pgtype.UUID) ([]Ide
 			&i.LastNurturedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -361,7 +367,7 @@ UPDATE idea SET
     promoted_mission_id = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
 
 type PromoteIdeaToMissionParams struct {
@@ -387,6 +393,7 @@ func (q *Queries) PromoteIdeaToMission(ctx context.Context, arg PromoteIdeaToMis
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -394,7 +401,7 @@ func (q *Queries) PromoteIdeaToMission(ctx context.Context, arg PromoteIdeaToMis
 const touchIdeaNurturedAt = `-- name: TouchIdeaNurturedAt :one
 UPDATE idea SET last_nurtured_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
 
 func (q *Queries) TouchIdeaNurturedAt(ctx context.Context, id pgtype.UUID) (Idea, error) {
@@ -415,6 +422,7 @@ func (q *Queries) TouchIdeaNurturedAt(ctx context.Context, id pgtype.UUID) (Idea
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -428,7 +436,7 @@ UPDATE idea SET
     tags = COALESCE($6::text[], tags),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
 
 type UpdateIdeaParams struct {
@@ -465,6 +473,7 @@ func (q *Queries) UpdateIdea(ctx context.Context, arg UpdateIdeaParams) (Idea, e
 		&i.LastNurturedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }

@@ -14,7 +14,7 @@ import (
 const archiveMission = `-- name: ArchiveMission :one
 UPDATE mission SET status = 'archived', updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at
+RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id
 `
 
 func (q *Queries) ArchiveMission(ctx context.Context, id pgtype.UUID) (Mission, error) {
@@ -36,6 +36,7 @@ func (q *Queries) ArchiveMission(ctx context.Context, id pgtype.UUID) (Mission, 
 		&i.ExecutionMode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -48,7 +49,7 @@ INSERT INTO mission (
     $1, $2, $3, $12, $4,
     $5, $6, $7, $8, $9, $10, $11
 )
-RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at
+RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id
 `
 
 type CreateMissionParams struct {
@@ -98,6 +99,7 @@ func (q *Queries) CreateMission(ctx context.Context, arg CreateMissionParams) (M
 		&i.ExecutionMode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -294,7 +296,7 @@ func (q *Queries) CreateMissionPlanItem(ctx context.Context, arg CreateMissionPl
 }
 
 const getActiveMissionByTeamChatSession = `-- name: GetActiveMissionByTeamChatSession :one
-SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at FROM mission
+SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id FROM mission
 WHERE team_id = $1
   AND chat_session_id = $2
   AND status IN ('planning', 'waiting_confirmation', 'executing', 'blocked')
@@ -326,6 +328,7 @@ func (q *Queries) GetActiveMissionByTeamChatSession(ctx context.Context, arg Get
 		&i.ExecutionMode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -357,7 +360,7 @@ func (q *Queries) GetMissionAssignmentByTask(ctx context.Context, taskID pgtype.
 }
 
 const getMissionByTask = `-- name: GetMissionByTask :one
-SELECT m.id, m.workspace_id, m.team_id, m.captain_agent_id, m.chat_session_id, m.created_by_user_id, m.title, m.prompt, m.summary, m.outcome, m.status, m.risk_level, m.execution_mode, m.created_at, m.updated_at
+SELECT m.id, m.workspace_id, m.team_id, m.captain_agent_id, m.chat_session_id, m.created_by_user_id, m.title, m.prompt, m.summary, m.outcome, m.status, m.risk_level, m.execution_mode, m.created_at, m.updated_at, m.project_id
 FROM mission m
 INNER JOIN mission_assignment ma ON ma.mission_id = m.id
 WHERE ma.task_id = $1
@@ -384,12 +387,13 @@ func (q *Queries) GetMissionByTask(ctx context.Context, taskID pgtype.UUID) (Mis
 		&i.ExecutionMode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const getMissionInWorkspace = `-- name: GetMissionInWorkspace :one
-SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at FROM mission
+SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id FROM mission
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -417,12 +421,13 @@ func (q *Queries) GetMissionInWorkspace(ctx context.Context, arg GetMissionInWor
 		&i.ExecutionMode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listArchivedMissions = `-- name: ListArchivedMissions :many
-SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at FROM mission
+SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id FROM mission
 WHERE workspace_id = $1
   AND status = 'archived'
 ORDER BY updated_at DESC
@@ -453,6 +458,7 @@ func (q *Queries) ListArchivedMissions(ctx context.Context, workspaceID pgtype.U
 			&i.ExecutionMode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -594,7 +600,7 @@ func (q *Queries) ListMissionPlanItems(ctx context.Context, missionID pgtype.UUI
 
 const listMissions = `-- name: ListMissions :many
 
-SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at FROM mission
+SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id FROM mission
 WHERE workspace_id = $1
   AND status <> 'archived'
 ORDER BY updated_at DESC
@@ -628,6 +634,7 @@ func (q *Queries) ListMissions(ctx context.Context, workspaceID pgtype.UUID) ([]
 			&i.ExecutionMode,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +659,7 @@ UPDATE mission SET
     chat_session_id = COALESCE($10::uuid, chat_session_id),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at
+RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id
 `
 
 type UpdateMissionParams struct {
@@ -698,6 +705,7 @@ func (q *Queries) UpdateMission(ctx context.Context, arg UpdateMissionParams) (M
 		&i.ExecutionMode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }

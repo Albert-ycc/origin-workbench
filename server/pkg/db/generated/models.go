@@ -73,6 +73,16 @@ type AgentMemory struct {
 	ConfirmedByUserID pgtype.UUID        `json:"confirmed_by_user_id"`
 }
 
+type AgentProjectMemory struct {
+	ID                   pgtype.UUID        `json:"id"`
+	AgentID              pgtype.UUID        `json:"agent_id"`
+	ProjectID            pgtype.UUID        `json:"project_id"`
+	Content              string             `json:"content"`
+	LastAutoCompactionAt pgtype.Timestamptz `json:"last_auto_compaction_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AgentRuntime struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -216,18 +226,21 @@ type ChatMessage struct {
 }
 
 type ChatSession struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	CreatorID   pgtype.UUID        `json:"creator_id"`
-	Title       string             `json:"title"`
-	SessionID   pgtype.Text        `json:"session_id"`
-	WorkDir     pgtype.Text        `json:"work_dir"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	UnreadSince pgtype.Timestamptz `json:"unread_since"`
-	TeamID      pgtype.UUID        `json:"team_id"`
+	ID                     pgtype.UUID        `json:"id"`
+	WorkspaceID            pgtype.UUID        `json:"workspace_id"`
+	AgentID                pgtype.UUID        `json:"agent_id"`
+	CreatorID              pgtype.UUID        `json:"creator_id"`
+	Title                  string             `json:"title"`
+	SessionID              pgtype.Text        `json:"session_id"`
+	WorkDir                pgtype.Text        `json:"work_dir"`
+	Status                 string             `json:"status"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	UnreadSince            pgtype.Timestamptz `json:"unread_since"`
+	TeamID                 pgtype.UUID        `json:"team_id"`
+	ProjectID              pgtype.UUID        `json:"project_id"`
+	LastCompactedAt        pgtype.Timestamptz `json:"last_compacted_at"`
+	CompactedIntoSessionID pgtype.UUID        `json:"compacted_into_session_id"`
 }
 
 type Comment struct {
@@ -270,6 +283,7 @@ type CouncilSession struct {
 	EndedAt             pgtype.Timestamptz `json:"ended_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ProjectID           pgtype.UUID        `json:"project_id"`
 }
 
 type CouncilSessionParticipant struct {
@@ -313,6 +327,7 @@ type Exploration struct {
 	Decision         string             `json:"decision"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
 }
 
 type ExplorationBranch struct {
@@ -357,6 +372,7 @@ type Idea struct {
 	LastNurturedAt    pgtype.Timestamptz `json:"last_nurtured_at"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
 }
 
 type IdeaNurtureNote struct {
@@ -467,6 +483,7 @@ type MailboxItem struct {
 	ProcessingFinishedAt pgtype.Timestamptz `json:"processing_finished_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ProjectID            pgtype.UUID        `json:"project_id"`
 }
 
 type Member struct {
@@ -493,6 +510,7 @@ type Mission struct {
 	ExecutionMode   string             `json:"execution_mode"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
 }
 
 type MissionAssignment struct {
@@ -570,17 +588,22 @@ type PinnedItem struct {
 }
 
 type Project struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Title       string             `json:"title"`
-	Description pgtype.Text        `json:"description"`
-	Icon        pgtype.Text        `json:"icon"`
-	Status      string             `json:"status"`
-	LeadType    pgtype.Text        `json:"lead_type"`
-	LeadID      pgtype.UUID        `json:"lead_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Priority    string             `json:"priority"`
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	Title              string             `json:"title"`
+	Description        pgtype.Text        `json:"description"`
+	Icon               pgtype.Text        `json:"icon"`
+	Status             string             `json:"status"`
+	LeadType           pgtype.Text        `json:"lead_type"`
+	LeadID             pgtype.UUID        `json:"lead_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	Priority           string             `json:"priority"`
+	TeamID             pgtype.UUID        `json:"team_id"`
+	LocalDir           string             `json:"local_dir"`
+	MemoryDoc          string             `json:"memory_doc"`
+	MemoryDocUpdatedAt pgtype.Timestamptz `json:"memory_doc_updated_at"`
+	CompactionCount    int32              `json:"compaction_count"`
 }
 
 type ProjectResource struct {
@@ -674,6 +697,7 @@ type ToolBinding struct {
 	LastSyncedAt     pgtype.Timestamptz `json:"last_synced_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
 }
 
 type User struct {

@@ -14,7 +14,7 @@ import (
 const archiveExploration = `-- name: ArchiveExploration :one
 UPDATE exploration SET status = 'archived', updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id
 `
 
 func (q *Queries) ArchiveExploration(ctx context.Context, id pgtype.UUID) (Exploration, error) {
@@ -32,6 +32,7 @@ func (q *Queries) ArchiveExploration(ctx context.Context, id pgtype.UUID) (Explo
 		&i.Decision,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -47,7 +48,7 @@ INSERT INTO exploration (
     $7::uuid,
     $3, $4, $5
 )
-RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id
 `
 
 type CreateExplorationParams struct {
@@ -83,6 +84,7 @@ func (q *Queries) CreateExploration(ctx context.Context, arg CreateExplorationPa
 		&i.Decision,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -212,7 +214,7 @@ func (q *Queries) GetExplorationBranchInExploration(ctx context.Context, arg Get
 }
 
 const getExplorationInWorkspace = `-- name: GetExplorationInWorkspace :one
-SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at FROM exploration
+SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id FROM exploration
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -236,12 +238,13 @@ func (q *Queries) GetExplorationInWorkspace(ctx context.Context, arg GetExplorat
 		&i.Decision,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listArchivedExplorations = `-- name: ListArchivedExplorations :many
-SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at FROM exploration
+SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id FROM exploration
 WHERE workspace_id = $1
   AND status = 'archived'
 ORDER BY updated_at DESC
@@ -268,6 +271,7 @@ func (q *Queries) ListArchivedExplorations(ctx context.Context, workspaceID pgty
 			&i.Decision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -327,7 +331,7 @@ func (q *Queries) ListExplorationBranches(ctx context.Context, explorationID pgt
 
 const listExplorations = `-- name: ListExplorations :many
 
-SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at FROM exploration
+SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id FROM exploration
 WHERE workspace_id = $1
   AND status <> 'archived'
 ORDER BY updated_at DESC
@@ -357,6 +361,7 @@ func (q *Queries) ListExplorations(ctx context.Context, workspaceID pgtype.UUID)
 			&i.Decision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -388,7 +393,7 @@ UPDATE exploration SET
     decision = COALESCE($5, decision),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at
+RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id
 `
 
 type UpdateExplorationParams struct {
@@ -420,6 +425,7 @@ func (q *Queries) UpdateExploration(ctx context.Context, arg UpdateExplorationPa
 		&i.Decision,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }

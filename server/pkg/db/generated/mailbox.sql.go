@@ -31,7 +31,7 @@ INSERT INTO mailbox_item (
     status, processing_started_at
 )
 VALUES ($1, $2, $3, $5, $4, 'processing', now())
-RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at
+RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id
 `
 
 type CreateMailboxItemParams struct {
@@ -66,12 +66,13 @@ func (q *Queries) CreateMailboxItem(ctx context.Context, arg CreateMailboxItemPa
 		&i.ProcessingFinishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const getMailboxItem = `-- name: GetMailboxItem :one
-SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at FROM mailbox_item WHERE id = $1
+SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id FROM mailbox_item WHERE id = $1
 `
 
 func (q *Queries) GetMailboxItem(ctx context.Context, id pgtype.UUID) (MailboxItem, error) {
@@ -92,12 +93,13 @@ func (q *Queries) GetMailboxItem(ctx context.Context, id pgtype.UUID) (MailboxIt
 		&i.ProcessingFinishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const getMailboxItemByTask = `-- name: GetMailboxItemByTask :one
-SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at FROM mailbox_item WHERE task_id = $1
+SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id FROM mailbox_item WHERE task_id = $1
 `
 
 // Look up the user-facing mailbox row for a given task id. Used by the task
@@ -120,12 +122,13 @@ func (q *Queries) GetMailboxItemByTask(ctx context.Context, taskID pgtype.UUID) 
 		&i.ProcessingFinishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listMailboxItemsByAgent = `-- name: ListMailboxItemsByAgent :many
-SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at FROM mailbox_item
+SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id FROM mailbox_item
 WHERE agent_id = $1
 ORDER BY submitted_at DESC
 LIMIT $2 OFFSET $3
@@ -161,6 +164,7 @@ func (q *Queries) ListMailboxItemsByAgent(ctx context.Context, arg ListMailboxIt
 			&i.ProcessingFinishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -173,7 +177,7 @@ func (q *Queries) ListMailboxItemsByAgent(ctx context.Context, arg ListMailboxIt
 }
 
 const listMailboxItemsByChatSession = `-- name: ListMailboxItemsByChatSession :many
-SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at FROM mailbox_item
+SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id FROM mailbox_item
 WHERE chat_session_id = $1
 ORDER BY submitted_at ASC
 `
@@ -202,6 +206,7 @@ func (q *Queries) ListMailboxItemsByChatSession(ctx context.Context, chatSession
 			&i.ProcessingFinishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -214,7 +219,7 @@ func (q *Queries) ListMailboxItemsByChatSession(ctx context.Context, chatSession
 }
 
 const listMailboxItemsByWorkspace = `-- name: ListMailboxItemsByWorkspace :many
-SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at FROM mailbox_item
+SELECT id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id FROM mailbox_item
 WHERE workspace_id = $1
 ORDER BY processing_finished_at DESC NULLS LAST, submitted_at DESC
 LIMIT $2 OFFSET $3
@@ -254,6 +259,7 @@ func (q *Queries) ListMailboxItemsByWorkspace(ctx context.Context, arg ListMailb
 			&i.ProcessingFinishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -272,7 +278,7 @@ SET status = 'blocked',
     processing_finished_at = now(),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at
+RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id
 `
 
 type MarkMailboxItemBlockedParams struct {
@@ -298,6 +304,7 @@ func (q *Queries) MarkMailboxItemBlocked(ctx context.Context, arg MarkMailboxIte
 		&i.ProcessingFinishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -309,7 +316,7 @@ SET status = 'done',
     processing_finished_at = now(),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at
+RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id
 `
 
 type MarkMailboxItemDoneParams struct {
@@ -335,6 +342,7 @@ func (q *Queries) MarkMailboxItemDone(ctx context.Context, arg MarkMailboxItemDo
 		&i.ProcessingFinishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -346,7 +354,7 @@ SET status = 'timeout',
     processing_finished_at = now(),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at
+RETURNING id, workspace_id, agent_id, chat_session_id, task_id, raw_user_message, status, result, blocked_description, submitted_at, processing_started_at, processing_finished_at, created_at, updated_at, project_id
 `
 
 type MarkMailboxItemTimeoutParams struct {
@@ -372,6 +380,7 @@ func (q *Queries) MarkMailboxItemTimeout(ctx context.Context, arg MarkMailboxIte
 		&i.ProcessingFinishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }

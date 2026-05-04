@@ -136,6 +136,12 @@ const (
 	EventToolBindingUpdated = "tool_binding:updated"
 	EventToolBindingDeleted = "tool_binding:deleted"
 
+	// Project v1.2 events (Origin §17 — 项目工作区与团队层级)
+	// Note: EventProjectCreated/Updated already exist above for v1.0 issue
+	// classification. Reuse them — frontend WS subscribers don't distinguish.
+	EventProjectArchived         = "project:archived"
+	EventProjectMemoryDocUpdated = "project:memory_doc_updated"
+
 	// Mailbox events (Origin §14.8 — Agent work mode = mailbox).
 	// Created when a mailbox-mode agent receives a chat message and starts
 	// processing in the background; Updated when the underlying task flips

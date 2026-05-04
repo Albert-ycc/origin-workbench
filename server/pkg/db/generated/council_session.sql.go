@@ -46,7 +46,7 @@ UPDATE council_session SET
     ended_at = now(),
     updated_at = now()
 WHERE id = $1 AND status = 'running'
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id
 `
 
 type AdjournCouncilSessionParams struct {
@@ -74,6 +74,7 @@ func (q *Queries) AdjournCouncilSession(ctx context.Context, arg AdjournCouncilS
 		&i.EndedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -81,7 +82,7 @@ func (q *Queries) AdjournCouncilSession(ctx context.Context, arg AdjournCouncilS
 const archiveCouncilSession = `-- name: ArchiveCouncilSession :one
 UPDATE council_session SET status = 'archived', updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id
 `
 
 func (q *Queries) ArchiveCouncilSession(ctx context.Context, id pgtype.UUID) (CouncilSession, error) {
@@ -104,6 +105,7 @@ func (q *Queries) ArchiveCouncilSession(ctx context.Context, id pgtype.UUID) (Co
 		&i.EndedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -122,7 +124,7 @@ INSERT INTO council_session (
     $10::uuid,
     $2, $3, $4, $5
 )
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id
 `
 
 type CreateCouncilSessionParams struct {
@@ -169,6 +171,7 @@ func (q *Queries) CreateCouncilSession(ctx context.Context, arg CreateCouncilSes
 		&i.EndedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -183,7 +186,7 @@ func (q *Queries) DeleteCouncilSession(ctx context.Context, id pgtype.UUID) erro
 }
 
 const getCouncilSessionInWorkspace = `-- name: GetCouncilSessionInWorkspace :one
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id FROM council_session
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -212,12 +215,13 @@ func (q *Queries) GetCouncilSessionInWorkspace(ctx context.Context, arg GetCounc
 		&i.EndedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listArchivedCouncilSessions = `-- name: ListArchivedCouncilSessions :many
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id FROM council_session
 WHERE workspace_id = $1
   AND status = 'archived'
 ORDER BY updated_at DESC
@@ -249,6 +253,7 @@ func (q *Queries) ListArchivedCouncilSessions(ctx context.Context, workspaceID p
 			&i.EndedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -299,7 +304,7 @@ func (q *Queries) ListCouncilSessionParticipants(ctx context.Context, sessionID 
 
 const listCouncilSessions = `-- name: ListCouncilSessions :many
 
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id FROM council_session
 WHERE workspace_id = $1
   AND status <> 'archived'
 ORDER BY updated_at DESC
@@ -334,6 +339,7 @@ func (q *Queries) ListCouncilSessions(ctx context.Context, workspaceID pgtype.UU
 			&i.EndedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -369,7 +375,7 @@ UPDATE council_session SET
     conclusion = COALESCE($5, conclusion),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id
 `
 
 type UpdateCouncilSessionParams struct {
@@ -406,6 +412,7 @@ func (q *Queries) UpdateCouncilSession(ctx context.Context, arg UpdateCouncilSes
 		&i.EndedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
