@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pencil } from "lucide-react";
+import { Inbox, MessageSquare, Pencil } from "lucide-react";
 import type {
   Agent,
+  AgentNotifyPolicy,
   AgentRuntime,
+  AgentWorkMode,
   MemberWithUser,
 } from "@multica/core/types";
 import type { AgentPresenceDetail } from "@multica/core/agents";
@@ -137,9 +139,16 @@ export function AgentHero({
                 </span>
               )}
             </div>
+
+            {canEdit && (
+              <WorkModeStrip agent={agent} onUpdate={onUpdate} />
+            )}
           </div>
         </div>
       </div>
+
+      {/* WorkModeStrip is defined below — kept colocated because it's only
+          ever used by the hero. */}
 
       {editing && (
         <EditAgentDialog
@@ -156,5 +165,163 @@ export function AgentHero({
         />
       )}
     </>
+  );
+}
+
+// PRD §14.8 — Agent work-mode toggle. Lives on the hero so flipping between
+// "wait for me inline" (live) and "queue it, ping me later" (mailbox) is one
+// click without going into the edit dialog. When mailbox is active we also
+// surface the processing budget and the notify policy as inline pickers,
+// because both directly affect what the user can expect from block 6.
+function WorkModeStrip({
+  agent,
+  onUpdate,
+}: {
+  agent: Agent;
+  onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const setMode = async (mode: AgentWorkMode) => {
+    if (busy || mode === agent.work_mode) return;
+    setBusy(true);
+    try {
+      await onUpdate(agent.id, { work_mode: mode });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+      <span className="text-[11px] font-medium text-muted-foreground">
+        工作模式
+      </span>
+      <div className="inline-flex overflow-hidden rounded-md border bg-background text-xs">
+        <button
+          type="button"
+          onClick={() => setMode("live")}
+          disabled={busy}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1 transition-colors",
+            agent.work_mode === "live"
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:bg-muted",
+          )}
+        >
+          <MessageSquare className="size-3" />
+          实时对话
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("mailbox")}
+          disabled={busy}
+          className={cn(
+            "inline-flex items-center gap-1.5 border-l px-3 py-1 transition-colors",
+            agent.work_mode === "mailbox"
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:bg-muted",
+          )}
+        >
+          <Inbox className="size-3" />
+          信箱
+        </button>
+      </div>
+
+      {agent.work_mode === "mailbox" ? (
+        <>
+          <BudgetPicker
+            agent={agent}
+            disabled={busy}
+            onChange={(seconds) => onUpdate(agent.id, { mailbox_budget_seconds: seconds })}
+          />
+          <NotifyPolicyPicker
+            agent={agent}
+            disabled={busy}
+            onChange={(policy) => onUpdate(agent.id, { notify_policy: policy })}
+          />
+        </>
+      ) : (
+        <span className="text-[11px] text-muted-foreground">
+          实时模式：派给它的对话会在窗口里等回复。
+        </span>
+      )}
+    </div>
+  );
+}
+
+const BUDGET_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 900, label: "15 分钟" },
+  { value: 1800, label: "30 分钟" },
+  { value: 3600, label: "1 小时" },
+  { value: 7200, label: "2 小时" },
+  { value: 14400, label: "4 小时" },
+];
+
+function BudgetPicker({
+  agent,
+  disabled,
+  onChange,
+}: {
+  agent: Agent;
+  disabled: boolean;
+  onChange: (seconds: number) => Promise<void>;
+}) {
+  return (
+    <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      处理预算
+      <select
+        disabled={disabled}
+        value={agent.mailbox_budget_seconds}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-foreground/30"
+      >
+        {BUDGET_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+        {/* Render the current value even if it doesn't match a preset so a
+            custom budget set elsewhere doesn't look broken in the dropdown. */}
+        {!BUDGET_OPTIONS.some((o) => o.value === agent.mailbox_budget_seconds) && (
+          <option value={agent.mailbox_budget_seconds}>
+            {agent.mailbox_budget_seconds} 秒
+          </option>
+        )}
+      </select>
+    </label>
+  );
+}
+
+const NOTIFY_OPTIONS: Array<{ value: AgentNotifyPolicy; label: string }> = [
+  { value: "both", label: "完成 + 卡点都通知" },
+  { value: "on_complete", label: "仅完成时通知" },
+  { value: "on_block", label: "仅卡点时通知" },
+];
+
+function NotifyPolicyPicker({
+  agent,
+  disabled,
+  onChange,
+}: {
+  agent: Agent;
+  disabled: boolean;
+  onChange: (policy: AgentNotifyPolicy) => Promise<void>;
+}) {
+  return (
+    <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      通知策略
+      <select
+        disabled={disabled}
+        value={agent.notify_policy}
+        onChange={(e) => onChange(e.target.value as AgentNotifyPolicy)}
+        className="rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-foreground/30"
+      >
+        {NOTIFY_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

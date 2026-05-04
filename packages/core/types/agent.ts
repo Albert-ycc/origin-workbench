@@ -190,6 +190,11 @@ export interface Agent {
   status: AgentStatus;
   max_concurrent_tasks: number;
   model: string;
+  // PRD §14.8 — Agent work mode flips chat dispatch UX. live = wait for
+  // reply inline; mailbox = enqueue + report on workbench block 6.
+  work_mode: AgentWorkMode;
+  mailbox_budget_seconds: number;
+  notify_policy: AgentNotifyPolicy;
   owner_id: string | null;
   skills: Skill[];
   created_at: string;
@@ -197,6 +202,9 @@ export interface Agent {
   archived_at: string | null;
   archived_by: string | null;
 }
+
+export type AgentWorkMode = "live" | "mailbox";
+export type AgentNotifyPolicy = "on_complete" | "on_block" | "both";
 
 export interface CreateAgentRequest {
   name: string;
@@ -228,6 +236,9 @@ export interface UpdateAgentRequest {
   status?: AgentStatus;
   max_concurrent_tasks?: number;
   model?: string;
+  work_mode?: AgentWorkMode;
+  mailbox_budget_seconds?: number;
+  notify_policy?: AgentNotifyPolicy;
 }
 
 // Skills

@@ -256,6 +256,34 @@ func (q *Queries) GetLastChatTaskSession(ctx context.Context, chatSessionID pgty
 	return i, err
 }
 
+const getLatestUserChatMessage = `-- name: GetLatestUserChatMessage :one
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, sender_agent_id FROM chat_message
+WHERE chat_session_id = $1 AND role = 'user'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+// Used by mailbox dispatch: when an agent in mailbox mode receives a chat
+// task, we need the user's prompt to display in workbench block 6 even
+// after the task completes. Returns the most recent user-role message in
+// the session (ignoring assistant / system replies and side-channel events).
+func (q *Queries) GetLatestUserChatMessage(ctx context.Context, chatSessionID pgtype.UUID) (ChatMessage, error) {
+	row := q.db.QueryRow(ctx, getLatestUserChatMessage, chatSessionID)
+	var i ChatMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ChatSessionID,
+		&i.Role,
+		&i.Content,
+		&i.TaskID,
+		&i.CreatedAt,
+		&i.FailureReason,
+		&i.ElapsedMs,
+		&i.SenderAgentID,
+	)
+	return i, err
+}
+
 const getPendingChatTask = `-- name: GetPendingChatTask :one
 SELECT id, status, created_at FROM agent_task_queue
 WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running')

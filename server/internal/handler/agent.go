@@ -45,7 +45,13 @@ type AgentResponse struct {
 	Status             string            `json:"status"`
 	MaxConcurrentTasks int32             `json:"max_concurrent_tasks"`
 	Model              string            `json:"model"`
-	OwnerID            *string           `json:"owner_id"`
+	// PRD §14.8 Agent work mode. work_mode flips the chat dispatch UX
+	// (live blocks the chat window; mailbox parks the work in block 6).
+	// Budget/notify only matter when work_mode == "mailbox".
+	WorkMode             string `json:"work_mode"`
+	MailboxBudgetSeconds int32  `json:"mailbox_budget_seconds"`
+	NotifyPolicy         string `json:"notify_policy"`
+	OwnerID              *string `json:"owner_id"`
 	Skills             []SkillResponse   `json:"skills"`
 	CreatedAt          string            `json:"created_at"`
 	UpdatedAt          string            `json:"updated_at"`
@@ -102,9 +108,12 @@ func agentToResponse(a db.Agent) AgentResponse {
 		McpConfig:          mcpConfig,
 		Visibility:         a.Visibility,
 		Status:             a.Status,
-		MaxConcurrentTasks: a.MaxConcurrentTasks,
-		Model:              a.Model.String,
-		OwnerID:            uuidToPtr(a.OwnerID),
+		MaxConcurrentTasks:   a.MaxConcurrentTasks,
+		Model:                a.Model.String,
+		WorkMode:             a.WorkMode,
+		MailboxBudgetSeconds: a.MailboxBudgetSeconds,
+		NotifyPolicy:         a.NotifyPolicy,
+		OwnerID:              uuidToPtr(a.OwnerID),
 		Skills:             []SkillResponse{},
 		CreatedAt:          timestampToString(a.CreatedAt),
 		UpdatedAt:          timestampToString(a.UpdatedAt),
@@ -542,6 +551,12 @@ type UpdateAgentRequest struct {
 	Status             *string            `json:"status"`
 	MaxConcurrentTasks *int32             `json:"max_concurrent_tasks"`
 	Model              *string            `json:"model"`
+	// PRD §14.8 Agent work mode (set via the /agents page's quick toggle).
+	// All three are optional; only the fields set in the PATCH body are
+	// applied (sqlc.narg COALESCE preserves existing values).
+	WorkMode             *string `json:"work_mode"`
+	MailboxBudgetSeconds *int32  `json:"mailbox_budget_seconds"`
+	NotifyPolicy         *string `json:"notify_policy"`
 }
 
 // canViewAgentEnv checks whether the requesting user is allowed to see the
@@ -674,6 +689,33 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Model != nil {
 		params.Model = pgtype.Text{String: *req.Model, Valid: true}
+	}
+	if req.WorkMode != nil {
+		switch *req.WorkMode {
+		case "live", "mailbox":
+		default:
+			writeError(w, http.StatusBadRequest, "work_mode must be live or mailbox")
+			return
+		}
+		params.WorkMode = pgtype.Text{String: *req.WorkMode, Valid: true}
+	}
+	if req.MailboxBudgetSeconds != nil {
+		// Allow 5min..24h range. Defaults stay valid; this only fences the
+		// PATCH input (PRD §14.8.2 default 1h).
+		if *req.MailboxBudgetSeconds < 300 || *req.MailboxBudgetSeconds > 86400 {
+			writeError(w, http.StatusBadRequest, "mailbox_budget_seconds must be between 300 and 86400")
+			return
+		}
+		params.MailboxBudgetSeconds = pgtype.Int4{Int32: *req.MailboxBudgetSeconds, Valid: true}
+	}
+	if req.NotifyPolicy != nil {
+		switch *req.NotifyPolicy {
+		case "on_complete", "on_block", "both":
+		default:
+			writeError(w, http.StatusBadRequest, "notify_policy must be on_complete / on_block / both")
+			return
+		}
+		params.NotifyPolicy = pgtype.Text{String: *req.NotifyPolicy, Valid: true}
 	}
 
 	agent, err = h.Queries.UpdateAgent(r.Context(), params)

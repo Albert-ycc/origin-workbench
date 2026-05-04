@@ -130,6 +130,9 @@ import type {
   CreateToolBindingRequest,
   UpdateToolBindingRequest,
   ListToolBindingsResponse,
+  MailboxItem,
+  MailboxItemFilter,
+  ListMailboxItemsResponse,
   NotificationPreferenceResponse,
   NotificationPreferences,
 } from "../types";
@@ -1643,5 +1646,22 @@ export class ApiClient {
 
   async deleteToolBinding(id: string): Promise<void> {
     await this.fetch(`/api/tool-bindings/${id}`, { method: "DELETE" });
+  }
+
+  // ── Mailbox items (Origin §14.8 — Agent work mode = mailbox) ─────────────
+  // Read-only API: rows are written by the chat dispatch path, not by direct
+  // CRUD. Backs workbench block 6 and the agent detail mailbox tab.
+
+  async listMailboxItems(filter: MailboxItemFilter = {}): Promise<ListMailboxItemsResponse> {
+    const params = new URLSearchParams();
+    if (filter.agent_id) params.set("agent_id", filter.agent_id);
+    if (filter.limit !== undefined) params.set("limit", String(filter.limit));
+    if (filter.offset !== undefined) params.set("offset", String(filter.offset));
+    const qs = params.toString();
+    return this.fetch(`/api/mailbox-items${qs ? `?${qs}` : ""}`);
+  }
+
+  async getMailboxItem(id: string): Promise<MailboxItem> {
+    return this.fetch(`/api/mailbox-items/${id}`);
   }
 }

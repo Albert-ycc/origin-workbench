@@ -23,12 +23,14 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { api } from "@multica/core/api";
+import { useChatStore } from "@multica/core/chat";
 import { ideaKeys, ideaListOptions } from "@multica/core/ideas";
+import { mailboxListOptions } from "@multica/core/mailbox";
 import { missionListOptions } from "@multica/core/missions";
 import { deriveRuntimeHealth } from "@multica/core/runtimes";
 import { runtimeListOptions } from "@multica/core/runtimes/queries";
 import { agentListOptions } from "@multica/core/workspace/queries";
-import type { Agent, AgentRuntime, Idea, Mission } from "@multica/core/types";
+import type { Agent, AgentRuntime, Idea, MailboxItem, Mission } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -156,6 +158,10 @@ export function WorkbenchPage() {
   const { data: missions = [], isLoading: missionsLoading } = useQuery(missionListOptions(wsId));
   const { data: runtimes = [], isLoading: runtimesLoading } = useQuery(runtimeListOptions(wsId));
   const { data: ideas = [], isLoading: ideasLoading } = useQuery(ideaListOptions(wsId));
+  // Workbench block 6: top mailbox reports across all mailbox-mode agents.
+  // Limit 5 mirrors the visible row cap below; the user can navigate to the
+  // agent detail page (Stage 4 UI) for the full history.
+  const { data: mailboxRecent = [] } = useQuery(mailboxListOptions(wsId, { limit: 5 }));
   const recentIdeas = useMemo(
     () => ideas.filter((i) => i.status === "draft" || i.status === "nurturing").slice(0, 3),
     [ideas],
@@ -217,7 +223,22 @@ export function WorkbenchPage() {
   }, [openMissions]);
   const runtimeSummary = useMemo(() => summarizeRuntimes(runtimes), [runtimes]);
   const pendingConfirmations = openMissions.filter((m) => m.status === "waiting_confirmation" || m.risk_level !== "low");
-  const blockedMissions = openMissions.filter((m) => m.status === "blocked");
+  // Mailbox block 6 surfaces both completed reports (so the user can read
+  // the result without going back to chat) and outstanding blocks. Skip
+  // still-processing rows — those belong on the agent detail page, not on
+  // the inbox-style summary.
+  const mailboxReports = useMemo(
+    () => mailboxRecent.filter((item) => item.status !== "processing"),
+    [mailboxRecent],
+  );
+  const mailboxBlockedCount = mailboxReports.filter(
+    (item) => item.status === "blocked" || item.status === "timeout",
+  ).length;
+  const agentNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agents) map.set(a.id, a.name);
+    return map;
+  }, [agents]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -431,19 +452,26 @@ export function WorkbenchPage() {
             <WorkbenchCard
               title="信箱回报"
               icon={Inbox}
-              action={<Badge variant="outline">{blockedMissions.length} 条卡点</Badge>}
+              action={
+                <Badge variant="outline">
+                  {mailboxBlockedCount > 0
+                    ? `${mailboxBlockedCount} 条卡点`
+                    : `${mailboxReports.length} 条新回报`}
+                </Badge>
+              }
             >
               <div className="space-y-2">
-                {blockedMissions.length === 0 ? (
-                  <EmptyText text="暂无后台智能体卡点回报。" />
+                {mailboxReports.length === 0 ? (
+                  <EmptyText text="后台智能体回报会在这里汇总——把某个 Agent 的工作模式切到「信箱」，派活后就能在这里看到完成与卡点。" />
                 ) : (
-                  blockedMissions.slice(0, 3).map((mission) => (
-                    <AlertRow key={mission.id} title={mission.title} tone="destructive" />
+                  mailboxReports.slice(0, 5).map((item) => (
+                    <MailboxRow
+                      key={item.id}
+                      item={item}
+                      agentName={agentNameMap.get(item.agent_id) ?? "未知 Agent"}
+                    />
                   ))
                 )}
-                <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-                  Direct Chat 的 mailbox 模式会在这里汇总完成、失败和等待用户输入的结果。
-                </div>
               </div>
             </WorkbenchCard>
 
@@ -531,6 +559,54 @@ function AgentSkeleton() {
 function EmptyText({ text }: { text: string }) {
   return <div className="rounded-md border border-dashed bg-background p-4 text-sm text-muted-foreground">{text}</div>;
 }
+
+// MailboxRow renders one finished mailbox report on workbench block 6.
+// Click opens the originating chat session in the chat overlay so the user
+// can see the agent's full reply / follow up — block 6 is a digest, not the
+// final destination.
+function MailboxRow({ item, agentName }: { item: MailboxItem; agentName: string }) {
+  const setActiveSession = useChatStore((s) => s.setActiveSession);
+  const setOpen = useChatStore((s) => s.setOpen);
+  const isBlocked = item.status === "blocked" || item.status === "timeout";
+  const Icon = isBlocked ? AlertTriangle : Inbox;
+  const iconClass = isBlocked ? "text-destructive" : "text-muted-foreground";
+  const summary = (isBlocked ? item.blocked_description : item.result).trim();
+  const summaryFallback = isBlocked ? "无更多说明" : "已完成";
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setActiveSession(item.chat_session_id);
+        setOpen(true);
+      }}
+      className="flex w-full items-start gap-2 rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/40"
+    >
+      <Icon className={cn("mt-0.5 size-4 shrink-0", iconClass)} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{agentName}</span>
+          <Badge
+            variant={isBlocked ? "destructive" : "secondary"}
+            className="px-1.5 py-0 text-[10px]"
+          >
+            {mailboxStatusCopy[item.status] ?? item.status}
+          </Badge>
+        </div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          {summary || summaryFallback}
+        </div>
+      </div>
+      <ChevronRight className="mt-1 size-3 text-muted-foreground" />
+    </button>
+  );
+}
+
+const mailboxStatusCopy: Record<string, string> = {
+  processing: "处理中",
+  done: "完成",
+  blocked: "卡点",
+  timeout: "超时",
+};
 
 function AlertRow({ title, tone }: { title: string; tone: "warning" | "destructive" }) {
   return (

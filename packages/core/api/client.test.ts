@@ -437,4 +437,35 @@ describe("ApiClient", () => {
       { url: "https://api.example.test/api/tool-bindings/tb-1", method: "DELETE" },
     ]);
   });
+
+  it("issues HTTP contract for Origin Mailbox endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listMailboxItems();
+    await client.listMailboxItems({ limit: 5, offset: 10 });
+    await client.listMailboxItems({ agent_id: "a-1" });
+    await client.getMailboxItem("mb-1");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/mailbox-items", method: "GET" },
+      { url: "https://api.example.test/api/mailbox-items?limit=5&offset=10", method: "GET" },
+      { url: "https://api.example.test/api/mailbox-items?agent_id=a-1", method: "GET" },
+      { url: "https://api.example.test/api/mailbox-items/mb-1", method: "GET" },
+    ]);
+  });
 });

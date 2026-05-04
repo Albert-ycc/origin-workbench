@@ -4,6 +4,8 @@ export type {
   AgentStatus,
   AgentRuntimeMode,
   AgentVisibility,
+  AgentWorkMode,
+  AgentNotifyPolicy,
   AgentTask,
   AgentActivityBucket,
   AgentRunCount,
@@ -169,3 +171,9 @@ export type {
   UpdateToolBindingRequest,
   ListToolBindingsResponse,
 } from "./tool-binding";
+export type {
+  MailboxItem,
+  MailboxItemStatus,
+  MailboxItemFilter,
+  ListMailboxItemsResponse,
+} from "./mailbox";
