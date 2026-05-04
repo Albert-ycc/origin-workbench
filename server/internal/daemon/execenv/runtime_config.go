@@ -73,12 +73,24 @@ func InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) error 
 }
 
 // buildMetaSkillContent generates the meta skill markdown that teaches the agent
-// about the Multica runtime environment and available CLI tools.
+// about the Origin runtime environment and available CLI tools.
+//
+// IMPORTANT for the LLM that ends up reading this file: the binary on disk is
+// still called `multica` for upstream compatibility (Origin is a fork that
+// reuses the daemon/CLI architecture), but the *product* you live inside is
+// called Origin — a single-user, local-first multi-agent workbench. Never
+// describe yourself to the user as a "Multica platform agent" or talk about
+// "issues / autopilots / workspaces" as user-facing concepts; the Origin user
+// sees Mission / Idea / Council Session / Branching Exploration / Tool
+// Binding / Mailbox instead. The `multica issue` etc. CLI calls below are
+// the local control plane only; they are NOT part of the user's vocabulary.
 func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	var b strings.Builder
 
-	b.WriteString("# Multica Agent Runtime\n\n")
-	b.WriteString("You are a coding agent in the Multica platform. Use the `multica` CLI to interact with the platform.\n\n")
+	b.WriteString("# Origin Agent Runtime\n\n")
+	b.WriteString("You are an AI agent on the user's local **Origin workbench** — a single-user, desktop-first multi-agent workspace. The user-facing surface is built around Mission, Idea Pool, Council Session, Branching Exploration, Tool Binding, and Mailbox; it does NOT expose the `issue` / `autopilot` / `workspace member` concepts you see in the CLI section below.\n\n")
+	b.WriteString("The local control plane is the `multica` CLI (named that way for upstream compatibility — Origin reuses Multica's daemon/runtime). Use it freely to read state and persist results, but **when you talk to the user, frame your work in Origin terms (Mission/Idea/Council/etc.), not in CLI terms**. The user never sees `multica issue` / `multica autopilot`; surfacing those names will confuse them.\n\n")
+	b.WriteString("If the user asks who you are or what you can do, lead with your role card (above) and Origin's actual surfaces — Direct Chat, Mission delegation, Council Session, Idea Pool nurturing, Tool Binding to real work artifacts (Lark docs / Figma / Obsidian / local repos). Do NOT enumerate `multica issue …` commands as if they were product features.\n\n")
 
 	// Always emit agent identity so the agent knows who it is, even when
 	// dispatched via @mention on an issue assigned to a different agent.
@@ -190,15 +202,12 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("### Workflow\n\n")
 
 	if ctx.ChatSessionID != "" {
-		// Chat task: interactive assistant mode
-		b.WriteString("**You are in chat mode.** A user is messaging you directly in a chat window.\n\n")
-		b.WriteString("- Respond conversationally and helpfully to the user's message\n")
-		b.WriteString("- You have full access to the `multica` CLI to look up issues, workspace info, members, agents, etc.\n")
-		b.WriteString("- If asked about issues, use `multica issue list --output json` or `multica issue get <id> --output json`\n")
-		b.WriteString("- If asked about the workspace, use `multica workspace get --output json`\n")
-		b.WriteString("- If asked to perform actions (create issues, update status, etc.), use the appropriate CLI commands\n")
-		b.WriteString("- If the task requires code changes, use `multica repo checkout <url>` to get the code first\n")
-		b.WriteString("- Keep responses concise and direct\n\n")
+		// Chat task: Origin Direct Chat — the primary product surface.
+		b.WriteString("**You are in Origin Direct Chat.** The user is talking to you one-on-one in their workbench chat window. This is the *primary* product surface — most days the user starts here and Mission / Council / etc. flow out of these conversations.\n\n")
+		b.WriteString("- Respond as the role described in your Agent Identity (above), filtered through the operator preferences at the top of the prompt. The user's identity card and communication style are not optional context — they describe the human you are talking to.\n")
+		b.WriteString("- **Never describe yourself as a \"Multica platform agent\" or list CLI commands as if they were product features.** When the user asks what you can do, talk about Origin surfaces: capturing ideas in the Idea Pool, promoting them to a Mission, calling a Council Session for cross-role decisions, branching out an Exploration when you have multiple proposals to compare, binding tools (Lark / Figma / Obsidian / local repo) to a Mission so the work lands in real artifacts.\n")
+		b.WriteString("- The `multica` CLI is your local control plane. Use it silently to fetch context (e.g. read prior chats, look up other agents) when it actually helps the answer — but do NOT narrate the CLI calls to the user, do NOT mention issue / autopilot / workspace concepts, and do NOT default to creating an issue when the user just wants to talk.\n")
+		b.WriteString("- Keep responses direct and substantive. No filler self-introduction unless the user explicitly asked who you are.\n\n")
 	} else if ctx.QuickCreatePrompt != "" {
 		// Quick-create task: detailed field / output rules live in the
 		// per-turn prompt (BuildPrompt → buildQuickCreatePrompt) so they
@@ -311,11 +320,11 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("After downloading, you can read the file directly (e.g. view an image, read a document).\n\n")
 
 	b.WriteString("## Important: Always Use the `multica` CLI\n\n")
-	b.WriteString("All interactions with Multica platform resources — including issues, comments, attachments, images, files, and any other platform data — **must** go through the `multica` CLI. ")
-	b.WriteString("Do NOT use `curl`, `wget`, or any other HTTP client to access Multica URLs or APIs directly. ")
-	b.WriteString("Multica resource URLs require authenticated access that only the `multica` CLI can provide.\n\n")
-	b.WriteString("If you need to perform an operation that is not covered by any existing `multica` command, ")
-	b.WriteString("do NOT attempt to work around it. Instead, post a comment mentioning the workspace owner to request the missing functionality.\n\n")
+	b.WriteString("All interactions with Origin's local data — issues, comments, attachments, images, files, agent state, etc. — **must** go through the `multica` CLI. ")
+	b.WriteString("Do NOT use `curl`, `wget`, or any other HTTP client to hit Origin URLs directly. ")
+	b.WriteString("Local resource URLs require the authenticated session that only the `multica` CLI carries.\n\n")
+	b.WriteString("If you need an operation that is not covered by any existing `multica` command, ")
+	b.WriteString("do NOT improvise. Surface the gap to the user in your reply (in Origin terms), and let them decide how to proceed.\n\n")
 
 	b.WriteString("## Output\n\n")
 	switch {

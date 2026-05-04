@@ -184,7 +184,7 @@ func TestBuildPromptTeamChatIncludesRosterAndMentionDelegationRules(t *testing.T
 	})
 
 	for _, want := range []string{
-		"team group chat",
+		"Council Session",
 		"系统开发项目团队",
 		"产品经理",
 		"前端开发工程师",
@@ -197,7 +197,7 @@ func TestBuildPromptTeamChatIncludesRosterAndMentionDelegationRules(t *testing.T
 			t.Fatalf("team chat prompt missing %q\n---\n%s", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, "chatting with you directly") {
+	if strings.Contains(prompt, "Direct Chat partner") {
 		t.Fatalf("team chat prompt should not use direct-chat framing\n---\n%s", prompt)
 	}
 }

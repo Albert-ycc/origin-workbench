@@ -33,9 +33,9 @@ func buildPromptBody(task Task) string {
 		return buildQuickCreatePrompt(task)
 	}
 	var b strings.Builder
-	b.WriteString("You are running as a local coding agent for a Multica workspace.\n\n")
-	fmt.Fprintf(&b, "Your assigned issue ID is: %s\n\n", task.IssueID)
-	fmt.Fprintf(&b, "Start by running `multica issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
+	b.WriteString("You are running as a local agent on the user's Origin workbench. (The CLI is named `multica` for upstream compatibility — see CLAUDE.md / AGENTS.md for the full framing.)\n\n")
+	fmt.Fprintf(&b, "Your assigned task ID is: %s\n\n", task.IssueID)
+	fmt.Fprintf(&b, "Start by running `multica issue get %s --output json` to fetch the task details (the underlying CLI command is named `issue` for historical reasons), then complete the work.\n", task.IssueID)
 	return b.String()
 }
 
@@ -78,8 +78,8 @@ func prependOperatorPreferences(prefs *OperatorPreferences, body string) string 
 // or reply to.
 func buildQuickCreatePrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are running as a quick-create assistant for a Multica workspace.\n\n")
-	b.WriteString("A user pressed the quick-create shortcut and typed a one-line description. There is NO existing issue. Your job is to create a well-formed issue from the user's input with a single `multica issue create` command.\n\n")
+	b.WriteString("You are running as a quick-create assistant on the user's Origin workbench.\n\n")
+	b.WriteString("The user pressed the quick-create shortcut and typed a one-line description. Your job is to create a well-formed task record from that input with a single `multica issue create` invocation. (The underlying CLI verb is `issue create` for historical reasons; the user-facing surface in Origin is the task / Mission concept.)\n\n")
 	fmt.Fprintf(&b, "User input:\n> %s\n\n", task.QuickCreatePrompt)
 	b.WriteString("Field rules:\n")
 	b.WriteString("- title: required. A concise but semantically rich summary that lets a reader understand what the issue is about at a glance. If the user input references external resources (PRs, issues, URLs, etc.), use your judgment to decide whether fetching the resource would produce a meaningfully better title — if so, fetch it and incorporate the relevant context. For example, \"review PR #123\" is much less useful than \"Review PR #123: Refactor auth module to OAuth2\". Strip filler words but preserve key semantic information.\n")
@@ -115,8 +115,8 @@ func buildQuickCreatePrompt(task Task) string {
 // previous turn's --parent UUID.
 func buildCommentPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are running as a local coding agent for a Multica workspace.\n\n")
-	fmt.Fprintf(&b, "Your assigned issue ID is: %s\n\n", task.IssueID)
+	b.WriteString("You are running as a local agent on the user's Origin workbench.\n\n")
+	fmt.Fprintf(&b, "Your assigned task ID is: %s\n\n", task.IssueID)
 	if task.TriggerCommentContent != "" {
 		authorLabel := "A user"
 		if task.TriggerAuthorType == "agent" {
@@ -141,7 +141,7 @@ func buildCommentPrompt(task Task) string {
 func buildChatPrompt(task Task) string {
 	var b strings.Builder
 	if task.TeamID != "" {
-		b.WriteString("You are running as a local coding agent inside a Multica team group chat.\n\n")
+		b.WriteString("You are running inside an Origin Council Session (a multi-agent group chat for cross-role decisions).\n\n")
 		if task.TeamName != "" {
 			fmt.Fprintf(&b, "Team: %s\n", task.TeamName)
 		}
@@ -182,8 +182,8 @@ func buildChatPrompt(task Task) string {
 		fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
 		return b.String()
 	}
-	b.WriteString("You are running as a chat assistant for a Multica workspace.\n")
-	b.WriteString("A user is chatting with you directly. Respond to their message.\n\n")
+	b.WriteString("You are running as the user's Origin Direct Chat partner — Origin's primary product surface.\n")
+	b.WriteString("Stay in your role (see Agent Identity / operator preferences above). Do NOT introduce yourself as a \"Multica platform agent\" or describe your capabilities in terms of `multica issue` / `multica autopilot` / workspace management — those are local CLI plumbing and the user does not see them. Talk in Origin terms (Mission / Idea Pool / Council Session / Branching Exploration / Tool Binding) when describing what you can do.\n\n")
 	fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
 	return b.String()
 }
@@ -191,8 +191,8 @@ func buildChatPrompt(task Task) string {
 // buildAutopilotPrompt constructs a prompt for run_only autopilot tasks.
 func buildAutopilotPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are running as a local coding agent for a Multica workspace.\n\n")
-	b.WriteString("This task was triggered by an Autopilot in run-only mode. There is no assigned Multica issue for this run.\n\n")
+	b.WriteString("You are running as a local agent on the user's Origin workbench.\n\n")
+	b.WriteString("This task was triggered by an Autopilot in run-only mode. There is no assigned task record for this run.\n\n")
 	fmt.Fprintf(&b, "Autopilot run ID: %s\n", task.AutopilotRunID)
 	if task.AutopilotID != "" {
 		fmt.Fprintf(&b, "Autopilot ID: %s\n", task.AutopilotID)
