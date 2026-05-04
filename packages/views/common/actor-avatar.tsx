@@ -13,6 +13,7 @@ import { useCurrentWorkspace } from "@multica/core/paths";
 import { AgentProfileCard } from "../agents/components/agent-profile-card";
 import { MemberProfileCard } from "../members/member-profile-card";
 import { availabilityConfig } from "../agents/presence";
+import { resolveAssetUrl } from "./default-avatar";
 
 interface ActorAvatarProps {
   actorType: string;
@@ -47,11 +48,14 @@ export function ActorAvatar({
   showStatusDot,
 }: ActorAvatarProps) {
   const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
+  const rawAvatarUrl = getActorAvatarUrl(actorType, actorId);
   const avatar = (
     <ActorAvatarBase
       name={getActorName(actorType, actorId)}
       initials={getActorInitials(actorType, actorId)}
-      avatarUrl={getActorAvatarUrl(actorType, actorId)}
+      // Server returns "/uploads/..." for uploaded avatars; rewrite to the
+      // backend's absolute URL so the Electron renderer can actually load it.
+      avatarUrl={rawAvatarUrl ? resolveAssetUrl(rawAvatarUrl) : rawAvatarUrl}
       isAgent={actorType === "agent"}
       size={size}
       className={className}

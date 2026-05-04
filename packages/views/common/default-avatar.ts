@@ -1,3 +1,4 @@
+import { api } from "@multica/core/api";
 import { defaultAvatarFor } from "./avatar-picker";
 
 /**
@@ -19,6 +20,29 @@ export function isRenderableAvatarUrl(value?: string | null): value is string {
 }
 
 /**
+ * Rewrite a server-relative asset path ("/uploads/...") to an absolute URL
+ * the renderer can fetch. Origin runs as an Electron app whose renderer
+ * origin is not the backend, so a bare "/uploads/..." resolves against the
+ * app's own scheme (file:// or app:///) and the image silently fails to
+ * load. Prefixing the configured API base URL makes the renderer hit the
+ * backend instead.
+ *
+ * Already-absolute URLs (http/https/data/blob) pass through unchanged.
+ */
+export function resolveAssetUrl(value: string): string {
+  if (!value.startsWith("/")) return value;
+  try {
+    const base = api.getBaseUrl?.();
+    if (!base) return value;
+    return `${base.replace(/\/+$/, "")}${value}`;
+  } catch {
+    // ApiClient not initialised yet (SSR / tests). Fall back to the raw path;
+    // image will still fail to load but the render won't crash.
+    return value;
+  }
+}
+
+/**
  * Deterministic default avatar from the bundled AVATAR_SET (30 Lorelei
  * presets). Same seed always returns the same avatar, so a user without a
  * chosen avatar still sees a stable identity.
@@ -29,11 +53,15 @@ export function loreleiDefaultAvatar(name?: string | null): string {
 
 /**
  * Resolve which URL to actually render: the user's chosen avatar if it looks
- * like a real URL, else a deterministic Lorelei default seeded by `name`.
+ * like a real URL (rewritten through resolveAssetUrl when it's a server-side
+ * path), else a deterministic Lorelei default seeded by `name`.
  */
 export function resolveUserAvatarUrl(
   avatarUrl?: string | null,
   name?: string | null,
 ): string {
-  return isRenderableAvatarUrl(avatarUrl) ? avatarUrl : loreleiDefaultAvatar(name);
+  if (!isRenderableAvatarUrl(avatarUrl)) {
+    return loreleiDefaultAvatar(name);
+  }
+  return resolveAssetUrl(avatarUrl);
 }
