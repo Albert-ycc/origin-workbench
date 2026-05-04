@@ -27,6 +27,13 @@ function workspaceScoped(slug: string) {
     issueDetail: (id: string) => `${ws}/issues/${encode(id)}`,
     projects: () => `${ws}/projects`,
     projectDetail: (id: string) => `${ws}/projects/${encode(id)}`,
+    // v1.2 project workspaces (PRD §17). Different surface from the legacy
+    // project route above (which was issue classification). Mounted under
+    // /workspaces in user vocabulary, but URL slug stays "projects" for
+    // continuity. The legacy route is kept for backwards compat — real
+    // navigation goes through projectDetail by id.
+    projectWorkspaces: () => `${ws}/workspaces`,
+    projectWorkspaceDetail: (id: string) => `${ws}/workspaces/${encode(id)}`,
     autopilots: () => `${ws}/autopilots`,
     autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     agents: () => `${ws}/agents`,

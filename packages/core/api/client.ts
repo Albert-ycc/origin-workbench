@@ -133,6 +133,11 @@ import type {
   MailboxItem,
   MailboxItemFilter,
   ListMailboxItemsResponse,
+  ProjectV12,
+  ListProjectsV12Response,
+  CreateProjectV12Request,
+  UpdateProjectV12Request,
+  AppendMemoryDocRequest,
   NotificationPreferenceResponse,
   NotificationPreferences,
 } from "../types";
@@ -1663,5 +1668,44 @@ export class ApiClient {
 
   async getMailboxItem(id: string): Promise<MailboxItem> {
     return this.fetch(`/api/mailbox-items/${id}`);
+  }
+
+  // ── Projects v1.2 (Origin §17) ──────────────────────────────────────────
+
+  async listProjectsV12(): Promise<ListProjectsV12Response> {
+    return this.fetch("/api/v12/projects");
+  }
+
+  async getProjectV12(id: string): Promise<ProjectV12> {
+    return this.fetch(`/api/v12/projects/${id}`);
+  }
+
+  async listProjectsByTeamV12(teamId: string): Promise<ListProjectsV12Response> {
+    return this.fetch(`/api/v12/teams/${teamId}/projects`);
+  }
+
+  async createProjectV12(data: CreateProjectV12Request): Promise<ProjectV12> {
+    return this.fetch("/api/v12/projects", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateProjectV12(id: string, data: UpdateProjectV12Request): Promise<ProjectV12> {
+    return this.fetch(`/api/v12/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveProjectV12(id: string): Promise<ProjectV12> {
+    return this.fetch(`/api/v12/projects/${id}/archive`, { method: "POST" });
+  }
+
+  async appendProjectMemoryDoc(id: string, data: AppendMemoryDocRequest): Promise<ProjectV12> {
+    return this.fetch(`/api/v12/projects/${id}/memory-doc/append`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 }

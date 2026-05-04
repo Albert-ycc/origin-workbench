@@ -24,6 +24,8 @@ import {
   Lightbulb,
   Route,
   Users,
+  Users2,
+  FolderKanban,
   X,
   Brain,
 } from "lucide-react";
@@ -84,6 +86,7 @@ type NavKey =
   | "issues"
   | "explorations"
   | "projects"
+  | "projectWorkspaces"
   | "autopilots"
   | "agents"
   | "teams"
@@ -93,6 +96,8 @@ type NavKey =
 
 const productNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
   { key: "workbench", label: "原点工作台", icon: Compass },
+  { key: "projectWorkspaces", label: "项目工作区", icon: FolderKanban },
+  { key: "teams", label: "团队", icon: Users2 },
   { key: "ideas", label: "想法池", icon: Lightbulb },
   { key: "agents", label: "智能体", icon: Bot },
   { key: "councils", label: "会议室", icon: Users },

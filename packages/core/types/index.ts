@@ -177,3 +177,12 @@ export type {
   MailboxItemFilter,
   ListMailboxItemsResponse,
 } from "./mailbox";
+export type {
+  Project as ProjectV12,
+  ProjectStatus as ProjectV12Status,
+  ListProjectsResponse as ListProjectsV12Response,
+  CreateProjectRequest as CreateProjectV12Request,
+  UpdateProjectRequest as UpdateProjectV12Request,
+  AppendMemoryDocRequest,
+  AgentProjectMemory,
+} from "./project-v12";
