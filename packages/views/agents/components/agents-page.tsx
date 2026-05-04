@@ -586,15 +586,7 @@ function PageHeaderBar({
             the state-legend job, so the tagline only needs to anchor what
             an agent IS, not what each colour means. */}
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
-          可接任务、写评论、更新状态的 AI 队友。{" "}
-          <a
-            href="https://multica.ai/docs/agents"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"
-          >
-            了解更多 →
-          </a>
+          一个智能体 = 一个角色 + 一份指令 + 一条本地 CLI 通路。挂上技能和工作上下文之后，就能接 Mission、加入会议室、跑分叉探索。
         </p>
       </div>
       <Button type="button" size="sm" onClick={onCreate}>
@@ -892,7 +884,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </div>
       <h2 className="mt-4 text-base font-semibold">还没有智能体</h2>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        创建智能体后，就可以像分配给队友一样把任务交给它。本地智能体运行在你的机器上，云端智能体运行在 Multica 的运行环境中。
+        从能力池里选一条本地 CLI（Claude Code / Codex / Hermes），写下职责和工作上下文，新建一个智能体——之后想法池升级 Mission、会议室拍板、分叉探索都靠它出力。
       </p>
       <Button type="button" onClick={onCreate} size="sm" className="mt-5">
         <Plus className="h-3 w-3" />

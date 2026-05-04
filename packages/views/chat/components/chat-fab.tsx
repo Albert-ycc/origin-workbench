@@ -34,10 +34,10 @@ export function ChatFab() {
 
   // Tooltip text communicates the state that isn't carried by the icon/badge.
   const tooltip = isRunning
-    ? "Multica 正在工作..."
+    ? "智能体正在工作..."
     : unreadSessionCount > 0
       ? `${unreadSessionCount} 条未读对话`
-      : "询问 Multica";
+      : "找智能体聊聊";
 
   return (
     <Tooltip>

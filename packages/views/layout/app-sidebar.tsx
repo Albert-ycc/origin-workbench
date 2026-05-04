@@ -23,7 +23,6 @@ import {
   Network,
   Lightbulb,
   Route,
-  BookOpenText,
   Users,
   X,
   Brain,
@@ -57,6 +56,7 @@ import { projectDetailOptions } from "@multica/core/projects/queries";
 import type { PinnedItem } from "@multica/core/types";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { resolveUserAvatarUrl } from "../common/default-avatar";
+import { userProfileOptions } from "@multica/core/user-profile";
 
 // Top-level nav items stay active when the user is on a child route
 // (e.g. "Projects" stays lit on /:slug/projects/:id). Pinned items keep
@@ -104,13 +104,6 @@ const systemNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
   { key: "runtimes", label: "能力池", icon: Monitor },
   { key: "skills", label: "记忆 / 技能", icon: Brain },
   { key: "settings", label: "设置", icon: Settings },
-];
-
-const debugNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
-  { key: "issues", label: "执行记录", icon: BookOpenText },
-  { key: "teams", label: "旧团队编组", icon: Users },
-  { key: "projects", label: "项目调试", icon: BookOpenText },
-  { key: "autopilots", label: "自动巡航调试", icon: BookOpenText },
 ];
 
 /**
@@ -296,6 +289,14 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
 
   const wsId = workspace?.id;
   const hasRuntimeUpdates = useMyRuntimesNeedUpdate(wsId);
+  // Origin §14.10 — surface the user's role card under their name so the
+  // sidebar identity row carries actual signal instead of repeating the
+  // workspace name (which is hardcoded "Fairy" in single-user mode).
+  const profileQuery = useQuery({
+    ...userProfileOptions(wsId ?? ""),
+    enabled: !!wsId,
+  });
+  const roleCard = profileQuery.data?.role_card?.trim() ?? "";
   const { data: pinnedItems = EMPTY_PINS } = useQuery({
     ...pinListOptions(wsId ?? "", userId ?? ""),
     enabled: !!wsId && !!userId,
@@ -373,24 +374,34 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
             <SidebarMenuItem>
-              <div
-                className="flex h-12 items-center gap-3 rounded-lg px-2 text-sidebar-foreground"
-                aria-label="当前用户"
+              <AppLink
+                href={p.settings()}
+                className="group/identity flex h-12 items-center gap-3 rounded-lg px-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent/60"
+                aria-label="当前用户 — 进入设置"
               >
                 <img
                   src={resolveUserAvatarUrl(user?.avatar_url, user?.name)}
                   alt={user?.name ?? "本地用户"}
-                  className="size-8 shrink-0 rounded-full object-cover"
+                  className="size-8 shrink-0 rounded-full object-cover ring-1 ring-border/40"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold leading-5">
+                  <div className="truncate text-sm font-semibold leading-tight">
                     {user?.name?.trim() || "本地用户"}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {workspace?.name ?? "原点工作台"}
-                  </div>
+                  {roleCard ? (
+                    // 用户已填身份卡 — 第二行用 muted 颜色降权重，让名字主导。
+                    <div className="mt-0.5 truncate text-xs leading-tight text-muted-foreground">
+                      {roleCard}
+                    </div>
+                  ) : (
+                    // 没填身份卡时不再重复 workspace 名（永远是 Fairy）。
+                    // 给一个低调的提示 + 入口，hover 才显，避免视觉噪声。
+                    <div className="mt-0.5 truncate text-xs leading-tight text-muted-foreground/70 opacity-0 transition-opacity group-hover/identity:opacity-100">
+                      添加身份卡 →
+                    </div>
+                  )}
                 </div>
-              </div>
+              </AppLink>
             </SidebarMenuItem>
           </SidebarMenu>
           <SidebarMenu>
@@ -463,39 +474,6 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <Collapsible>
-            <SidebarGroup>
-              <SidebarGroupLabel
-                render={<CollapsibleTrigger />}
-                className="group/trigger cursor-pointer hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
-              >
-                <span>调试入口</span>
-                <ChevronRight className="!size-3 ml-1 stroke-[2.5] transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="gap-0.5">
-                    {debugNav.map((item) => {
-                      const href = p[item.key]();
-                      const isActive = isNavActive(pathname, href);
-                      return (
-                        <SidebarMenuItem key={item.key}>
-                          <SidebarMenuButton
-                            isActive={isActive}
-                            render={<AppLink href={href} />}
-                            className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                          >
-                            <item.icon />
-                            <span>{item.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      );
-                    })}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
 
           <SidebarGroup>
             <SidebarGroupLabel>系统</SidebarGroupLabel>

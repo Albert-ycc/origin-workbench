@@ -15,7 +15,6 @@ import {
   Network,
   Moon,
   Sun,
-  BookOpenText,
   Settings,
   Building2,
   Compass,
@@ -123,9 +122,6 @@ const navPages: NavPage[] = [
   { key: "runtimes", label: "能力池", icon: Monitor, keywords: ["runtimes", "environments", "能力池", "运行环境", "环境"] },
   { key: "skills", label: "记忆 / 技能", icon: Brain, keywords: ["skills", "library", "memory", "技能", "记忆", "能力库"] },
   { key: "settings", label: "设置", icon: Settings, keywords: ["settings", "config", "preferences", "设置", "配置"] },
-  { key: "issues", label: "执行记录", icon: BookOpenText, keywords: ["issues", "tasks", "bugs", "执行记录", "任务", "问题"] },
-  { key: "teams", label: "旧团队编组", icon: Users, keywords: ["teams", "team", "captain", "团队", "负责人", "调试"] },
-  { key: "projects", label: "项目调试", icon: BookOpenText, keywords: ["projects", "kanban", "项目", "调试"] },
 ];
 
 type ThemeValue = "light" | "dark" | "system";

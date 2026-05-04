@@ -6,7 +6,9 @@ import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
 import { AVATAR_SET, AVATAR_SET_SIZE } from "./avatar-set";
 
-export const AVATARS_PER_PAGE = 10;
+// 7 列 × 2 行 — 跟头像区可用宽度匹配，避免右侧大片留白；30 个 Lorelei 备
+// 选里一次刷出 14 个，保证「换一批」体验有足够变化。
+export const AVATARS_PER_PAGE = 14;
 
 interface AvatarPickerProps {
   /** Currently selected avatar URL (data-uri or http). Undefined = none selected. */
@@ -61,10 +63,7 @@ export function AvatarPicker({
 
   return (
     <div className={cn("space-y-3", className)}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
-          从 {AVATAR_SET_SIZE} 个头像里挑一个
-        </span>
+      <div className="flex items-center justify-end">
         <Button
           type="button"
           size="sm"
@@ -76,7 +75,7 @@ export function AvatarPicker({
           换一批
         </Button>
       </div>
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid w-fit grid-cols-7 gap-2">
         {visibleBatch.map((url, idx) => {
           const selected = value === url;
           return (

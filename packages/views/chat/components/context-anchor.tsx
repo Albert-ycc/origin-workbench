@@ -128,12 +128,12 @@ export function ContextAnchorButton() {
   const isBright = focusMode && hasAnchor;
 
   const tooltipText = isDisabled
-    ? "当前页面没有可分享给 Multica 的上下文"
+    ? "当前页面没有可附给智能体的上下文"
     : focusMode && candidate
       ? candidate.type === "issue"
-        ? `Multica 已知道你正在查看 ${candidate.label} · 点击关闭`
-        : `Multica 已知道你正在查看项目「${candidate.label}」· 点击关闭`
-      : "让 Multica 知道你正在查看什么";
+        ? `已把 ${candidate.label} 附给当前对话 · 点击移除`
+        : `已把项目「${candidate.label}」附给当前对话 · 点击移除`
+      : "把当前页面附给对话当上下文";
 
   return (
     <Tooltip>
@@ -146,7 +146,7 @@ export function ContextAnchorButton() {
             onClick={() => setFocusMode(!focusMode)}
             disabled={isDisabled}
             aria-label={
-              focusMode ? "停止分享当前页面" : "分享当前页面给 Multica"
+              focusMode ? "移除附加的页面上下文" : "把当前页面附给对话当上下文"
             }
             aria-pressed={focusMode}
           />
@@ -179,8 +179,8 @@ export function ContextAnchorCard() {
 
   const tooltipText =
     candidate.type === "issue"
-      ? `Multica 已知道你正在查看 ${candidate.label}${candidate.subtitle ? ` — ${candidate.subtitle}` : ""}`
-      : `Multica 已知道你正在查看项目「${candidate.label}」`;
+      ? `已把 ${candidate.label}${candidate.subtitle ? ` — ${candidate.subtitle}` : ""} 附给当前对话`
+      : `已把项目「${candidate.label}」附给当前对话`;
 
   // Same pattern as IssueMentionCard: wrap the pure chip in an AppLink and
   // layer cursor + hover affordance onto the chip. Makes the anchor feel

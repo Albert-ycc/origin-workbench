@@ -5,10 +5,8 @@ import {
   ChevronDown,
   Cloud,
   FileText,
-  Globe,
   KeyRound,
   Loader2,
-  Lock,
   Plus,
   Settings2,
   Sparkles,
@@ -95,8 +93,8 @@ const STEPS: Array<{
   },
   {
     id: "context",
-    title: "核心文件",
-    subtitle: "项目上下文预留",
+    title: "工作上下文",
+    subtitle: "工作范围与备注",
     icon: KeyRound,
   },
 ];
@@ -127,8 +125,11 @@ export function CreateAgentDialog({
   const [step, setStep] = useState<WizardStep>("identity");
   const [name, setName] = useState(template ? `${template.name}（副本）` : "");
   const [description, setDescription] = useState(template?.description ?? "");
-  const [visibility, setVisibility] = useState<AgentVisibility>(
-    template?.visibility ?? "private",
+  // Origin 单 workspace 下 private/workspace 行为没差，但 backend 字段还在；
+  // 默认 "workspace" 让 agent 列表不再标灰色「私有」徽章 —— 单人语境下没意义。
+  // setter 暂时用不到（创建表单不再让用户切），但 state 留着以便 future toggle。
+  const [visibility] = useState<AgentVisibility>(
+    template?.visibility ?? "workspace",
   );
   const [model, setModel] = useState(template?.model ?? "");
   const [avatarUrl, setAvatarUrl] = useState(
@@ -272,7 +273,7 @@ export function CreateAgentDialog({
       const mergedInstructions = [
         instructions.trim(),
         contextNotes.trim()
-          ? `核心文件 / 上下文备注：\n${contextNotes.trim()}`
+          ? `工作范围与备注：\n${contextNotes.trim()}`
           : "",
       ]
         .filter(Boolean)
@@ -331,7 +332,7 @@ export function CreateAgentDialog({
         if (!v) onClose();
       }}
     >
-      <DialogContent className="max-h-[calc(100vh-3rem)] gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-3rem))]">
+      <DialogContent className="grid h-[calc(100vh-3rem)] max-h-[calc(100vh-3rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-3rem))]">
         <DialogHeader className="border-b px-8 py-6">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
@@ -417,8 +418,6 @@ export function CreateAgentDialog({
                 setName={setName}
                 description={description}
                 setDescription={setDescription}
-                visibility={visibility}
-                setVisibility={setVisibility}
                 avatarUrl={avatarUrl}
                 setAvatarUrl={setAvatarUrl}
                 uploading={uploading}
@@ -482,13 +481,12 @@ export function CreateAgentDialog({
               name={name}
               description={description}
               avatarUrl={avatarUrl}
-              styleLabel="洛蕾莱"
-              visibility={visibility}
+              styleLabel="本地"
               skillCount={selectedSkillIds.length}
               runtimeName={selectedRuntime?.name}
             />
             <p className="mt-8 text-xs text-muted-foreground">
-              技能会在创建后自动绑定；核心文件备注会写入系统指令，后续团队版本会接入文件选择。
+              技能会在创建后自动绑定；最后一步写的工作范围会拼到系统指令尾部，每次派任务时一起注入。
             </p>
           </aside>
         </div>
@@ -534,8 +532,6 @@ function IdentityStep({
   setName,
   description,
   setDescription,
-  visibility,
-  setVisibility,
   avatarUrl,
   setAvatarUrl,
   uploading,
@@ -548,8 +544,6 @@ function IdentityStep({
   setName: (v: string) => void;
   description: string;
   setDescription: (v: string) => void;
-  visibility: AgentVisibility;
-  setVisibility: (v: AgentVisibility) => void;
   avatarUrl: string;
   setAvatarUrl: (v: string) => void;
   uploading: boolean;
@@ -589,12 +583,9 @@ function IdentityStep({
             上传自定义图片
           </Button>
         </div>
-        <div>
-          <p className="text-sm font-medium">洛蕾莱头像</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            黑白漫画线稿，搭配柔和圆形底色。点「换一批」可以随机刷新。
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          挑一个内置头像，或上传自己的图片。点「换一批」可以从更多备选里随机刷新。
+        </p>
         <div className="rounded-2xl border bg-background p-4">
           <AvatarPicker
             value={avatarUrl}
@@ -620,25 +611,9 @@ function IdentityStep({
         />
       </div>
 
-      <div className="space-y-3">
-        <Label>可见性</Label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <VisibilityOption
-            active={visibility === "private"}
-            icon={Lock}
-            title="私有"
-            description="只有你和管理员可以使用。"
-            onClick={() => setVisibility("private")}
-          />
-          <VisibilityOption
-            active={visibility === "workspace"}
-            icon={Globe}
-            title="本地空间共享"
-            description="当前本地空间内都可以选择这个智能体。"
-            onClick={() => setVisibility("workspace")}
-          />
-        </div>
-      </div>
+      {/* Origin 是单用户单 workspace 工作台，没有协作 / 共享 / 角色概念，
+          所以可见性选项已经移除。后端 visibility 字段保持默认 "workspace"
+          以兼容上游 schema —— 单 user 看不到差异。 */}
 
       <ModelDropdown
         runtimeId={selectedRuntime?.id ?? null}
@@ -984,22 +959,28 @@ function ContextStep({
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border bg-muted/30 p-5">
-        <div className="flex items-center gap-3">
-          <KeyRound className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <h3 className="font-semibold">核心文件能力预留</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              下一阶段会把仓库、文件夹、文档片段接入为团队任务的共享上下文。
+        <div className="flex items-start gap-3">
+          <KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+          <div className="space-y-1.5 text-sm leading-relaxed">
+            <p className="font-semibold text-foreground">这一段会拼到智能体的系统指令最后</p>
+            <p className="text-muted-foreground">
+              用来告诉这个智能体它的「工作范围」和「禁区」——具体盯哪些目录 / 仓库 / 文档，
+              以及什么不要碰。每次派任务时都会跟前面的系统指令一起注入。
             </p>
           </div>
         </div>
       </div>
       <div className="space-y-2">
-        <Label>上下文备注</Label>
+        <Label>工作范围与备注</Label>
         <Textarea
           value={contextNotes}
           onChange={(e) => setContextNotes(e.target.value)}
-          placeholder="例如：这个智能体主要负责前端，默认关注 apps/web 和 packages/views..."
+          placeholder={[
+            "建议写清楚三件事：",
+            "1) 这个智能体主要负责什么 —— 比如「前端表单组件，关注 packages/views/forms/」",
+            "2) 命名 / 命令 / 风格偏好 —— 比如「写 React 用函数式组件 + TypeScript」",
+            "3) 禁区 —— 比如「不要碰 server/internal/handler/auth.go，那是上游核心」",
+          ].join("\n")}
           className="min-h-40 rounded-2xl"
         />
       </div>
@@ -1012,7 +993,6 @@ function PreviewCard({
   description,
   avatarUrl,
   styleLabel,
-  visibility,
   skillCount,
   runtimeName,
 }: {
@@ -1020,7 +1000,6 @@ function PreviewCard({
   description: string;
   avatarUrl: string;
   styleLabel: string;
-  visibility: AgentVisibility;
   skillCount: number;
   runtimeName?: string;
 }) {
@@ -1044,7 +1023,7 @@ function PreviewCard({
         </span>
         <h3 className="mt-4 truncate text-xl font-semibold">{displayName}</h3>
         <Badge variant="secondary" className="mt-2">
-          {visibility === "workspace" ? "本地空间共享" : "身份已验证"}
+          本地智能体
         </Badge>
         <p className="mt-5 line-clamp-3 text-sm italic leading-relaxed text-muted-foreground">
           “{displayDescription}”
@@ -1068,38 +1047,6 @@ function PreviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function VisibilityOption({
-  active,
-  icon: Icon,
-  title,
-  description,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-start gap-3 rounded-2xl border p-4 text-left transition-colors",
-        active ? "border-primary bg-primary/5" : "hover:bg-muted/60",
-      )}
-    >
-      <Icon className="mt-0.5 h-4 w-4 text-muted-foreground" />
-      <span>
-        <span className="block font-semibold">{title}</span>
-        <span className="mt-1 block text-xs text-muted-foreground">
-          {description}
-        </span>
-      </span>
-    </button>
-  );
-}
 
 function RuntimeFilterButton({
   active,
