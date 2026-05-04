@@ -58,6 +58,16 @@ export function CreateTeamDialog({
     });
   };
 
+  const allSelected =
+    candidates.length > 0 && memberIds.size === candidates.length;
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setMemberIds(new Set());
+    } else {
+      setMemberIds(new Set(candidates.map((a) => a.id)));
+    }
+  };
+
   const handleSubmit = () => {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -153,9 +163,20 @@ export function CreateTeamDialog({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs">团队成员</Label>
-              <span className="text-xs text-muted-foreground">
-                已选 {memberIds.size} / {candidates.length}
-              </span>
+              <div className="flex items-center gap-3">
+                {candidates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    {allSelected ? "取消全选" : "全选"}
+                  </button>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  已选 {memberIds.size} / {candidates.length}
+                </span>
+              </div>
             </div>
             {candidates.length === 0 ? (
               <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-center text-xs text-muted-foreground">
