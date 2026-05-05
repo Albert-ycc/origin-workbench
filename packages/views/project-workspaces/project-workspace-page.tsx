@@ -14,6 +14,7 @@ import {
   projectV12Keys,
   useUpdateProjectV12,
   usePostProjectMainChatMessage,
+  usePinChatMessageToProjectMemory,
 } from "@multica/core/projects-v12";
 import { teamDetailOptions } from "@multica/core/teams";
 import { useCreateCouncilSession } from "@multica/core/councils";
@@ -79,6 +80,7 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
   }, [team, agentById]);
 
   const postMessage = usePostProjectMainChatMessage(wsId);
+  const pinMessage = usePinChatMessageToProjectMemory(wsId);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const updateProject = useUpdateProjectV12(wsId);
@@ -216,6 +218,18 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
                         err instanceof Error ? err.message : "发送失败",
                       );
                     },
+                  },
+                );
+              }}
+              onPin={(message) => {
+                pinMessage.mutate(
+                  { projectId, messageId: message.id },
+                  {
+                    onSuccess: () => toast.success("已钉到项目记忆"),
+                    onError: (err) =>
+                      toast.error(
+                        err instanceof Error ? err.message : "钉住失败",
+                      ),
                   },
                 );
               }}

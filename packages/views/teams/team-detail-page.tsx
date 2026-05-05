@@ -250,6 +250,7 @@ export function ChatPane({
   loadingOlder,
   onLoadOlder,
   onSend,
+  onPin,
 }: {
   team: { id: string; name: string };
   messages: TeamMessage[];
@@ -262,6 +263,9 @@ export function ChatPane({
   loadingOlder: boolean;
   onLoadOlder: () => void;
   onSend: (content: string) => void;
+  // PRD §17.4.2 — when present, each message renders a "钉到记忆" action.
+  // Project workspace passes this; team room (no project_id) leaves undefined.
+  onPin?: (message: TeamMessage) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [mention, setMention] = useState<MentionState | null>(null);
@@ -415,6 +419,7 @@ export function ChatPane({
                   m.sender_agent_id === captain?.id
                 }
                 agentById={agentById}
+                onPin={onPin}
               />
             ))}
             {awaitingCaptain && captain && (
@@ -619,12 +624,14 @@ function Message({
   agent,
   isCaptain,
   agentById,
+  onPin,
 }: {
   message: TeamMessage;
   isMe: boolean;
   agent: Agent | undefined;
   isCaptain: boolean;
   agentById?: Map<string, Agent>;
+  onPin?: (m: TeamMessage) => void;
 }) {
   if (message.role === "assistant" && !message.sender_agent_id) {
     return (
@@ -655,7 +662,7 @@ function Message({
           我
         </div>
       )}
-      <div className={cn("flex max-w-[75%] flex-col gap-1", isMe && "items-end")}>
+      <div className={cn("group flex max-w-[75%] flex-col gap-1", isMe && "items-end")}>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span>
             {message.role === "assistant" ? agent?.name ?? "未知" : "你"}
@@ -667,6 +674,16 @@ function Message({
             </span>
           )}
           <span>{formatTime(message.created_at)}</span>
+          {onPin && (
+            <button
+              type="button"
+              onClick={() => onPin(message)}
+              className="ml-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+              title="钉到项目记忆「用户钉住的片段」"
+            >
+              📌 钉
+            </button>
+          )}
         </div>
         <div
           className={cn(

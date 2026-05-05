@@ -477,6 +477,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Patch("/", h.UpdateProjectV12)
 					r.Post("/archive", h.ArchiveProjectV12)
 					r.Post("/memory-doc/append", h.AppendProjectMemoryDoc)
+					r.Post("/memory/pin", h.PinChatMessageToProjectMemory)
 					r.Get("/memories", h.ListAgentProjectMemoriesByProject)
 					r.Get("/main-chat", h.GetProjectMainChat)
 					r.Get("/main-chat/messages", h.ListProjectMainChatMessages)

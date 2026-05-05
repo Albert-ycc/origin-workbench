@@ -1710,6 +1710,16 @@ export class ApiClient {
     });
   }
 
+  async pinChatMessageToProjectMemory(
+    projectId: string,
+    data: { message_id: string; note?: string },
+  ): Promise<ProjectV12> {
+    return this.fetch(`/api/v12/projects/${projectId}/memory/pin`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // ── Project main chat (Origin §17.3) ────────────────────────────────────
   // The project workspace's left chat column. Backed by the same
   // chat_session/chat_message tables as v1.0 team rooms but disambiguated

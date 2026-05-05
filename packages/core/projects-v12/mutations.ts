@@ -62,3 +62,25 @@ export function usePostProjectMainChatMessage(wsId: string) {
     },
   });
 }
+
+export function usePinChatMessageToProjectMemory(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      messageId,
+      note,
+    }: {
+      projectId: string;
+      messageId: string;
+      note?: string;
+    }) =>
+      api.pinChatMessageToProjectMemory(projectId, {
+        message_id: messageId,
+        note,
+      }),
+    onSuccess: (_, { projectId }) => {
+      qc.invalidateQueries({ queryKey: projectV12Keys.detail(wsId, projectId) });
+    },
+  });
+}

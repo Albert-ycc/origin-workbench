@@ -798,6 +798,89 @@ func (h *Handler) captainForSession(ctx context.Context, session db.ChatSession)
 	return team.CaptainAgentID
 }
 
+// =====================
+// Pin to memory (PRD §17.4.2 — 用户钉住片段)
+// =====================
+
+type PinChatMessageRequest struct {
+	MessageID string `json:"message_id"`
+	Note      string `json:"note,omitempty"` // optional user note prepended above the quoted content
+}
+
+// PinChatMessageToProjectMemory copies the referenced chat_message into
+// project.memory_doc 「## 用户钉住的片段」section. Only messages from this
+// project's main chat may be pinned (cross-project pins are rejected) so
+// the memory can't accumulate stale references.
+func (h *Handler) PinChatMessageToProjectMemory(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	var req PinChatMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	mid, ok := parseUUIDOrBadRequest(w, req.MessageID, "message_id")
+	if !ok {
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	msg, err := h.Queries.GetChatMessage(r.Context(), mid)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "chat message not found")
+		return
+	}
+	if !p.MainChatSessionID.Valid || !uuidEqual(msg.ChatSessionID, p.MainChatSessionID) {
+		writeError(w, http.StatusBadRequest, "message does not belong to this project's main chat")
+		return
+	}
+
+	stamp := time.Now().Format("2006-01-02 15:04")
+	speaker := "用户"
+	if msg.Role == "assistant" {
+		if msg.SenderAgentID.Valid {
+			if a, err := h.Queries.GetAgent(r.Context(), msg.SenderAgentID); err == nil {
+				speaker = a.Name
+			} else {
+				speaker = "Agent"
+			}
+		} else {
+			speaker = "Agent"
+		}
+	}
+	var entry strings.Builder
+	fmt.Fprintf(&entry, "- %s · %s 说：\n", stamp, speaker)
+	if note := strings.TrimSpace(req.Note); note != "" {
+		fmt.Fprintf(&entry, "  > 备注：%s\n", note)
+	}
+	for _, line := range strings.Split(strings.TrimRight(msg.Content, "\n"), "\n") {
+		fmt.Fprintf(&entry, "  > %s\n", line)
+	}
+	newDoc := appendToMemorySection(p.MemoryDoc, "## 用户钉住的片段", strings.TrimRight(entry.String(), "\n"))
+	updated, err := h.Queries.UpdateProjectV12(r.Context(), db.UpdateProjectV12Params{
+		ID:                 p.ID,
+		MemoryDoc:          pgtype.Text{String: newDoc, Valid: true},
+		MemoryDocUpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to pin message")
+		return
+	}
+	writeJSON(w, http.StatusOK, projectV12ToResponse(updated))
+}
+
 // GetProjectHistory exposes the project's chat history for agent
 // onboarding (PRD §17.5.2). Filterable by --since RFC3339 + --limit so
 // agents can pull just the slice they need without loading every message
