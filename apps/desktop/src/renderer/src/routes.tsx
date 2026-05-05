@@ -4,7 +4,6 @@ import {
   Navigate,
   Outlet,
   useMatches,
-  useParams,
 } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
@@ -22,7 +21,7 @@ import { ExplorationsPage } from "@multica/views/explorations";
 import { MissionsPage } from "@multica/views/missions";
 import { TeamsPage } from "@multica/views/teams";
 import { ProjectsPage } from "@multica/views/projects/components";
-import { ProjectWorkspacesListPage, ProjectWorkspacePage } from "@multica/views/project-workspaces";
+import { ProjectWorkspacesListPage } from "@multica/views/project-workspaces";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
 import { SkillsPage } from "@multica/views/skills";
@@ -113,6 +112,7 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "项目" },
           },
           // v1.2 项目工作区 (PRD §17). 走 /workspaces 路径区隔旧 /projects
+          // 二栏布局：list-page 自己内嵌 detail，:id 决定选哪个项目
           {
             path: "workspaces",
             element: <ProjectWorkspacesListPage />,
@@ -120,7 +120,7 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "workspaces/:id",
-            element: <ProjectWorkspaceRouter />,
+            element: <ProjectWorkspacesListPage />,
             handle: { title: "项目工作区" },
           },
           {
@@ -196,8 +196,3 @@ export function createTabRouter(initialPath: string) {
   });
 }
 
-/** Read :id from the route and feed it into ProjectWorkspacePage. */
-function ProjectWorkspaceRouter() {
-  const { id } = useParams<{ id: string }>();
-  return <ProjectWorkspacePage projectId={id ?? ""} />;
-}

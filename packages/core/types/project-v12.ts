@@ -25,6 +25,10 @@ export interface ListProjectsResponse {
 }
 
 export interface CreateProjectRequest {
+  // v1.2 第二轮简化：用户视角只剩"建项目"，团队从 agent 子集自动 find-or-create
+  agent_ids?: string[];
+  captain_agent_id?: string;
+  // 兼容旧 desktop 客户端：直接传 team_id 也支持
   team_id?: string;
   title: string;
   description?: string;

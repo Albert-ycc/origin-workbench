@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, Plus, Sparkles } from "lucide-react";
+import { FolderOpen, Plus } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
-import { projectV12ListOptions, useCreateProjectV12 } from "@multica/core/projects-v12";
-import { teamListOptions } from "@multica/core/teams";
+import {
+  projectV12ListOptions,
+  useCreateProjectV12,
+} from "@multica/core/projects-v12";
+import { agentListOptions } from "@multica/core/workspace/queries";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -20,123 +23,150 @@ import {
 } from "@multica/ui/components/ui/dialog";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { toast } from "sonner";
-import { AppLink } from "../navigation";
-import { PageHeader } from "../layout/page-header";
+import { ActorAvatar } from "../common/actor-avatar";
+import { ProjectWorkspacePage } from "./project-workspace-page";
 
+// /workspaces 二栏布局: 左 sidebar list + 右主区 detail
+// /workspaces/:id 走同一个组件，:id 决定主区显示哪个项目
 export function ProjectWorkspacesListPage() {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
-  const { data: projects = [], isLoading } = useQuery(projectV12ListOptions(wsId));
-  const { data: teams = [] } = useQuery(teamListOptions(wsId));
+  const navigate = useNavigate();
+  const { id: routeId } = useParams<{ id: string }>();
+  const { data: projects = [], isLoading } = useQuery(
+    projectV12ListOptions(wsId),
+  );
   const [creating, setCreating] = useState(false);
 
+  const activeId = routeId ?? projects[0]?.id ?? "";
+
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <PageHeader className="gap-1.5">
-        <span className="text-sm text-muted-foreground">Origin / </span>
-        <span className="text-sm font-medium">项目工作区</span>
-        <div className="ml-auto">
-          <Button size="sm" onClick={() => setCreating(true)} disabled={teams.length === 0}>
-            <Plus className="size-3.5" />
-            新建项目
+    <div className="flex flex-1 min-h-0 bg-background">
+      {/* 左侧项目列表 */}
+      <aside className="flex w-[260px] shrink-0 flex-col border-r">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+          <span className="text-sm font-semibold">项目工作区</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setCreating(true)}
+            className="size-7 p-0"
+            title="新建项目"
+          >
+            <Plus className="size-4" />
           </Button>
-        </div>
-      </PageHeader>
-
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">项目工作区</h1>
-            <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-              每个项目绑定一个本地工作目录，团队 Agent 在项目内的对话、产出、记忆都收敛到这里——并行多项目互不污染。
-            </p>
-          </div>
-
+        </header>
+        <div className="flex-1 overflow-y-auto p-2">
           {isLoading ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-2 p-1">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-44 rounded-2xl" />
+                <Skeleton key={i} className="h-12 w-full rounded-md" />
               ))}
             </div>
           ) : projects.length === 0 ? (
-            <div className="rounded-2xl border border-dashed bg-muted/20 p-12 text-center">
-              <FolderOpen className="mx-auto mb-3 size-10 text-muted-foreground opacity-50" />
-              <p className="text-sm font-medium text-foreground mb-1">还没有项目</p>
-              <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed mb-4">
-                项目把团队的工作收敛到一个本地目录——所有 Mission、Idea、Council、产出都归在项目下。
-                {teams.length === 0 && "需要先创建一个团队。"}
+            <div className="px-2 py-8 text-center">
+              <FolderOpen className="mx-auto mb-2 size-6 text-muted-foreground opacity-50" />
+              <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                还没有项目
               </p>
-              {teams.length > 0 ? (
-                <Button onClick={() => setCreating(true)}>
-                  <Plus className="size-4" />
-                  新建第一个项目
-                </Button>
-              ) : (
-                <AppLink href={paths.teams()}>
-                  <Button variant="outline">先去创建团队</Button>
-                </AppLink>
-              )}
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <Plus className="size-3.5" />
+                新建项目
+              </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {projects.map((project) => (
-                <AppLink
-                  key={project.id}
-                  href={paths.projectWorkspaceDetail(project.id)}
-                  className="group rounded-2xl border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <FolderOpen className="size-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold">{project.title}</h3>
-                        <Badge variant="secondary" className={cn("h-5 text-[10px]", projectStatusTone[project.status])}>
-                          {projectStatusCopy[project.status] ?? project.status}
-                        </Badge>
-                      </div>
-                      {project.description && (
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground leading-relaxed">
-                          {project.description}
-                        </p>
+            <ul className="space-y-0.5">
+              {projects.map((project) => {
+                const isActive = project.id === activeId;
+                return (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(paths.projectWorkspaceDetail(project.id))
+                      }
+                      className={cn(
+                        "flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors",
+                        isActive
+                          ? "bg-muted"
+                          : "hover:bg-muted/60",
                       )}
-                    </div>
-                  </div>
-                  <div className="mt-3 space-y-1.5">
-                    {project.local_dir && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <FolderOpen className="size-3" />
-                        <code className="truncate font-mono">{project.local_dir}</code>
+                    >
+                      <span
+                        className={cn(
+                          "mt-1.5 size-2 shrink-0 rounded-full",
+                          projectStatusDot[project.status] ??
+                            "bg-muted-foreground/40",
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">
+                          {project.title}
+                        </div>
+                        {project.description && (
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {project.description}
+                          </div>
+                        )}
+                        <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "h-4 px-1.5 text-[10px]",
+                              projectStatusTone[project.status] ??
+                                "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {projectStatusCopy[project.status] ??
+                              project.status}
+                          </Badge>
+                          {project.compaction_count > 0 && (
+                            <span>压缩 ×{project.compaction_count}</span>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    {project.compaction_count > 0 && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Sparkles className="size-3" />
-                        第 {project.compaction_count} 次压缩
-                      </div>
-                    )}
-                  </div>
-                </AppLink>
-              ))}
-            </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
-      </div>
+      </aside>
+
+      {/* 右侧主区 */}
+      <main className="flex flex-1 min-w-0">
+        {activeId ? (
+          <ProjectWorkspacePage key={activeId} projectId={activeId} />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center p-12 text-center">
+            <FolderOpen className="mb-3 size-12 text-muted-foreground opacity-40" />
+            <p className="mb-1 text-base font-medium">从左侧选一个项目</p>
+            <p className="max-w-md text-sm text-muted-foreground leading-relaxed">
+              项目把团队的工作收敛到一个本地工作目录——所有 Mission、Idea、
+              Council、产出都归在项目下。
+            </p>
+          </div>
+        )}
+      </main>
 
       {creating && (
-        <CreateProjectDialog
-          teams={teams}
-          onClose={() => setCreating(false)}
-        />
+        <CreateProjectDialog onClose={() => setCreating(false)} />
       )}
     </div>
   );
 }
 
+const projectStatusDot: Record<string, string> = {
+  active: "bg-emerald-500",
+  paused: "bg-amber-500",
+  completed: "bg-blue-500",
+  archived: "bg-muted-foreground/40",
+};
 const projectStatusTone: Record<string, string> = {
   active: "bg-emerald-500/15 text-emerald-500 border-emerald-500/20",
   paused: "bg-amber-500/15 text-amber-500 border-amber-500/20",
@@ -150,20 +180,32 @@ const projectStatusCopy: Record<string, string> = {
   archived: "归档",
 };
 
-function CreateProjectDialog({
-  teams,
-  onClose,
-}: {
-  teams: Array<{ id: string; name: string }>;
-  onClose: () => void;
-}) {
+function CreateProjectDialog({ onClose }: { onClose: () => void }) {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
+  const navigate = useNavigate();
   const create = useCreateProjectV12(wsId);
-  const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const activeAgents = agents.filter((a) => !a.archived_at);
+  const [agentIds, setAgentIds] = useState<Set<string>>(new Set());
+  const [captainId, setCaptainId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [localDir, setLocalDir] = useState("");
+
+  const toggleAgent = (id: string) => {
+    setAgentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+        if (captainId === id) setCaptainId("");
+      } else {
+        next.add(id);
+        if (!captainId) setCaptainId(id);
+      }
+      return next;
+    });
+  };
 
   const submit = async () => {
     if (!title.trim()) {
@@ -174,16 +216,25 @@ function CreateProjectDialog({
       toast.error("绑定一个本地目录");
       return;
     }
+    if (agentIds.size === 0) {
+      toast.error("至少选一个 agent 加入项目");
+      return;
+    }
+    if (!captainId) {
+      toast.error("指定一个 agent 作为 captain");
+      return;
+    }
     try {
       const project = await create.mutateAsync({
-        team_id: teamId || undefined,
+        agent_ids: Array.from(agentIds),
+        captain_agent_id: captainId,
         title: title.trim(),
         description: description.trim(),
         local_dir: localDir.trim(),
       });
       toast.success(`「${project.title}」已创建`);
       onClose();
-      window.location.assign(paths.projectWorkspaceDetail(project.id));
+      navigate(paths.projectWorkspaceDetail(project.id));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "创建失败");
     }
@@ -191,27 +242,15 @@ function CreateProjectDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl flex max-h-[85vh] flex-col">
         <DialogHeader>
           <DialogTitle>新建项目</DialogTitle>
           <DialogDescription>
-            项目把团队的工作收敛到一个本地工作目录。绑定后所有 Mission、Idea、Council、产出都归在项目下。
+            从 agent 池里挑参与项目的成员，指定一个 captain。系统会自动找
+            agent 集合相同 + captain 一致的协作组复用；找不到就为这个项目建一个新的。
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="proj-team" className="text-xs">归属团队</Label>
-            <select
-              id="proj-team"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-              value={teamId}
-              onChange={(e) => setTeamId(e.target.value)}
-            >
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex-1 space-y-4 overflow-y-auto py-2 pr-1">
           <div className="space-y-1.5">
             <Label htmlFor="proj-title" className="text-xs">项目名</Label>
             <Input
@@ -222,6 +261,7 @@ function CreateProjectDialog({
               maxLength={80}
             />
           </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="proj-desc" className="text-xs">项目目标（可选）</Label>
             <Textarea
@@ -233,6 +273,7 @@ function CreateProjectDialog({
               maxLength={400}
             />
           </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="proj-dir" className="text-xs">绑定本地工作目录</Label>
             <Input
@@ -242,11 +283,97 @@ function CreateProjectDialog({
               placeholder="~/<redacted>/营养管理"
               className="font-mono text-[12px]"
             />
-            <p className="text-[11px] text-muted-foreground">绑定后不可改。所有团队 Agent 默认获得读权限。</p>
+            <p className="text-[11px] text-muted-foreground">
+              绑定后不可改。所有项目 agent 默认获得读权限。
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">参与 agent</Label>
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span>已选 {agentIds.size} / {activeAgents.length}</span>
+                {agentIds.size > 0 && captainId && (
+                  <span>
+                    captain · {agents.find((a) => a.id === captainId)?.name ?? "?"}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="max-h-60 space-y-1 overflow-y-auto rounded-lg border p-1">
+              {activeAgents.length === 0 ? (
+                <div className="rounded-md border border-dashed bg-muted/20 p-4 text-center text-xs text-muted-foreground">
+                  还没有可用的 agent。先到「智能体」创建一个再来。
+                </div>
+              ) : (
+                activeAgents.map((agent) => {
+                  const checked = agentIds.has(agent.id);
+                  const isCaptain = checked && captainId === agent.id;
+                  return (
+                    <div
+                      key={agent.id}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-md px-2 py-2 transition-colors",
+                        checked ? "bg-primary/10" : "hover:bg-muted",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleAgent(agent.id)}
+                        className="flex flex-1 items-center gap-3 text-left"
+                      >
+                        <ActorAvatar
+                          actorType="agent"
+                          actorId={agent.id}
+                          size={32}
+                          className="rounded-full"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm">{agent.name}</div>
+                          <div className="line-clamp-1 text-xs text-muted-foreground">
+                            {agent.description || "暂无描述"}
+                          </div>
+                        </div>
+                        <span
+                          className={cn(
+                            "flex size-5 items-center justify-center rounded-full border text-[10px]",
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-muted-foreground/30 text-transparent",
+                          )}
+                        >
+                          ✓
+                        </span>
+                      </button>
+                      {checked && (
+                        <button
+                          type="button"
+                          onClick={() => setCaptainId(agent.id)}
+                          className={cn(
+                            "shrink-0 rounded-full border px-2 py-0.5 text-[10px] transition-colors",
+                            isCaptain
+                              ? "border-amber-500 bg-amber-500/15 text-amber-500"
+                              : "border-muted-foreground/30 text-muted-foreground hover:border-amber-500 hover:text-amber-500",
+                          )}
+                          title="设为 captain"
+                        >
+                          {isCaptain ? "✓ captain" : "设 captain"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              captain 是项目的协调者——你跟它单聊布置任务，它给被 @ 的成员派活。建议选产品经理 / 项目经理类的 agent。
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={create.isPending}>取消</Button>
+          <Button variant="ghost" onClick={onClose} disabled={create.isPending}>
+            取消
+          </Button>
           <Button onClick={submit} disabled={create.isPending}>
             {create.isPending ? "创建中…" : "创建项目"}
           </Button>

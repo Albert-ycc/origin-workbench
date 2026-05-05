@@ -24,7 +24,6 @@ import {
   Lightbulb,
   Route,
   Users,
-  Users2,
   FolderKanban,
   X,
   Brain,
@@ -96,8 +95,10 @@ type NavKey =
 
 const productNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
   { key: "workbench", label: "原点工作台", icon: Compass },
+  // 项目工作区是 v1.2 的主入口，团队作为底层数据自动从项目派生（agent
+  // 集合相同的项目自动归到同一个 team_id）。"团队" 不再是用户级可创建实
+  // 体，所以从 sidebar 撤掉了。
   { key: "projectWorkspaces", label: "项目工作区", icon: FolderKanban },
-  { key: "teams", label: "团队", icon: Users2 },
   { key: "ideas", label: "想法池", icon: Lightbulb },
   { key: "agents", label: "智能体", icon: Bot },
   { key: "councils", label: "会议室", icon: Users },
