@@ -93,9 +93,12 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Prepare
+        id: prepare
         run: |
           platform=${{ matrix.platform }}
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+          echo "owner_lc=$owner_lc" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,7 +107,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/origin-backend
+          images: ghcr.io/${{ steps.prepare.outputs.owner_lc }}/origin-backend
           labels: |
             org.opencontainers.image.title=Origin Backend
             org.opencontainers.image.description=Origin local workbench backend
@@ -133,7 +136,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.verify.outputs.tag_name }}
             COMMIT=${{ github.sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/origin-backend,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ steps.prepare.outputs.owner_lc }}/origin-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -166,11 +169,17 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Prepare
+        id: prepare
+        run: |
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "owner_lc=$owner_lc" >> "$GITHUB_OUTPUT"
+
       - name: Compute backend image tags
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/origin-backend
+          images: ghcr.io/${{ steps.prepare.outputs.owner_lc }}/origin-backend
           flavor: |
             latest=false
           tags: |
@@ -190,12 +199,12 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/origin-backend@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ steps.prepare.outputs.owner_lc }}/origin-backend@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/origin-backend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.prepare.outputs.owner_lc }}/origin-backend:${{ steps.meta.outputs.version }}
 
   # Build the Desktop installers for Linux and Windows and upload them to
   # the GitHub Release that the `release` job above just published. macOS
@@ -210,8 +219,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            package_args: "--linux AppImage --x64 --publish always"
           - os: windows-latest
             target: win
+            package_args: "--win --x64 --publish always"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -252,4 +263,4 @@ jobs:
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish always
+        run: node scripts/package.mjs ${{ matrix.package_args }}
