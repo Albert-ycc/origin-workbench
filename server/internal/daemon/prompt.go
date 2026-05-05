@@ -20,6 +20,9 @@ func BuildPrompt(task Task) string {
 }
 
 func buildPromptBody(task Task) string {
+	if task.ProjectCompaction != nil {
+		return buildProjectCompactionPrompt(task)
+	}
 	if task.ChatSessionID != "" {
 		return buildChatPrompt(task)
 	}
@@ -36,6 +39,47 @@ func buildPromptBody(task Task) string {
 	b.WriteString("You are running as a local agent on the user's Origin workbench. (The CLI is named `multica` for upstream compatibility — see CLAUDE.md / AGENTS.md for the full framing.)\n\n")
 	fmt.Fprintf(&b, "Your assigned task ID is: %s\n\n", task.IssueID)
 	fmt.Fprintf(&b, "Start by running `multica issue get %s --output json` to fetch the task details (the underlying CLI command is named `issue` for historical reasons), then complete the work.\n", task.IssueID)
+	return b.String()
+}
+
+func buildProjectCompactionPrompt(task Task) string {
+	pc := task.ProjectCompaction
+	var b strings.Builder
+	b.WriteString("You are the captain agent preparing a `/sync` compaction preview for an Origin project main chat.\n\n")
+	if pc.ProjectTitle != "" {
+		fmt.Fprintf(&b, "Project: %s\n", pc.ProjectTitle)
+	}
+	fmt.Fprintf(&b, "Project ID: %s\n", pc.ProjectID)
+	fmt.Fprintf(&b, "Chat session ID: %s\n", pc.ChatSessionID)
+	fmt.Fprintf(&b, "Messages in scope: %d", pc.MessageCount)
+	if pc.OldestAt != "" || pc.NewestAt != "" {
+		fmt.Fprintf(&b, " (%s → %s)", pc.OldestAt, pc.NewestAt)
+	}
+	b.WriteString("\n\n")
+	if strings.TrimSpace(pc.MemoryDoc) != "" {
+		b.WriteString("Current project memory doc:\n\n```markdown\n")
+		b.WriteString(pc.MemoryDoc)
+		if !strings.HasSuffix(pc.MemoryDoc, "\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString("```\n\n")
+	}
+
+	b.WriteString("Task:\n")
+	b.WriteString("- Extract durable decisions, deliverables, current project status, and carry-forward follow-ups from the transcript.\n")
+	b.WriteString("- Prefer specific facts over generic process notes.\n")
+	b.WriteString("- Include only message ids that appear in the transcript when recommending pinned quotes.\n")
+	b.WriteString("- Output strict JSON only. No markdown fence, no prose before or after.\n\n")
+	b.WriteString("JSON schema:\n")
+	b.WriteString(`{"key_decisions":["..."],"deliverables":["..."],"current_status":"...","carry_forward":["..."],"pinned_message_ids":["<message_id>"]}`)
+	b.WriteString("\n\nTranscript:\n")
+	for _, m := range pc.Messages {
+		speaker := strings.TrimSpace(m.Speaker)
+		if speaker == "" {
+			speaker = m.Role
+		}
+		fmt.Fprintf(&b, "\n[%s] %s · %s · id=%s\n%s\n", m.CreatedAt, speaker, m.Role, m.ID, m.Content)
+	}
 	return b.String()
 }
 

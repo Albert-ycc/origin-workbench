@@ -1146,6 +1146,37 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	hasProjectCompaction := false
+	if len(task.Context) > 0 && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutopilotRunID.Valid {
+		var pc service.ProjectCompactionContext
+		if json.Unmarshal(task.Context, &pc) == nil && pc.Type == service.ProjectCompactionContextType {
+			hasProjectCompaction = true
+			resp.WorkspaceID = pc.WorkspaceID
+			resp.ProjectID = pc.ProjectID
+			resp.ChatSessionID = pc.ChatSessionID
+			data, err := h.buildProjectCompactionTaskData(r.Context(), pc)
+			if err != nil {
+				outcome = "error_project_compaction"
+				slog.Error("task claim: failed to hydrate project compaction task, cancelling task",
+					"task_id", uuidToString(task.ID),
+					"runtime_id", runtimeID,
+					"project_id", pc.ProjectID,
+					"chat_session_id", pc.ChatSessionID,
+					"error", err,
+				)
+				if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
+					slog.Error("task claim: cancel failed project compaction task",
+						"task_id", uuidToString(task.ID), "error", cerr)
+				}
+				writeError(w, http.StatusInternalServerError, "failed to hydrate project compaction task")
+				return
+			}
+			resp.ProjectCompaction = data
+			resp.ProjectTitle = data.ProjectTitle
+			resp.ProjectMemoryDoc = data.MemoryDoc
+		}
+	}
+
 	// Workspace isolation check: the daemon uses this response's workspace_id
 	// as the only authority for MULTICA_WORKSPACE_ID in the agent env. An
 	// empty value would make the CLI silently fall back to the user-global
@@ -1165,6 +1196,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			"has_chat", task.ChatSessionID.Valid,
 			"has_autopilot_run", task.AutopilotRunID.Valid,
 			"has_quick_create", hasQuickCreate,
+			"has_project_compaction", hasProjectCompaction,
 		)
 		if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
 			slog.Error("task claim: cancel after workspace check failed",

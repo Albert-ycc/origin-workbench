@@ -224,6 +224,20 @@ type QuickCreateContext struct {
 // QuickCreateContextType marks a task as a quick-create job.
 const QuickCreateContextType = "quick_create"
 
+// ProjectCompactionContext is stored on the captain's async /sync preview
+// task. The full transcript is hydrated at claim/status time so the task row
+// does not become a second copy of chat history.
+type ProjectCompactionContext struct {
+	Type          string `json:"type"`
+	WorkspaceID   string `json:"workspace_id"`
+	ProjectID     string `json:"project_id"`
+	ChatSessionID string `json:"source_chat_session_id"`
+}
+
+// ProjectCompactionContextType marks a task as a project main-chat compaction
+// preview job.
+const ProjectCompactionContextType = "project_compaction"
+
 // TeamDelegationContext is stored on a team member chat task when the
 // captain delegates work by mentioning that member in the group chat.
 type TeamDelegationContext struct {
@@ -291,6 +305,54 @@ func (s *TaskService) EnqueueQuickCreateTask(ctx context.Context, workspaceID, r
 	// cycle. Without this the user perceives "quick create never
 	// triggered" because the modal closes immediately and the task
 	// sits in 'queued' until the next sleepWithContextOrWakeup tick.
+	s.notifyTaskAvailable(task)
+	return task, nil
+}
+
+// EnqueueProjectCompactionTask creates an async captain job that produces a
+// structured compaction preview for a project main chat. It uses the same
+// context-only task shape as quick-create: no issue/chat/autopilot link, no
+// user-visible chat row on completion.
+func (s *TaskService) EnqueueProjectCompactionTask(ctx context.Context, workspaceID, projectID, chatSessionID, agentID pgtype.UUID) (db.AgentTaskQueue, error) {
+	agent, err := s.Queries.GetAgent(ctx, agentID)
+	if err != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("load agent: %w", err)
+	}
+	if agent.ArchivedAt.Valid {
+		return db.AgentTaskQueue{}, fmt.Errorf("agent is archived")
+	}
+	if !agent.RuntimeID.Valid {
+		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
+	}
+
+	payload := ProjectCompactionContext{
+		Type:          ProjectCompactionContextType,
+		WorkspaceID:   util.UUIDToString(workspaceID),
+		ProjectID:     util.UUIDToString(projectID),
+		ChatSessionID: util.UUIDToString(chatSessionID),
+	}
+	contextJSON, err := json.Marshal(payload)
+	if err != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("marshal project compaction context: %w", err)
+	}
+
+	task, err := s.Queries.CreateQuickCreateTask(ctx, db.CreateQuickCreateTaskParams{
+		AgentID:   agentID,
+		RuntimeID: agent.RuntimeID,
+		Priority:  priorityToInt("high"),
+		Context:   contextJSON,
+	})
+	if err != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("create project compaction task: %w", err)
+	}
+
+	slog.Info("project compaction task enqueued",
+		"task_id", util.UUIDToString(task.ID),
+		"agent_id", util.UUIDToString(agentID),
+		"project_id", util.UUIDToString(projectID),
+		"chat_session_id", util.UUIDToString(chatSessionID),
+	)
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
 	s.notifyTaskAvailable(task)
 	return task, nil
 }
@@ -1386,6 +1448,10 @@ func (s *TaskService) broadcastTaskEvent(ctx context.Context, eventType string, 
 	if task.ChatSessionID.Valid {
 		payload["chat_session_id"] = util.UUIDToString(task.ChatSessionID)
 	}
+	if pc, ok := s.parseProjectCompactionContext(task); ok {
+		payload["type"] = pc.Type
+		payload["project_id"] = pc.ProjectID
+	}
 	s.Bus.Publish(events.Event{
 		Type:        eventType,
 		WorkspaceID: workspaceID,
@@ -1424,6 +1490,9 @@ func (s *TaskService) ResolveTaskWorkspaceID(ctx context.Context, task db.AgentT
 	// broadcasts, which is why quick-create tasks appeared stuck queued.
 	if qc, ok := s.parseQuickCreateContext(task); ok {
 		return qc.WorkspaceID
+	}
+	if pc, ok := s.parseProjectCompactionContext(task); ok {
+		return pc.WorkspaceID
 	}
 	return ""
 }
@@ -1723,22 +1792,22 @@ func (s *TaskService) createTeamMentionIssue(ctx context.Context, session db.Cha
 		return db.Issue{}, fmt.Errorf("issue counter: %w", err)
 	}
 	issue, err := s.Queries.CreateIssueFromTeamMessage(ctx, db.CreateIssueFromTeamMessageParams{
-		WorkspaceID:          team.WorkspaceID,
-		Title:                title,
-		Description:          pgtype.Text{String: t.TaskText, Valid: t.TaskText != ""},
-		Status:               "todo",
-		Priority:             "medium",
-		AssigneeType:         pgtype.Text{String: "agent", Valid: true},
-		AssigneeID:           pgtype.UUID{Bytes: t.AgentID.Bytes, Valid: true},
-		CreatorType:          "agent",
-		CreatorID:            sourceMessage.SenderAgentID,
-		ParentIssueID:        pgtype.UUID{},
-		Position:             0,
-		DueDate:              pgtype.Timestamptz{},
-		Number:               number,
-		ProjectID:            pgtype.UUID{},
-		SourceTeamMessageID:  pgtype.UUID{Bytes: sourceMessage.ID.Bytes, Valid: true},
-		SourceTeamSessionID:  pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
+		WorkspaceID:         team.WorkspaceID,
+		Title:               title,
+		Description:         pgtype.Text{String: t.TaskText, Valid: t.TaskText != ""},
+		Status:              "todo",
+		Priority:            "medium",
+		AssigneeType:        pgtype.Text{String: "agent", Valid: true},
+		AssigneeID:          pgtype.UUID{Bytes: t.AgentID.Bytes, Valid: true},
+		CreatorType:         "agent",
+		CreatorID:           sourceMessage.SenderAgentID,
+		ParentIssueID:       pgtype.UUID{},
+		Position:            0,
+		DueDate:             pgtype.Timestamptz{},
+		Number:              number,
+		ProjectID:           pgtype.UUID{},
+		SourceTeamMessageID: pgtype.UUID{Bytes: sourceMessage.ID.Bytes, Valid: true},
+		SourceTeamSessionID: pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
 	})
 	if err != nil {
 		return db.Issue{}, fmt.Errorf("create issue: %w", err)
@@ -2640,6 +2709,25 @@ func (s *TaskService) parseQuickCreateContext(task db.AgentTaskQueue) (QuickCrea
 		return QuickCreateContext{}, false
 	}
 	return qc, true
+}
+
+// parseProjectCompactionContext returns the compaction payload if the task's
+// context JSONB contains type == "project_compaction"; otherwise false.
+func (s *TaskService) parseProjectCompactionContext(task db.AgentTaskQueue) (ProjectCompactionContext, bool) {
+	if task.IssueID.Valid || task.ChatSessionID.Valid || task.AutopilotRunID.Valid {
+		return ProjectCompactionContext{}, false
+	}
+	if len(task.Context) == 0 {
+		return ProjectCompactionContext{}, false
+	}
+	var pc ProjectCompactionContext
+	if err := json.Unmarshal(task.Context, &pc); err != nil {
+		return ProjectCompactionContext{}, false
+	}
+	if pc.Type != ProjectCompactionContextType {
+		return ProjectCompactionContext{}, false
+	}
+	return pc, true
 }
 
 // notifyQuickCreateCompleted writes a success inbox notification to the

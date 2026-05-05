@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -21,19 +22,19 @@ import (
 // backwards compat). Frontend code should call ApiClient.listProjectsV12 etc.
 
 type ProjectV12Response struct {
-	ID                  string  `json:"id"`
-	WorkspaceID         string  `json:"workspace_id"`
-	TeamID              *string `json:"team_id"`
-	MainChatSessionID   *string `json:"main_chat_session_id"`
-	Title               string  `json:"title"`
-	Description         string  `json:"description"`
-	LocalDir            string  `json:"local_dir"`
-	MemoryDoc           string  `json:"memory_doc"`
-	MemoryDocUpdatedAt  *string `json:"memory_doc_updated_at"`
-	CompactionCount     int32   `json:"compaction_count"`
-	Status              string  `json:"status"`
-	CreatedAt           string  `json:"created_at"`
-	UpdatedAt           string  `json:"updated_at"`
+	ID                 string  `json:"id"`
+	WorkspaceID        string  `json:"workspace_id"`
+	TeamID             *string `json:"team_id"`
+	MainChatSessionID  *string `json:"main_chat_session_id"`
+	Title              string  `json:"title"`
+	Description        string  `json:"description"`
+	LocalDir           string  `json:"local_dir"`
+	MemoryDoc          string  `json:"memory_doc"`
+	MemoryDocUpdatedAt *string `json:"memory_doc_updated_at"`
+	CompactionCount    int32   `json:"compaction_count"`
+	Status             string  `json:"status"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
 }
 
 type ListProjectsV12Response struct {
@@ -45,8 +46,8 @@ type CreateProjectV12Request struct {
 	// AgentIDs 是项目要拉进来的 agent 列表（含 captain）。后端会按 agent
 	// 集合 hash 找现有团队复用，找不到才创建新团队。这是 v1.2 第二轮简化：
 	// 用户视角只剩"建项目"一个动作，团队作为 agent 子集自动派生。
-	AgentIDs        []string `json:"agent_ids"`
-	CaptainAgentID  string   `json:"captain_agent_id"`
+	AgentIDs       []string `json:"agent_ids"`
+	CaptainAgentID string   `json:"captain_agent_id"`
 	// TeamID 兼容旧客户端：如果直接传了 team_id 就直接绑，跳过 find-or-create。
 	TeamID      string `json:"team_id"`
 	Title       string `json:"title"`
@@ -247,8 +248,8 @@ func (h *Handler) ensureProjectMainChat(ctx context.Context, p db.Project, userU
 	// Bind anchor on first ensure; subsequent calls keep the same id.
 	if !p.MainChatSessionID.Valid {
 		if err := h.Queries.SetProjectMainChatSessionV12(ctx, db.SetProjectMainChatSessionV12Params{
-			ID:                 p.ID,
-			MainChatSessionID:  pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
+			ID:                p.ID,
+			MainChatSessionID: pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
 		}); err != nil {
 			return session, fmt.Errorf("bind main chat anchor: %w", err)
 		}
@@ -577,11 +578,11 @@ func (h *Handler) ListAgentProjectMemoriesByProject(w http.ResponseWriter, r *ht
 //   client receives team:message_created via WS, invalidates by chat_session_id
 
 type ProjectMainChatResponse struct {
-	ChatSessionID string  `json:"chat_session_id"`
-	ProjectID     string  `json:"project_id"`
-	TeamID        string  `json:"team_id"`
-	Title         string  `json:"title"`
-	Status        string  `json:"status"`
+	ChatSessionID string `json:"chat_session_id"`
+	ProjectID     string `json:"project_id"`
+	TeamID        string `json:"team_id"`
+	Title         string `json:"title"`
+	Status        string `json:"status"`
 }
 
 func (h *Handler) GetProjectMainChat(w http.ResponseWriter, r *http.Request) {
@@ -821,14 +822,14 @@ func (h *Handler) captainForSession(ctx context.Context, session db.ChatSession)
 const projectCompactionCooldown = 24 * time.Hour
 
 type CompactionPreviewResponse struct {
-	KeyDecisions    []string             `json:"key_decisions"`
-	Deliverables    []string             `json:"deliverables"`
-	CurrentStatus   string               `json:"current_status"`
-	CarryForward    []string             `json:"carry_forward"`
-	PinnedCandidates []PinnedQuote       `json:"pinned_candidates"`
-	MessageCount    int                  `json:"message_count"`
-	OldestAt        string               `json:"oldest_at,omitempty"`
-	NewestAt        string               `json:"newest_at,omitempty"`
+	KeyDecisions     []string      `json:"key_decisions"`
+	Deliverables     []string      `json:"deliverables"`
+	CurrentStatus    string        `json:"current_status"`
+	CarryForward     []string      `json:"carry_forward"`
+	PinnedCandidates []PinnedQuote `json:"pinned_candidates"`
+	MessageCount     int           `json:"message_count"`
+	OldestAt         string        `json:"oldest_at,omitempty"`
+	NewestAt         string        `json:"newest_at,omitempty"`
 }
 
 type PinnedQuote struct {
@@ -837,6 +838,19 @@ type PinnedQuote struct {
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
 }
+
+type projectCompactionScope struct {
+	Project  db.Project
+	Session  db.ChatSession
+	Messages []db.ChatMessage
+}
+
+type projectCompactionLoadError struct {
+	status  int
+	message string
+}
+
+func (e projectCompactionLoadError) Error() string { return e.message }
 
 func (h *Handler) PreviewProjectCompaction(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
@@ -848,116 +862,386 @@ func (h *Handler) PreviewProjectCompaction(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+	scope, loadErr := h.loadProjectCompactionScope(r.Context(), wsUUID, pid)
+	if loadErr != nil {
+		writeError(w, loadErr.status, loadErr.message)
+		return
+	}
+	resp := h.buildRuleProjectCompactionPreview(r.Context(), scope)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) loadProjectCompactionScope(ctx context.Context, wsUUID, pid pgtype.UUID) (projectCompactionScope, *projectCompactionLoadError) {
+	p, err := h.Queries.GetProjectInWorkspaceV12(ctx, db.GetProjectInWorkspaceV12Params{
 		ID: pid, WorkspaceID: wsUUID,
 	})
 	if err != nil {
-		writeError(w, http.StatusNotFound, "project not found")
-		return
+		return projectCompactionScope{}, &projectCompactionLoadError{status: http.StatusNotFound, message: "project not found"}
 	}
 	if !p.MainChatSessionID.Valid {
-		writeError(w, http.StatusBadRequest, "project has no main chat session")
-		return
+		return projectCompactionScope{}, &projectCompactionLoadError{status: http.StatusBadRequest, message: "project has no main chat session"}
 	}
-	session, err := h.Queries.GetChatSession(r.Context(), p.MainChatSessionID)
+	session, err := h.Queries.GetChatSession(ctx, p.MainChatSessionID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load main chat")
-		return
+		return projectCompactionScope{}, &projectCompactionLoadError{status: http.StatusInternalServerError, message: "failed to load main chat"}
 	}
-	// 24h cooldown
 	if session.LastCompactedAt.Valid && time.Since(session.LastCompactedAt.Time) < projectCompactionCooldown {
-		writeError(w, http.StatusTooEarly, fmt.Sprintf("project was compacted %s ago — please wait at least 24h", time.Since(session.LastCompactedAt.Time).Round(time.Minute)))
-		return
+		return projectCompactionScope{}, &projectCompactionLoadError{
+			status:  http.StatusTooEarly,
+			message: fmt.Sprintf("project was compacted %s ago — please wait at least 24h", time.Since(session.LastCompactedAt.Time).Round(time.Minute)),
+		}
 	}
-	// Pull all messages in the current session window. Skip last 30 minutes
-	// per §17.4.5 (avoid compacting an in-flight conversation).
-	rows, err := h.Queries.ListChatMessages(r.Context(), session.ID)
+	rows, err := h.Queries.ListChatMessages(ctx, session.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list messages")
-		return
+		return projectCompactionScope{}, &projectCompactionLoadError{status: http.StatusInternalServerError, message: "failed to list messages"}
 	}
 	cutoff := time.Now().Add(-30 * time.Minute)
-	var inWindow []db.ChatMessage
+	inWindow := make([]db.ChatMessage, 0, len(rows))
 	for _, m := range rows {
 		if !m.CreatedAt.Valid || m.CreatedAt.Time.Before(cutoff) {
 			inWindow = append(inWindow, m)
 		}
 	}
+	return projectCompactionScope{Project: p, Session: session, Messages: inWindow}, nil
+}
+
+func (h *Handler) buildRuleProjectCompactionPreview(ctx context.Context, scope projectCompactionScope) CompactionPreviewResponse {
 	resp := CompactionPreviewResponse{
-		KeyDecisions:    []string{},
-		Deliverables:    []string{},
-		CarryForward:    []string{},
+		KeyDecisions:     []string{},
+		Deliverables:     []string{},
+		CarryForward:     []string{},
 		PinnedCandidates: []PinnedQuote{},
-		MessageCount:    len(inWindow),
+		MessageCount:     len(scope.Messages),
 	}
-	if len(inWindow) > 0 {
-		if inWindow[0].CreatedAt.Valid {
-			resp.OldestAt = inWindow[0].CreatedAt.Time.Format(time.RFC3339)
+	if len(scope.Messages) > 0 {
+		if scope.Messages[0].CreatedAt.Valid {
+			resp.OldestAt = scope.Messages[0].CreatedAt.Time.Format(time.RFC3339)
 		}
-		if last := inWindow[len(inWindow)-1]; last.CreatedAt.Valid {
+		if last := scope.Messages[len(scope.Messages)-1]; last.CreatedAt.Valid {
 			resp.NewestAt = last.CreatedAt.Time.Format(time.RFC3339)
 		}
 	}
-	// Rule-based draft (no captain LLM in this round):
-	//   - current_status = 「{N} 条消息，最近活跃于 {newest_at}」 placeholder
-	//   - key_decisions = council adjourned conclusions in this session window
-	//     (read project's councils with project_id = pid, status = adjourned,
-	//      ended_at >= window start)
-	//   - deliverables = mission completed entries in same window
-	//   - pinned_candidates = top assistant messages by length (proxy for
-	//     content density) — capped at 5
 	if resp.MessageCount > 0 {
 		resp.CurrentStatus = fmt.Sprintf("最近活跃于 %s — 共 %d 条消息待整理", resp.NewestAt, resp.MessageCount)
 	} else {
 		resp.CurrentStatus = "暂无新消息可整理"
 	}
-	// pinned candidates: pick assistant replies > 80 chars, max 5
+
 	type cand struct {
-		idx int
-		m   db.ChatMessage
+		m db.ChatMessage
 	}
 	var cands []cand
-	for i, m := range inWindow {
+	for _, m := range scope.Messages {
 		if m.Role == "assistant" && len([]rune(m.Content)) >= 80 {
-			cands = append(cands, cand{i, m})
+			cands = append(cands, cand{m})
 		}
 	}
-	// take last 5 (most recent)
 	if len(cands) > 5 {
 		cands = cands[len(cands)-5:]
 	}
 	for _, c := range cands {
-		speaker := "Agent"
-		if c.m.SenderAgentID.Valid {
-			if a, err := h.Queries.GetAgent(r.Context(), c.m.SenderAgentID); err == nil {
-				speaker = a.Name
-			}
+		resp.PinnedCandidates = append(resp.PinnedCandidates, h.chatMessageToPinnedQuote(ctx, c.m))
+	}
+	return resp
+}
+
+func (h *Handler) chatMessageToPinnedQuote(ctx context.Context, m db.ChatMessage) PinnedQuote {
+	speaker := "Agent"
+	if m.Role == "user" {
+		speaker = "用户"
+	} else if m.SenderAgentID.Valid {
+		if a, err := h.Queries.GetAgent(ctx, m.SenderAgentID); err == nil {
+			speaker = a.Name
 		}
-		quote := PinnedQuote{
-			MessageID: uuidToString(c.m.ID),
-			Speaker:   speaker,
-			Content:   c.m.Content,
+	}
+	quote := PinnedQuote{
+		MessageID: uuidToString(m.ID),
+		Speaker:   speaker,
+		Content:   m.Content,
+	}
+	if m.CreatedAt.Valid {
+		quote.CreatedAt = m.CreatedAt.Time.Format(time.RFC3339)
+	}
+	return quote
+}
+
+const projectCompactionMaxMessageRunes = 4000
+
+type StartProjectCompactionPreviewResponse struct {
+	TaskID          string                    `json:"task_id"`
+	Status          string                    `json:"status"`
+	FallbackPreview CompactionPreviewResponse `json:"fallback_preview"`
+}
+
+type ProjectCompactionPreviewJobResponse struct {
+	TaskID          string                     `json:"task_id"`
+	Status          string                     `json:"status"`
+	Preview         *CompactionPreviewResponse `json:"preview,omitempty"`
+	FallbackPreview CompactionPreviewResponse  `json:"fallback_preview"`
+	Error           string                     `json:"error,omitempty"`
+}
+
+func (h *Handler) StartProjectCompactionPreviewJob(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	scope, loadErr := h.loadProjectCompactionScope(r.Context(), wsUUID, pid)
+	if loadErr != nil {
+		writeError(w, loadErr.status, loadErr.message)
+		return
+	}
+	if !scope.Project.TeamID.Valid {
+		writeError(w, http.StatusBadRequest, "project is not bound to a team")
+		return
+	}
+	team, err := h.Queries.GetTeam(r.Context(), scope.Project.TeamID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load project team")
+		return
+	}
+	task, err := h.TaskService.EnqueueProjectCompactionTask(r.Context(), wsUUID, pid, scope.Session.ID, team.CaptainAgentID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, StartProjectCompactionPreviewResponse{
+		TaskID:          uuidToString(task.ID),
+		Status:          task.Status,
+		FallbackPreview: h.buildRuleProjectCompactionPreview(r.Context(), scope),
+	})
+}
+
+func (h *Handler) GetProjectCompactionPreviewJob(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	taskID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "taskId"), "task id")
+	if !ok {
+		return
+	}
+	task, err := h.Queries.GetAgentTask(r.Context(), taskID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "preview job not found")
+		return
+	}
+	pc, ok := parseProjectCompactionContext(task)
+	if !ok || pc.ProjectID != uuidToString(pid) || pc.WorkspaceID != uuidToString(wsUUID) {
+		writeError(w, http.StatusNotFound, "preview job not found")
+		return
+	}
+	scope, loadErr := h.loadProjectCompactionScope(r.Context(), wsUUID, pid)
+	if loadErr != nil {
+		writeError(w, loadErr.status, loadErr.message)
+		return
+	}
+	fallback := h.buildRuleProjectCompactionPreview(r.Context(), scope)
+	resp := ProjectCompactionPreviewJobResponse{
+		TaskID:          uuidToString(task.ID),
+		Status:          task.Status,
+		FallbackPreview: fallback,
+	}
+	switch task.Status {
+	case "completed":
+		output := taskResultOutput(task.Result)
+		preview, err := h.previewFromCompactionOutput(r.Context(), scope, output, fallback)
+		if err != nil {
+			resp.Preview = &fallback
+			resp.Error = err.Error()
+		} else {
+			resp.Preview = &preview
 		}
-		if c.m.CreatedAt.Valid {
-			quote.CreatedAt = c.m.CreatedAt.Time.Format(time.RFC3339)
+	case "failed", "cancelled":
+		resp.Error = "captain preview job " + task.Status
+		if task.Error.Valid {
+			resp.Error = task.Error.String
 		}
-		resp.PinnedCandidates = append(resp.PinnedCandidates, quote)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func parseProjectCompactionContext(task db.AgentTaskQueue) (service.ProjectCompactionContext, bool) {
+	if task.IssueID.Valid || task.ChatSessionID.Valid || task.AutopilotRunID.Valid || len(task.Context) == 0 {
+		return service.ProjectCompactionContext{}, false
+	}
+	var pc service.ProjectCompactionContext
+	if err := json.Unmarshal(task.Context, &pc); err != nil {
+		return service.ProjectCompactionContext{}, false
+	}
+	return pc, pc.Type == service.ProjectCompactionContextType
+}
+
+func (h *Handler) buildProjectCompactionTaskData(ctx context.Context, pc service.ProjectCompactionContext) (*ProjectCompactionTaskData, error) {
+	wsUUID, ok := parseUUID2(pc.WorkspaceID)
+	if !ok {
+		return nil, fmt.Errorf("invalid workspace_id")
+	}
+	pid, ok := parseUUID2(pc.ProjectID)
+	if !ok {
+		return nil, fmt.Errorf("invalid project_id")
+	}
+	scope, loadErr := h.loadProjectCompactionScope(ctx, wsUUID, pid)
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	if uuidToString(scope.Session.ID) != pc.ChatSessionID {
+		return nil, fmt.Errorf("project main chat changed")
+	}
+	data := &ProjectCompactionTaskData{
+		ProjectID:     pc.ProjectID,
+		ProjectTitle:  scope.Project.Title,
+		ChatSessionID: pc.ChatSessionID,
+		MemoryDoc:     scope.Project.MemoryDoc,
+		MessageCount:  len(scope.Messages),
+		Messages:      make([]ProjectCompactionTaskMessage, 0, len(scope.Messages)),
+	}
+	if len(scope.Messages) > 0 {
+		if scope.Messages[0].CreatedAt.Valid {
+			data.OldestAt = scope.Messages[0].CreatedAt.Time.Format(time.RFC3339)
+		}
+		if last := scope.Messages[len(scope.Messages)-1]; last.CreatedAt.Valid {
+			data.NewestAt = last.CreatedAt.Time.Format(time.RFC3339)
+		}
+	}
+	for _, m := range scope.Messages {
+		quote := h.chatMessageToPinnedQuote(ctx, m)
+		data.Messages = append(data.Messages, ProjectCompactionTaskMessage{
+			ID:        uuidToString(m.ID),
+			Role:      m.Role,
+			Speaker:   quote.Speaker,
+			Content:   truncateRunes(m.Content, projectCompactionMaxMessageRunes),
+			CreatedAt: quote.CreatedAt,
+		})
+	}
+	return data, nil
+}
+
+type compactionDraft struct {
+	KeyDecisions     []string `json:"key_decisions"`
+	Deliverables     []string `json:"deliverables"`
+	CurrentStatus    string   `json:"current_status"`
+	CarryForward     []string `json:"carry_forward"`
+	PinnedMessageIDs []string `json:"pinned_message_ids"`
+}
+
+func taskResultOutput(raw []byte) string {
+	var payload struct {
+		Output string `json:"output"`
+	}
+	_ = json.Unmarshal(raw, &payload)
+	return payload.Output
+}
+
+func parseCompactionDraftOutput(output string) (compactionDraft, error) {
+	var draft compactionDraft
+	raw := strings.TrimSpace(output)
+	if raw == "" {
+		return draft, fmt.Errorf("captain returned empty output")
+	}
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end < start {
+		return draft, fmt.Errorf("captain output did not contain a JSON object")
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &draft); err != nil {
+		return draft, fmt.Errorf("failed to parse captain JSON: %w", err)
+	}
+	return draft, nil
+}
+
+func (h *Handler) previewFromCompactionOutput(ctx context.Context, scope projectCompactionScope, output string, fallback CompactionPreviewResponse) (CompactionPreviewResponse, error) {
+	draft, err := parseCompactionDraftOutput(output)
+	if err != nil {
+		return fallback, err
+	}
+	preview := fallback
+	if list := cleanCompactionStringList(draft.KeyDecisions); list != nil {
+		preview.KeyDecisions = list
+	}
+	if list := cleanCompactionStringList(draft.Deliverables); list != nil {
+		preview.Deliverables = list
+	}
+	if list := cleanCompactionStringList(draft.CarryForward); list != nil {
+		preview.CarryForward = list
+	}
+	if s := strings.TrimSpace(draft.CurrentStatus); s != "" {
+		preview.CurrentStatus = s
+	}
+	if pins := h.pinnedQuotesByIDs(ctx, scope.Messages, draft.PinnedMessageIDs); len(pins) > 0 {
+		preview.PinnedCandidates = pins
+	}
+	return preview, nil
+}
+
+func cleanCompactionStringList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (h *Handler) pinnedQuotesByIDs(ctx context.Context, messages []db.ChatMessage, ids []string) []PinnedQuote {
+	byID := make(map[string]db.ChatMessage, len(messages))
+	for _, m := range messages {
+		byID[uuidToString(m.ID)] = m
+	}
+	out := make([]PinnedQuote, 0, len(ids))
+	seen := map[string]bool{}
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" || seen[id] {
+			continue
+		}
+		m, ok := byID[id]
+		if !ok {
+			continue
+		}
+		out = append(out, h.chatMessageToPinnedQuote(ctx, m))
+		seen[id] = true
+		if len(out) >= 8 {
+			break
+		}
+	}
+	return out
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	rs := []rune(s)
+	if len(rs) <= max {
+		return s
+	}
+	return string(rs[:max]) + "..."
+}
+
 type ConfirmProjectCompactionRequest struct {
-	KeyDecisions      []string `json:"key_decisions"`
-	Deliverables      []string `json:"deliverables"`
-	CurrentStatus     string   `json:"current_status"`
-	CarryForward      []string `json:"carry_forward"`
-	SelectedPinIDs    []string `json:"selected_pin_ids"` // subset of pinned_candidates message_ids
+	KeyDecisions   []string `json:"key_decisions"`
+	Deliverables   []string `json:"deliverables"`
+	CurrentStatus  string   `json:"current_status"`
+	CarryForward   []string `json:"carry_forward"`
+	SelectedPinIDs []string `json:"selected_pin_ids"` // subset of pinned_candidates message_ids
 }
 
 type ConfirmProjectCompactionResponse struct {
-	Project              ProjectV12Response `json:"project"`
-	NewChatSessionID     string             `json:"new_chat_session_id"`
-	ArchivedSessionID    string             `json:"archived_session_id"`
+	Project           ProjectV12Response `json:"project"`
+	NewChatSessionID  string             `json:"new_chat_session_id"`
+	ArchivedSessionID string             `json:"archived_session_id"`
 }
 
 func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Request) {

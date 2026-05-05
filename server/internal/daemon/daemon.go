@@ -79,11 +79,11 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	// server can split logs/metrics by client version (parallel to the CLI).
 	client.SetVersion(cfg.CLIVersion)
 	return &Daemon{
-		cfg:           cfg,
-		client:        client,
-		repoCache:     repocache.New(cacheRoot, logger),
-		logger:        logger,
-		workspaces:    make(map[string]*workspaceState),
+		cfg:            cfg,
+		client:         client,
+		repoCache:      repocache.New(cacheRoot, logger),
+		logger:         logger,
+		workspaces:     make(map[string]*workspaceState),
 		runtimeIndex:   make(map[string]Runtime),
 		runtimeSetCh:   make(chan struct{}, 1),
 		agentVersions:  make(map[string]string),
@@ -1256,6 +1256,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		AutopilotTriggerPayload: strings.TrimSpace(string(task.AutopilotTriggerPayload)),
 		QuickCreatePrompt:       task.QuickCreatePrompt,
 	}
+	if task.ProjectCompaction != nil {
+		taskCtx.ProjectCompaction = &execenv.ProjectCompactionContextForEnv{
+			ProjectID:     task.ProjectCompaction.ProjectID,
+			ProjectTitle:  task.ProjectCompaction.ProjectTitle,
+			ChatSessionID: task.ProjectCompaction.ChatSessionID,
+			MessageCount:  task.ProjectCompaction.MessageCount,
+		}
+	}
 
 	// Mark candidate env roots as active before any env work so the GC loop
 	// can't reclaim artifacts inside them mid-execution. We mark both the
@@ -1337,6 +1345,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// deterministically (see GetIssueByOrigin).
 	if task.QuickCreatePrompt != "" {
 		agentEnv["MULTICA_QUICK_CREATE_TASK_ID"] = task.ID
+	} else if task.ProjectCompaction != nil {
+		agentEnv["MULTICA_PROJECT_COMPACTION_TASK_ID"] = task.ID
 	}
 	// Ensure the multica CLI is on PATH inside the agent's environment.
 	// Some runtimes (e.g. Codex) run in an isolated sandbox that may not

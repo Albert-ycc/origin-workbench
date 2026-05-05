@@ -211,6 +211,9 @@ func renderIssueContext(provider string, ctx TaskContextForEnv) string {
 	if ctx.QuickCreatePrompt != "" {
 		return renderQuickCreateContext(ctx)
 	}
+	if ctx.ProjectCompaction != nil {
+		return renderProjectCompactionContext(ctx)
+	}
 
 	var b strings.Builder
 
@@ -265,6 +268,20 @@ func renderQuickCreateContext(ctx TaskContextForEnv) string {
 		}
 		b.WriteString("\n")
 	}
+	return b.String()
+}
+
+func renderProjectCompactionContext(ctx TaskContextForEnv) string {
+	var b strings.Builder
+	b.WriteString("# Project Compaction Preview\n\n")
+	b.WriteString("**Trigger:** User requested `/sync` for a project main chat.\n\n")
+	if ctx.ProjectCompaction != nil {
+		fmt.Fprintf(&b, "**Project:** %s\n\n", ctx.ProjectCompaction.ProjectTitle)
+		fmt.Fprintf(&b, "**Project ID:** %s\n\n", ctx.ProjectCompaction.ProjectID)
+		fmt.Fprintf(&b, "**Chat session ID:** %s\n\n", ctx.ProjectCompaction.ChatSessionID)
+		fmt.Fprintf(&b, "**Messages in scope:** %d\n\n", ctx.ProjectCompaction.MessageCount)
+	}
+	b.WriteString("Return one strict JSON object only. Do not edit files, call the CLI, or post comments.\n")
 	return b.String()
 }
 

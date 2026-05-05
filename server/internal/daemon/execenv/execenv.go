@@ -55,13 +55,21 @@ type TaskContextForEnv struct {
 	AgentProjectMemory      string                  // PRD §17.5 — this agent's per-project视角记忆
 	ProjectResources        []ProjectResourceForEnv // resources attached to the project
 	ChatSessionID           string                  // non-empty for chat tasks
-	AutopilotRunID          string              // non-empty for autopilot run_only tasks
+	AutopilotRunID          string                  // non-empty for autopilot run_only tasks
 	AutopilotID             string
 	AutopilotTitle          string
 	AutopilotDescription    string
 	AutopilotSource         string
 	AutopilotTriggerPayload string
 	QuickCreatePrompt       string // non-empty for quick-create tasks
+	ProjectCompaction       *ProjectCompactionContextForEnv
+}
+
+type ProjectCompactionContextForEnv struct {
+	ProjectID     string
+	ProjectTitle  string
+	ChatSessionID string
+	MessageCount  int
 }
 
 // SkillContextForEnv represents a skill to be written into the execution environment.

@@ -48,15 +48,15 @@ type AgentResponse struct {
 	// PRD §14.8 Agent work mode. work_mode flips the chat dispatch UX
 	// (live blocks the chat window; mailbox parks the work in block 6).
 	// Budget/notify only matter when work_mode == "mailbox".
-	WorkMode             string `json:"work_mode"`
-	MailboxBudgetSeconds int32  `json:"mailbox_budget_seconds"`
-	NotifyPolicy         string `json:"notify_policy"`
-	OwnerID              *string `json:"owner_id"`
-	Skills             []SkillResponse   `json:"skills"`
-	CreatedAt          string            `json:"created_at"`
-	UpdatedAt          string            `json:"updated_at"`
-	ArchivedAt         *string           `json:"archived_at"`
-	ArchivedBy         *string           `json:"archived_by"`
+	WorkMode             string          `json:"work_mode"`
+	MailboxBudgetSeconds int32           `json:"mailbox_budget_seconds"`
+	NotifyPolicy         string          `json:"notify_policy"`
+	OwnerID              *string         `json:"owner_id"`
+	Skills               []SkillResponse `json:"skills"`
+	CreatedAt            string          `json:"created_at"`
+	UpdatedAt            string          `json:"updated_at"`
+	ArchivedAt           *string         `json:"archived_at"`
+	ArchivedBy           *string         `json:"archived_by"`
 }
 
 func agentToResponse(a db.Agent) AgentResponse {
@@ -94,31 +94,31 @@ func agentToResponse(a db.Agent) AgentResponse {
 	}
 
 	return AgentResponse{
-		ID:                 uuidToString(a.ID),
-		WorkspaceID:        uuidToString(a.WorkspaceID),
-		RuntimeID:          uuidToString(a.RuntimeID),
-		Name:               a.Name,
-		Description:        a.Description,
-		Instructions:       a.Instructions,
-		AvatarURL:          textToPtr(a.AvatarUrl),
-		RuntimeMode:        a.RuntimeMode,
-		RuntimeConfig:      rc,
-		CustomEnv:          customEnv,
-		CustomArgs:         customArgs,
-		McpConfig:          mcpConfig,
-		Visibility:         a.Visibility,
-		Status:             a.Status,
+		ID:                   uuidToString(a.ID),
+		WorkspaceID:          uuidToString(a.WorkspaceID),
+		RuntimeID:            uuidToString(a.RuntimeID),
+		Name:                 a.Name,
+		Description:          a.Description,
+		Instructions:         a.Instructions,
+		AvatarURL:            textToPtr(a.AvatarUrl),
+		RuntimeMode:          a.RuntimeMode,
+		RuntimeConfig:        rc,
+		CustomEnv:            customEnv,
+		CustomArgs:           customArgs,
+		McpConfig:            mcpConfig,
+		Visibility:           a.Visibility,
+		Status:               a.Status,
 		MaxConcurrentTasks:   a.MaxConcurrentTasks,
 		Model:                a.Model.String,
 		WorkMode:             a.WorkMode,
 		MailboxBudgetSeconds: a.MailboxBudgetSeconds,
 		NotifyPolicy:         a.NotifyPolicy,
 		OwnerID:              uuidToPtr(a.OwnerID),
-		Skills:             []SkillResponse{},
-		CreatedAt:          timestampToString(a.CreatedAt),
-		UpdatedAt:          timestampToString(a.UpdatedAt),
-		ArchivedAt:         timestampToPtr(a.ArchivedAt),
-		ArchivedBy:         uuidToPtr(a.ArchivedBy),
+		Skills:               []SkillResponse{},
+		CreatedAt:            timestampToString(a.CreatedAt),
+		UpdatedAt:            timestampToString(a.UpdatedAt),
+		ArchivedAt:           timestampToPtr(a.ArchivedAt),
+		ArchivedBy:           uuidToPtr(a.ArchivedBy),
 	}
 }
 
@@ -143,27 +143,27 @@ type ProjectResourceData struct {
 }
 
 type AgentTaskResponse struct {
-	ID                      string                         `json:"id"`
-	AgentID                 string                         `json:"agent_id"`
-	RuntimeID               string                         `json:"runtime_id"`
-	IssueID                 string                         `json:"issue_id"`
-	WorkspaceID             string                         `json:"workspace_id"`
-	Status                  string                         `json:"status"`
-	Priority                int32                          `json:"priority"`
-	DispatchedAt            *string                        `json:"dispatched_at"`
-	StartedAt               *string                        `json:"started_at"`
-	CompletedAt             *string                        `json:"completed_at"`
-	Result                  any                            `json:"result"`
-	Error                   *string                        `json:"error"`
-	FailureReason           string                         `json:"failure_reason,omitempty"` // see TaskService.MaybeRetryFailedTask
-	Attempt                 int32                          `json:"attempt"`
-	MaxAttempts             int32                          `json:"max_attempts"`
-	ParentTaskID            *string                        `json:"parent_task_id,omitempty"`
-	Agent                   *TaskAgentData                 `json:"agent,omitempty"`
-	Repos                   []RepoData                     `json:"repos,omitempty"`
-	ProjectID               string                         `json:"project_id,omitempty"`        // issue's project (v1.0) or chat_session's v1.2 project workspace, when present
-	ProjectTitle            string                         `json:"project_title,omitempty"`     // for surfacing in agent context
-	ProjectResources        []ProjectResourceData          `json:"project_resources,omitempty"` // resources attached to the project
+	ID               string                `json:"id"`
+	AgentID          string                `json:"agent_id"`
+	RuntimeID        string                `json:"runtime_id"`
+	IssueID          string                `json:"issue_id"`
+	WorkspaceID      string                `json:"workspace_id"`
+	Status           string                `json:"status"`
+	Priority         int32                 `json:"priority"`
+	DispatchedAt     *string               `json:"dispatched_at"`
+	StartedAt        *string               `json:"started_at"`
+	CompletedAt      *string               `json:"completed_at"`
+	Result           any                   `json:"result"`
+	Error            *string               `json:"error"`
+	FailureReason    string                `json:"failure_reason,omitempty"` // see TaskService.MaybeRetryFailedTask
+	Attempt          int32                 `json:"attempt"`
+	MaxAttempts      int32                 `json:"max_attempts"`
+	ParentTaskID     *string               `json:"parent_task_id,omitempty"`
+	Agent            *TaskAgentData        `json:"agent,omitempty"`
+	Repos            []RepoData            `json:"repos,omitempty"`
+	ProjectID        string                `json:"project_id,omitempty"`        // issue's project (v1.0) or chat_session's v1.2 project workspace, when present
+	ProjectTitle     string                `json:"project_title,omitempty"`     // for surfacing in agent context
+	ProjectResources []ProjectResourceData `json:"project_resources,omitempty"` // resources attached to the project
 	// Origin §17.5 — v1.2 project memory injection. Both empty when the
 	// task is not bound to a v1.2 project workspace.
 	ProjectMemoryDoc        string                         `json:"project_memory_doc,omitempty"`
@@ -190,6 +190,7 @@ type AgentTaskResponse struct {
 	AutopilotSource         string                         `json:"autopilot_source,omitempty"`          // manual, schedule, webhook, or api
 	AutopilotTriggerPayload json.RawMessage                `json:"autopilot_trigger_payload,omitempty"` // optional trigger payload for webhook/api runs
 	QuickCreatePrompt       string                         `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
+	ProjectCompaction       *ProjectCompactionTaskData     `json:"project_compaction,omitempty"`        // async project main-chat /sync preview task
 	OperatorPreferences     *OperatorPreferencesData       `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
 	Kind                    string                         `json:"kind"`                                // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
 }
@@ -206,6 +207,25 @@ type TeamTaskMemberData struct {
 	AgentID string `json:"agent_id"`
 	Name    string `json:"name"`
 	Role    string `json:"role"`
+}
+
+type ProjectCompactionTaskData struct {
+	ProjectID     string                         `json:"project_id"`
+	ProjectTitle  string                         `json:"project_title"`
+	ChatSessionID string                         `json:"chat_session_id"`
+	MemoryDoc     string                         `json:"memory_doc,omitempty"`
+	MessageCount  int                            `json:"message_count"`
+	OldestAt      string                         `json:"oldest_at,omitempty"`
+	NewestAt      string                         `json:"newest_at,omitempty"`
+	Messages      []ProjectCompactionTaskMessage `json:"messages"`
+}
+
+type ProjectCompactionTaskMessage struct {
+	ID        string `json:"id"`
+	Role      string `json:"role"`
+	Speaker   string `json:"speaker"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
 }
 
 // TaskAgentData holds agent info included in claim responses so the daemon
@@ -272,6 +292,14 @@ func computeTaskKind(t db.AgentTaskQueue) string {
 		return "autopilot"
 	}
 	if uuidToString(t.IssueID) == "" {
+		if len(t.Context) > 0 {
+			var ctx struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(t.Context, &ctx) == nil && ctx.Type == service.ProjectCompactionContextType {
+				return "project_compaction"
+			}
+		}
 		return "quick_create"
 	}
 	if uuidToString(t.TriggerCommentID) != "" {

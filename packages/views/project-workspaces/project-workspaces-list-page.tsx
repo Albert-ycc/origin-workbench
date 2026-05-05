@@ -49,7 +49,9 @@ export function ProjectWorkspacesListPage() {
   // navigation overhead and should be hideable on smaller windows.
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("origin:project-sidebar-collapsed") === "1";
+    const saved = window.localStorage.getItem("origin:project-sidebar-collapsed");
+    if (saved != null) return saved === "1";
+    return window.innerWidth < 1360;
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -58,6 +60,17 @@ export function ProjectWorkspacesListPage() {
       sidebarCollapsed ? "1" : "0",
     );
   }, [sidebarCollapsed]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const collapseWhenNarrow = () => {
+      if (window.innerWidth < 1360) {
+        setSidebarCollapsed(true);
+      }
+    };
+    collapseWhenNarrow();
+    window.addEventListener("resize", collapseWhenNarrow);
+    return () => window.removeEventListener("resize", collapseWhenNarrow);
+  }, []);
 
   return (
     <div className="flex flex-1 min-h-0 bg-background">
@@ -66,105 +79,103 @@ export function ProjectWorkspacesListPage() {
           column reclaims the full width without leaving a dead strip. The
           ProjectWorkspacePage shows an expand button in its PageHeader. */}
       {!sidebarCollapsed && (
-        <aside className="flex w-[260px] shrink-0 flex-col border-r">
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-            <span className="flex-1 text-sm font-semibold">项目工作区</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setCreating(true)}
-              className="size-7 p-0"
-              title="新建项目"
-            >
-              <Plus className="size-4" />
-            </Button>
+        <aside className="flex w-[220px] shrink-0 flex-col border-r 2xl:w-[240px]">
+          <header className="flex h-12 shrink-0 items-center gap-1.5 border-b px-3">
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setSidebarCollapsed(true)}
-              className="size-7 p-0"
+              className="size-7 shrink-0 p-0"
               title="收起项目列表"
             >
               <PanelLeftClose className="size-4" />
             </Button>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">项目工作区</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setCreating(true)}
+              className="size-7 shrink-0 p-0"
+              title="新建项目"
+            >
+              <Plus className="size-4" />
+            </Button>
           </header>
-        <div className="flex-1 overflow-y-auto p-2">
-          {isLoading ? (
-            <div className="space-y-2 p-1">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-md" />
-              ))}
-            </div>
-          ) : projects.length === 0 ? (
-            <div className="px-2 py-8 text-center">
-              <FolderOpen className="mx-auto mb-2 size-6 text-muted-foreground opacity-50" />
-              <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                还没有项目
-              </p>
-              <Button size="sm" onClick={() => setCreating(true)}>
-                <Plus className="size-3.5" />
-                新建项目
-              </Button>
-            </div>
-          ) : (
-            <ul className="space-y-0.5">
-              {projects.map((project) => {
-                const isActive = project.id === activeId;
-                return (
-                  <li key={project.id}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate(paths.projectWorkspaceDetail(project.id))
-                      }
-                      className={cn(
-                        "flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors",
-                        isActive
-                          ? "bg-muted"
-                          : "hover:bg-muted/60",
-                      )}
-                    >
-                      <span
+          <div className="flex-1 overflow-y-auto p-2">
+            {isLoading ? (
+              <div className="space-y-2 p-1">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full rounded-md" />
+                ))}
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="px-2 py-8 text-center">
+                <FolderOpen className="mx-auto mb-2 size-6 text-muted-foreground opacity-50" />
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                  还没有项目
+                </p>
+                <Button size="sm" onClick={() => setCreating(true)}>
+                  <Plus className="size-3.5" />
+                  新建项目
+                </Button>
+              </div>
+            ) : (
+              <ul className="space-y-0.5">
+                {projects.map((project) => {
+                  const isActive = project.id === activeId;
+                  return (
+                    <li key={project.id}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(paths.projectWorkspaceDetail(project.id))
+                        }
                         className={cn(
-                          "mt-1.5 size-2 shrink-0 rounded-full",
-                          projectStatusDot[project.status] ??
-                            "bg-muted-foreground/40",
+                          "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                          isActive ? "bg-muted" : "hover:bg-muted/60",
                         )}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">
-                          {project.title}
-                        </div>
-                        {project.description && (
-                          <div className="truncate text-[11px] text-muted-foreground">
-                            {project.description}
-                          </div>
-                        )}
-                        <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              "h-4 px-1.5 text-[10px]",
-                              projectStatusTone[project.status] ??
-                                "bg-muted text-muted-foreground",
-                            )}
-                          >
-                            {projectStatusCopy[project.status] ??
-                              project.status}
-                          </Badge>
-                          {project.compaction_count > 0 && (
-                            <span>压缩 ×{project.compaction_count}</span>
+                      >
+                        <span
+                          className={cn(
+                            "mt-1.5 size-2 shrink-0 rounded-full",
+                            projectStatusDot[project.status] ??
+                              "bg-muted-foreground/40",
                           )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium leading-5">
+                            {project.title}
+                          </div>
+                          {project.description && (
+                            <div className="hidden truncate text-[11px] text-muted-foreground 2xl:block">
+                              {project.description}
+                            </div>
+                          )}
+                          <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "h-4 px-1.5 text-[10px]",
+                                projectStatusTone[project.status] ??
+                                  "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              {projectStatusCopy[project.status] ??
+                                project.status}
+                            </Badge>
+                            {project.compaction_count > 0 && (
+                              <span>压缩 ×{project.compaction_count}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </aside>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </aside>
       )}
 
       {/* 右侧主区 */}

@@ -484,6 +484,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/main-chat/messages", h.PostProjectMainChatMessage)
 					r.Get("/history", h.GetProjectHistory)
 					r.Post("/compact/preview", h.PreviewProjectCompaction)
+					r.Post("/compact/preview-jobs", h.StartProjectCompactionPreviewJob)
+					r.Get("/compact/preview-jobs/{taskId}", h.GetProjectCompactionPreviewJob)
 					r.Post("/compact/confirm", h.ConfirmProjectCompaction)
 					r.Get("/archived-sessions", h.ListProjectArchivedSessions)
 				})

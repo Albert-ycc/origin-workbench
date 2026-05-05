@@ -187,6 +187,7 @@ export type {
   AppendMemoryDocRequest,
   AgentProjectMemory,
   CompactionPreview,
+  CompactionPreviewJob,
   ConfirmCompactionRequest,
   ConfirmCompactionResponse,
   PinnedQuoteCandidate,

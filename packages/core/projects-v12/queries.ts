@@ -16,6 +16,8 @@ export const projectV12Keys = {
     [...projectV12Keys.all(wsId), "main-chat-messages", projectId] as const,
   archivedSessions: (wsId: string, projectId: string) =>
     [...projectV12Keys.all(wsId), "archived-sessions", projectId] as const,
+  compactionPreviewJob: (wsId: string, projectId: string, taskId: string) =>
+    [...projectV12Keys.all(wsId), "compaction-preview-job", projectId, taskId] as const,
 };
 
 export function projectV12ListOptions(wsId: string) {
@@ -64,5 +66,17 @@ export function projectArchivedSessionsOptions(wsId: string, projectId: string) 
     queryKey: projectV12Keys.archivedSessions(wsId, projectId),
     queryFn: () => api.listProjectArchivedSessions(projectId),
     enabled: !!projectId,
+  });
+}
+
+export function projectCompactionPreviewJobOptions(
+  wsId: string,
+  projectId: string,
+  taskId: string | null,
+) {
+  return queryOptions({
+    queryKey: projectV12Keys.compactionPreviewJob(wsId, projectId, taskId ?? ""),
+    queryFn: () => api.getProjectCompactionPreviewJob(projectId, taskId ?? ""),
+    enabled: !!projectId && !!taskId,
   });
 }

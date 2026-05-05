@@ -136,6 +136,7 @@ import type {
   ProjectV12,
   ProjectMainChat,
   CompactionPreview,
+  CompactionPreviewJob,
   ConfirmCompactionRequest,
   ConfirmCompactionResponse,
   ArchivedChatSession,
@@ -1728,6 +1729,19 @@ export class ApiClient {
     return this.fetch(`/api/v12/projects/${projectId}/compact/preview`, {
       method: "POST",
     });
+  }
+
+  async startProjectCompactionPreviewJob(projectId: string): Promise<CompactionPreviewJob> {
+    return this.fetch(`/api/v12/projects/${projectId}/compact/preview-jobs`, {
+      method: "POST",
+    });
+  }
+
+  async getProjectCompactionPreviewJob(
+    projectId: string,
+    taskId: string,
+  ): Promise<CompactionPreviewJob> {
+    return this.fetch(`/api/v12/projects/${projectId}/compact/preview-jobs/${taskId}`);
   }
 
   async confirmProjectCompaction(

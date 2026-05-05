@@ -16,9 +16,11 @@ import {
   usePostProjectMainChatMessage,
   usePinChatMessageToProjectMemory,
   usePreviewProjectCompaction,
+  useStartProjectCompactionPreviewJob,
   useConfirmProjectCompaction,
   useArchiveProjectV12,
   projectArchivedSessionsOptions,
+  projectCompactionPreviewJobOptions,
 } from "@multica/core/projects-v12";
 import type { CompactionPreview, PinnedQuoteCandidate } from "@multica/core/types";
 import { teamDetailOptions } from "@multica/core/teams";
@@ -118,7 +120,9 @@ export function ProjectWorkspacePage({
   // a 13" screen user who lives in chat doesn't have to close it every time.
   const [docCollapsed, setDocCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("origin:project-doc-collapsed") === "1";
+    const saved = window.localStorage.getItem("origin:project-doc-collapsed");
+    if (saved != null) return saved === "1";
+    return window.innerWidth < 1500;
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -127,6 +131,17 @@ export function ProjectWorkspacePage({
       docCollapsed ? "1" : "0",
     );
   }, [docCollapsed]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const collapseWhenNarrow = () => {
+      if (window.innerWidth < 1500) {
+        setDocCollapsed(true);
+      }
+    };
+    collapseWhenNarrow();
+    window.addEventListener("resize", collapseWhenNarrow);
+    return () => window.removeEventListener("resize", collapseWhenNarrow);
+  }, []);
 
   if (isLoading) {
     return (
@@ -176,30 +191,37 @@ export function ProjectWorkspacePage({
   };
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <PageHeader className="gap-1.5">
-        {sidebarCollapsed && onExpandSidebar && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onExpandSidebar}
-            className="size-7 p-0"
-            title="展开项目列表"
+    <div className="flex flex-1 flex-col overflow-hidden bg-background">
+      <PageHeader className="gap-2 overflow-hidden px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {sidebarCollapsed && onExpandSidebar && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onExpandSidebar}
+              className="size-7 shrink-0 p-0"
+              title="展开项目列表"
+            >
+              <PanelLeft className="size-4" />
+            </Button>
+          )}
+          <span className="hidden shrink-0 text-sm text-muted-foreground lg:inline">
+            项目工作区 /
+          </span>
+          <span className="min-w-0 truncate text-sm font-medium">{project.title}</span>
+          <Badge
+            variant="secondary"
+            className={cn("hidden shrink-0 sm:inline-flex", statusTone[project.status])}
           >
-            <PanelLeft className="size-4" />
-          </Button>
-        )}
-        <span className="text-sm text-muted-foreground">项目工作区 / </span>
-        <span className="text-sm font-medium">{project.title}</span>
-        <Badge variant="secondary" className={cn("ml-2", statusTone[project.status])}>
-          {statusCopy[project.status] ?? project.status}
-        </Badge>
-        {project.local_dir && (
-          <code className="ml-2 rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-            {project.local_dir}
-          </code>
-        )}
-        <div className="ml-auto flex items-center gap-2">
+            {statusCopy[project.status] ?? project.status}
+          </Badge>
+          {project.local_dir && (
+            <code className="hidden max-w-[240px] shrink truncate rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground xl:inline-block 2xl:max-w-[320px]">
+              {project.local_dir}
+            </code>
+          )}
+        </div>
+        <div className="flex max-w-[62%] shrink items-center gap-1.5 overflow-x-auto whitespace-nowrap pr-1">
           <span className="text-[11px] text-muted-foreground">
             第 {project.compaction_count} 次压缩
           </span>
@@ -308,101 +330,133 @@ export function ProjectWorkspacePage({
 
         {/* Right: doc column — collapsible. When collapsed, removed from the
             DOM so the chat column reclaims the full width; expand control
-            lives in the PageHeader as PanelRightOpen. Width drops to 420px
-            on smaller screens to stop the header buttons from clipping. */}
+            lives in the PageHeader as PanelRightOpen. Width follows the
+            available viewport instead of claiming a fixed 480px. */}
         {!docCollapsed && (
-        <aside className="flex w-[420px] xl:w-[480px] shrink-0 flex-col border-l">
-          <div className="flex h-11 items-center gap-1 overflow-x-auto border-b px-3">
-            <DocTabBtn active={activeTab === "files"} onClick={() => setActiveTab("files")} icon={FolderOpen}>
-              团队工作文件
-            </DocTabBtn>
-            <DocTabBtn active={activeTab === "memory"} onClick={() => setActiveTab("memory")} icon={FileText}>
-              项目记忆文档
-            </DocTabBtn>
-            <DocTabBtn active={activeTab === "items"} onClick={() => setActiveTab("items")} icon={Network}>
-              Mission · Idea
-            </DocTabBtn>
-            <DocTabBtn active={activeTab === "archive"} onClick={() => setActiveTab("archive")} icon={Archive}>
-              会话归档
-            </DocTabBtn>
-          </div>
+          <aside className="flex w-[34vw] min-w-[300px] max-w-[420px] shrink-0 flex-col border-l 2xl:w-[480px] 2xl:max-w-[480px]">
+            <div className="flex h-11 items-center gap-1 overflow-x-auto border-b px-2.5">
+              <DocTabBtn
+                active={activeTab === "files"}
+                onClick={() => setActiveTab("files")}
+                icon={FolderOpen}
+              >
+                文件
+              </DocTabBtn>
+              <DocTabBtn
+                active={activeTab === "memory"}
+                onClick={() => setActiveTab("memory")}
+                icon={FileText}
+              >
+                记忆
+              </DocTabBtn>
+              <DocTabBtn
+                active={activeTab === "items"}
+                onClick={() => setActiveTab("items")}
+                icon={Network}
+              >
+                Mission
+              </DocTabBtn>
+              <DocTabBtn
+                active={activeTab === "archive"}
+                onClick={() => setActiveTab("archive")}
+                icon={Archive}
+              >
+                归档
+              </DocTabBtn>
+            </div>
 
-          {activeTab === "memory" && (
-            <div className="flex flex-1 flex-col overflow-y-auto">
-              {!editingMemory ? (
-                <div className="flex-1 px-5 py-4">
-                  <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>
-                      {project.memory_doc_updated_at
-                        ? `最近更新 · ${new Date(project.memory_doc_updated_at).toLocaleString("zh-CN")}`
-                        : "尚未更新"}
-                    </span>
-                    <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={startEdit}>
-                      编辑
-                    </Button>
-                  </div>
-                  {project.memory_doc ? (
-                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-                      {project.memory_doc}
-                    </pre>
-                  ) : (
-                    <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
-                      还没有写入项目记忆。Council 散会、Mission 完成、用户钉住片段会自动追加到这里。
-                      也可以点上方「编辑」手动写一段项目目标作为开篇。
+            {activeTab === "memory" && (
+              <div className="flex flex-1 flex-col overflow-y-auto">
+                {!editingMemory ? (
+                  <div className="flex-1 px-5 py-4">
+                    <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>
+                        {project.memory_doc_updated_at
+                          ? `最近更新 · ${new Date(project.memory_doc_updated_at).toLocaleString("zh-CN")}`
+                          : "尚未更新"}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs"
+                        onClick={startEdit}
+                      >
+                        编辑
+                      </Button>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-1 flex-col p-3 gap-2">
-                  <textarea
-                    className="flex-1 w-full resize-none rounded-md border bg-background p-3 font-mono text-xs leading-relaxed"
-                    value={memoryDraft}
-                    onChange={(e) => setMemoryDraft(e.target.value)}
-                    placeholder="# 项目记忆\n\n## 项目目标\n...\n\n## 当前状态\n..."
-                  />
-                  <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => setEditingMemory(false)}>
-                      取消
-                    </Button>
-                    <Button size="sm" onClick={saveMemory} disabled={updateProject.isPending}>
-                      保存
-                    </Button>
+                    {project.memory_doc ? (
+                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+                        {project.memory_doc}
+                      </pre>
+                    ) : (
+                      <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
+                        还没有写入项目记忆。Council 散会、Mission
+                        完成、用户钉住片段会自动追加到这里。
+                        也可以点上方「编辑」手动写一段项目目标作为开篇。
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                ) : (
+                  <div className="flex flex-1 flex-col gap-2 p-3">
+                    <textarea
+                      className="flex-1 w-full resize-none rounded-md border bg-background p-3 font-mono text-xs leading-relaxed"
+                      value={memoryDraft}
+                      onChange={(e) => setMemoryDraft(e.target.value)}
+                      placeholder="# 项目记忆\n\n## 项目目标\n...\n\n## 当前状态\n..."
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingMemory(false)}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={saveMemory}
+                        disabled={updateProject.isPending}
+                      >
+                        保存
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {activeTab === "files" && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
-              <FolderOpen className="size-8 opacity-40" />
-              <p className="max-w-xs text-xs leading-relaxed">
-                团队工作文件浏览器还没接入。当前项目绑定的本地目录是：
-              </p>
-              <code className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground">
-                {project.local_dir || "（未设置）"}
-              </code>
-              <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground/80">
-                Phase B+ 计划接 chokidar IPC，让你在这里直接看 / 双击打开 / 钉文件给 Agent。在那之前，请先在 Finder 里打开这个目录。
-              </p>
-            </div>
-          )}
+            {activeTab === "files" && (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+                <FolderOpen className="size-8 opacity-40" />
+                <p className="max-w-xs text-xs leading-relaxed">
+                  团队工作文件浏览器还没接入。当前项目绑定的本地目录是：
+                </p>
+                <code className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground">
+                  {project.local_dir || "（未设置）"}
+                </code>
+                <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground/80">
+                  Phase B+ 计划接 chokidar IPC，让你在这里直接看 / 双击打开
+                  / 钉文件给 Agent。在那之前，请先在 Finder 里打开这个目录。
+                </p>
+              </div>
+            )}
 
-          {activeTab === "items" && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
-              <Network className="size-8 opacity-40" />
-              <p className="text-xs leading-relaxed max-w-xs">
-                Mission / Idea / Exploration 接入中
-                <br />
-                数据已迁到项目维度（mission/idea.project_id），列表渲染待 Phase B+ 实装
-              </p>
-            </div>
-          )}
+            {activeTab === "items" && (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
+                <Network className="size-8 opacity-40" />
+                <p className="text-xs leading-relaxed max-w-xs">
+                  Mission / Idea / Exploration 接入中
+                  <br />
+                  数据已迁到项目维度（mission/idea.project_id），列表渲染待 Phase
+                  B+ 实装
+                </p>
+              </div>
+            )}
 
-          {activeTab === "archive" && (
-            <ArchivedSessionsTab projectId={projectId} />
-          )}
-        </aside>
+            {activeTab === "archive" && (
+              <ArchivedSessionsTab projectId={projectId} />
+            )}
+          </aside>
         )}
       </div>
     </div>
@@ -464,23 +518,73 @@ function CompactionButton({ projectId }: { projectId: string }) {
   const [currentStatus, setCurrentStatus] = useState("");
   const [carryForward, setCarryForward] = useState("");
   const [pickedPins, setPickedPins] = useState<Set<string>>(new Set());
+  const [previewJobId, setPreviewJobId] = useState<string | null>(null);
+  const [hydratedJobId, setHydratedJobId] = useState<string | null>(null);
   const previewMut = usePreviewProjectCompaction();
+  const startJobMut = useStartProjectCompactionPreviewJob();
   const confirmMut = useConfirmProjectCompaction(wsId);
+  const previewJobQuery = useQuery({
+    ...projectCompactionPreviewJobOptions(wsId, projectId, previewJobId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "completed" || status === "failed" || status === "cancelled"
+        ? false
+        : 2000;
+    },
+  });
+
+  const hydratePreview = (data: CompactionPreview) => {
+    setPreview(data);
+    setKeyDecisions((data.key_decisions ?? []).join("\n"));
+    setDeliverables((data.deliverables ?? []).join("\n"));
+    setCurrentStatus(data.current_status ?? "");
+    setCarryForward((data.carry_forward ?? []).join("\n"));
+    setPickedPins(new Set((data.pinned_candidates ?? []).map((p) => p.message_id)));
+  };
+
+  useEffect(() => {
+    const job = previewJobQuery.data;
+    if (!job || !previewJobId || hydratedJobId === previewJobId) return;
+    if (job.status === "completed" && job.preview) {
+      hydratePreview(job.preview);
+      setHydratedJobId(previewJobId);
+      if (job.error) {
+        toast.warning("Captain 输出未通过校验，已使用规则预览", {
+          description: job.error,
+        });
+      }
+      return;
+    }
+    if (job.status === "failed" || job.status === "cancelled") {
+      hydratePreview(job.fallback_preview);
+      setHydratedJobId(previewJobId);
+      toast.error("Captain 智能压缩未完成，已切到规则预览", {
+        description: job.error,
+      });
+    }
+  }, [previewJobQuery.data, previewJobId, hydratedJobId]);
 
   const start = async () => {
+    setOpen(true);
+    setPreview(null);
+    setPreviewJobId(null);
+    setHydratedJobId(null);
     try {
-      const data = await previewMut.mutateAsync(projectId);
-      setPreview(data);
-      setKeyDecisions((data.key_decisions ?? []).join("\n"));
-      setDeliverables((data.deliverables ?? []).join("\n"));
-      setCurrentStatus(data.current_status ?? "");
-      setCarryForward((data.carry_forward ?? []).join("\n"));
-      setPickedPins(new Set());
-      setOpen(true);
+      const job = await startJobMut.mutateAsync(projectId);
+      setPreviewJobId(job.task_id);
     } catch (err) {
-      toast.error("无法预览压缩", {
-        description: err instanceof Error ? err.message : String(err),
-      });
+      try {
+        const data = await previewMut.mutateAsync(projectId);
+        hydratePreview(data);
+        toast.warning("Captain 智能压缩不可用，已使用规则预览", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      } catch (fallbackErr) {
+        setOpen(false);
+        toast.error("无法预览压缩", {
+          description: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+        });
+      }
     }
   };
 
@@ -517,7 +621,7 @@ function CompactionButton({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={start} disabled={previewMut.isPending}>
+      <Button size="sm" variant="outline" onClick={start} disabled={startJobMut.isPending || previewMut.isPending}>
         <Sparkles className="size-3" />
         整理 + 重新出发
       </Button>
@@ -527,7 +631,17 @@ function CompactionButton({ projectId }: { projectId: string }) {
             <DialogTitle>整理项目主聊（压缩预览）</DialogTitle>
           </DialogHeader>
           {!preview ? (
-            <Skeleton className="h-32 w-full" />
+            <div className="space-y-3">
+              <Skeleton className="h-32 w-full" />
+              <div className="text-xs text-muted-foreground">
+                Captain 正在梳理主聊上下文，完成后会自动生成可编辑预览。
+                {previewJobQuery.data?.fallback_preview && (
+                  <>
+                    {" "}当前规则兜底范围：{previewJobQuery.data.fallback_preview.message_count} 条消息。
+                  </>
+                )}
+              </div>
+            </div>
           ) : (
             <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
               <div className="text-[11px] text-muted-foreground">
@@ -751,7 +865,7 @@ function DocTabBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs",
+        "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs",
         active
           ? "bg-muted text-foreground font-medium"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

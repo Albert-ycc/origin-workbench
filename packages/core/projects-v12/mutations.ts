@@ -91,6 +91,12 @@ export function usePreviewProjectCompaction() {
   });
 }
 
+export function useStartProjectCompactionPreviewJob() {
+  return useMutation({
+    mutationFn: (projectId: string) => api.startProjectCompactionPreviewJob(projectId),
+  });
+}
+
 export function useConfirmProjectCompaction(wsId: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -242,6 +242,15 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		b.WriteString("- Run exactly one `multica issue create` invocation, then exit. (`issue create` is the underlying CLI verb that lands the task record; the user-facing concept is a Mission.)\n")
 		b.WriteString("- Do NOT call `multica issue get`, `multica issue status`, or `multica issue comment add` for this task — there is nothing to query, transition, or comment on yet. Origin writes the user's success/failure inbox notification automatically based on whether the create succeeded.\n")
 		b.WriteString("- If the CLI returns an error, exit with that error as the only output. Do not retry.\n\n")
+	} else if ctx.ProjectCompaction != nil {
+		// Project compaction preview task. The server hydrated the transcript
+		// into the per-turn prompt; this run should return data, not mutate
+		// Origin state directly.
+		b.WriteString("**This task was triggered by `/sync` on an Origin project main chat.** Your job is to summarize the provided transcript into a structured preview that the user will edit before any memory document is changed.\n\n")
+		b.WriteString("Hard guardrails:\n")
+		b.WriteString("- Do NOT call `multica issue get`, `multica issue comment add`, `multica issue status`, or any other CLI command.\n")
+		b.WriteString("- Do NOT edit files or write to the project memory yourself.\n")
+		b.WriteString("- Return exactly one JSON object matching the schema in the prompt. No markdown fence, no commentary.\n\n")
 	} else if ctx.AutopilotRunID != "" {
 		// Autopilot run_only task. Autopilots are Origin's scheduled-trigger
 		// mechanism (the user-facing surface still calls it Autopilot for
@@ -359,6 +368,8 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		b.WriteString("- Do NOT call `multica issue comment add` — the task record you just created has no reply context for this run.\n")
 		b.WriteString("- Print exactly one final line: `Created MUL-<n>: <title>` after a successful `multica issue create`.\n")
 		b.WriteString("- On CLI failure, exit with the CLI error as the only output. Origin translates that into a `quick_create_failed` inbox item carrying the original prompt for the user.\n")
+	case ctx.ProjectCompaction != nil:
+		b.WriteString("This is a project compaction preview task. Final stdout is parsed by Origin as JSON and shown to the user for confirmation. Return JSON only.\n")
 	default:
 		b.WriteString("⚠️ **Final results MUST be delivered via `multica issue comment add`.** The user does NOT see your terminal output, assistant chat text, or run logs — only replies posted on the task record. A run that finishes without a reply is invisible to the user, even if the work itself was correct.\n\n")
 		b.WriteString("Keep replies concise and natural — state the outcome, not the process.\n")

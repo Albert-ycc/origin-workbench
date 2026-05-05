@@ -89,6 +89,14 @@ export interface CompactionPreview {
   newest_at?: string;
 }
 
+export interface CompactionPreviewJob {
+  task_id: string;
+  status: "queued" | "dispatched" | "running" | "completed" | "failed" | "cancelled";
+  preview?: CompactionPreview;
+  fallback_preview: CompactionPreview;
+  error?: string;
+}
+
 export interface ConfirmCompactionRequest {
   key_decisions: string[];
   deliverables: string[];

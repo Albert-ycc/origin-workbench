@@ -15,9 +15,42 @@ single-user, desktop-first multi-agent workbench:
   Google OAuth login UI, and multi-user SaaS concepts are legacy or removed
   paths and must not be reintroduced as normal product flow.
 
-The CLI binary and Go module still use the `multica` name for compatibility
-with the existing daemon/runtime architecture. Do not rename the module or CLI
-as part of ordinary cleanup work.
+## Naming split — `Origin` vs `multica`
+
+Origin's branding split is structural, not transitional. **Don't try to
+"unify" the names** — you'll break daemon/runtime compatibility.
+
+- **`Origin` is the user-facing identity** — desktop app productName +
+  bundle id (`ai.origin.desktop`) + userData path
+  (`~/Library/Application Support/Origin`) + DMG / zip artifact names
+  (`origin-${version}-mac-${arch}.${ext}`) + dock icon + the README hero
+  + the in-app Lorelei mascot.
+- **`multica` stays for compatibility** — CLI binary name (`multica`),
+  Go module path (`github.com/multica-ai/multica/server`), npm package
+  namespace (`@multica/*`), daemon/runtime protocol fields (`provider`,
+  `client_platform`, etc.), Docker image tag (`origin-backend:dev` is
+  the new bake tag, but `docker compose -p multica` is required for
+  the existing volume mount).
+
+Known cosmetic mismatches (don't touch unless explicitly refactoring):
+
+- `packages/ui/components/common/multica-icon.tsx` exports `MulticaIcon`
+  but renders the Origin Lorelei mascot inline. The export name has 5+
+  import sites; the visual identity is the substance.
+- `apps/desktop/build/origin-logo.svg` is the source of truth for the
+  mascot. Re-render PNG/.icns from there if the mascot ever changes.
+
+## Versioning
+
+Tags must be **strict semver `X.Y.Z`** — `electron-updater` validates
+the app version on main process startup, and a non-semver tag (e.g.
+`v1.01`, `v1.0a`) crashes the app with `App version is not a valid
+semver version`. Bump as `v1.0.2`, not `v1.02`.
+
+`apps/desktop/package.json` must keep `"productName": "Origin"`.
+Without it, chromium subprocess fork uses the npm `name`
+(`@multica/desktop`) for default userData, scattering data into
+`~/Library/Application Support/@multica` instead of `Origin`.
 
 ## Architecture
 
