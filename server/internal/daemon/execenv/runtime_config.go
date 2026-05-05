@@ -184,6 +184,29 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		if ctx.ProjectTitle != "" {
 			fmt.Fprintf(&b, "This issue belongs to **%s**.\n\n", ctx.ProjectTitle)
 		}
+		// PRD §17.5 — project memory doc is the standing onboarding context
+		// for this project. Inject before resources so the agent reads "what
+		// the project is about" first, then "what files / repos belong to it".
+		if memory := strings.TrimSpace(ctx.ProjectMemoryDoc); memory != "" {
+			b.WriteString("### Project Memory\n\n")
+			b.WriteString("Standing context for this project. Read this before doing project work — it captures decisions, deliverables, and current status that don't show up in any single chat message.\n\n")
+			b.WriteString("```markdown\n")
+			b.WriteString(memory)
+			if !strings.HasSuffix(memory, "\n") {
+				b.WriteString("\n")
+			}
+			b.WriteString("```\n\n")
+		}
+		if perAgent := strings.TrimSpace(ctx.AgentProjectMemory); perAgent != "" {
+			b.WriteString("### Your Per-Project Notes\n\n")
+			b.WriteString("Your own私人 sidecar for this project — observations and reminders specific to your role. Updated automatically across compactions; you can also write/edit via the project workspace UI.\n\n")
+			b.WriteString("```markdown\n")
+			b.WriteString(perAgent)
+			if !strings.HasSuffix(perAgent, "\n") {
+				b.WriteString("\n")
+			}
+			b.WriteString("```\n\n")
+		}
 		if len(ctx.ProjectResources) > 0 {
 			b.WriteString("Project resources (also written to `.multica/project/resources.json`):\n\n")
 			for _, r := range ctx.ProjectResources {
@@ -191,7 +214,7 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 			}
 			b.WriteString("\nResources are pointers — open them only when relevant to the task. ")
 			b.WriteString("For `github_repo` resources, use `multica repo checkout <url>` to fetch the code.\n\n")
-		} else {
+		} else if ctx.ProjectMemoryDoc == "" && ctx.AgentProjectMemory == "" {
 			b.WriteString("This project has no resources attached yet.\n\n")
 		}
 	}

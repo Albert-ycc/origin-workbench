@@ -481,6 +481,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/main-chat", h.GetProjectMainChat)
 					r.Get("/main-chat/messages", h.ListProjectMainChatMessages)
 					r.Post("/main-chat/messages", h.PostProjectMainChatMessage)
+					r.Get("/history", h.GetProjectHistory)
 				})
 			})
 			r.Get("/api/v12/teams/{teamId}/projects", h.ListProjectsByTeamV12)

@@ -1065,6 +1065,26 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+			// PRD §17.5 project memory injection (v1.2). When the chat
+			// session is bound to a project workspace, hydrate
+			// ProjectMemoryDoc + AgentProjectMemory so prompt builders
+			// can prepend them as context. Both reads are PK lookups —
+			// negligible cost on the chat hot path.
+			if cs.ProjectID.Valid {
+				resp.ProjectID = uuidToString(cs.ProjectID)
+				if proj, err := h.Queries.GetProjectV12(r.Context(), cs.ProjectID); err == nil {
+					resp.ProjectTitle = proj.Title
+					resp.ProjectMemoryDoc = proj.MemoryDoc
+				}
+				if task.AgentID.Valid {
+					if mem, err := h.Queries.GetAgentProjectMemory(r.Context(), db.GetAgentProjectMemoryParams{
+						AgentID:   task.AgentID,
+						ProjectID: cs.ProjectID,
+					}); err == nil {
+						resp.AgentProjectMemory = mem.Content
+					}
+				}
+			}
 			if len(task.Context) > 0 {
 				var delegation service.TeamDelegationContext
 				if json.Unmarshal(task.Context, &delegation) == nil && delegation.Type == service.TeamDelegationContextType {

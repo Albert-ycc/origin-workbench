@@ -797,3 +797,189 @@ func (h *Handler) captainForSession(ctx context.Context, session db.ChatSession)
 	}
 	return team.CaptainAgentID
 }
+
+// GetProjectHistory exposes the project's chat history for agent
+// onboarding (PRD §17.5.2). Filterable by --since RFC3339 + --limit so
+// agents can pull just the slice they need without loading every message
+// since project creation.
+func (h *Handler) GetProjectHistory(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if !p.MainChatSessionID.Valid {
+		writeJSON(w, http.StatusOK, ListTeamMessagesResponse{Messages: []TeamMessageResponse{}, NextCursor: nil})
+		return
+	}
+	limit := int32(100)
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		if n > 500 {
+			n = 500
+		}
+		limit = int32(n)
+	}
+	var since pgtype.Timestamptz
+	if raw := r.URL.Query().Get("since"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid since (expect RFC3339)")
+			return
+		}
+		since = pgtype.Timestamptz{Time: t, Valid: true}
+	}
+	rows, err := h.Queries.ListChatMessagesBySessionPage(r.Context(), db.ListChatMessagesBySessionPageParams{
+		ChatSessionID:   p.MainChatSessionID,
+		BeforeCreatedAt: pgtype.Timestamptz{},
+		BeforeID:        pgtype.UUID{},
+		LimitCount:      limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list project history")
+		return
+	}
+	// filter by since (server-side; cheap given limit cap)
+	teamIDStr := ""
+	if p.TeamID.Valid {
+		teamIDStr = uuidToString(p.TeamID)
+	}
+	out := make([]TeamMessageResponse, 0, len(rows))
+	for _, m := range rows {
+		if since.Valid && m.CreatedAt.Time.Before(since.Time) {
+			continue
+		}
+		out = append(out, teamMessageToResponse(m, teamIDStr))
+	}
+	// chronological order (ListChatMessagesBySessionPage returns DESC)
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	writeJSON(w, http.StatusOK, ListTeamMessagesResponse{Messages: out, NextCursor: nil})
+}
+
+// =====================
+// Onboarding hooks (PRD §17.5)
+// =====================
+//
+// When an agent joins (or leaves) a team, post a system "带入消息" to every
+// project main chat under that team. Failures are logged but never block the
+// underlying team_member write — onboarding is a courtesy, not a contract.
+
+// PostProjectsBroadcastForTeamMemberChange writes a system chat_message into
+// every active project main chat under the given team. Used by team member
+// add/remove handlers.
+func (h *Handler) PostProjectsBroadcastForTeamMemberChange(
+	ctx context.Context,
+	workspaceID string,
+	team db.Team,
+	agent db.Agent,
+	captainName string,
+	verb string, // "joined" / "left"
+) {
+	projects, err := h.Queries.ListProjectsByTeamV12(ctx, team.ID)
+	if err != nil {
+		return
+	}
+	for _, p := range projects {
+		if p.Status == "archived" {
+			continue
+		}
+		// Resolve / create the main chat session anchor before writing.
+		session, err := h.Queries.GetOrCreateTeamChatSession(ctx, db.GetOrCreateTeamChatSessionParams{
+			TeamID:      team.ID,
+			WorkspaceID: team.WorkspaceID,
+			CreatorID:   pgtype.UUID{},
+			Title:       p.Title,
+			ProjectID:   pgtype.UUID{Bytes: p.ID.Bytes, Valid: true},
+		})
+		if err != nil {
+			continue
+		}
+		var content string
+		switch verb {
+		case "joined":
+			content = fmt.Sprintf("【成员变化】%s 加入项目，由 %s 带入。", agent.Name, captainName)
+		case "left":
+			content = fmt.Sprintf("【成员变化】%s 退出项目。", agent.Name)
+		default:
+			continue
+		}
+		msg, err := h.Queries.CreateTeamChatMessage(ctx, db.CreateTeamChatMessageParams{
+			ChatSessionID: session.ID,
+			Role:          "assistant",
+			Content:       content,
+		})
+		if err != nil {
+			continue
+		}
+		// Append to memory_doc 「团队成员变化」 section so onboarding context
+		// is durable across compactions (PRD §17.4.2).
+		section := "## 团队成员变化"
+		stamp := time.Now().Format("2006-01-02")
+		entry := fmt.Sprintf("- %s · %s", stamp, content)
+		newDoc := appendToMemorySection(p.MemoryDoc, section, entry)
+		_, _ = h.Queries.UpdateProjectV12(ctx, db.UpdateProjectV12Params{
+			ID:                 p.ID,
+			MemoryDoc:          pgtype.Text{String: newDoc, Valid: true},
+			MemoryDocUpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		})
+		h.publish(protocol.EventTeamMessageCreated, workspaceID, "system", "", map[string]any{
+			"team_id":    uuidToString(team.ID),
+			"project_id": uuidToString(p.ID),
+			"message":    teamMessageToResponse(msg, uuidToString(team.ID)),
+		})
+	}
+}
+
+// appendToMemorySection inserts entry under the markdown section header. If
+// the header already exists, the entry is appended at the *top* of that
+// section (newest first); otherwise we append a new section to the doc.
+// Used by onboarding hooks, council adjourn (Phase E), pin (Phase F), and
+// the compaction worker (Phase G).
+func appendToMemorySection(doc string, header string, entry string) string {
+	header = strings.TrimSpace(header)
+	entry = strings.TrimRight(entry, "\n")
+	lines := strings.Split(doc, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == header {
+			// Find the next blank line or next section header
+			insertAt := i + 1
+			for insertAt < len(lines) {
+				next := strings.TrimSpace(lines[insertAt])
+				if strings.HasPrefix(next, "## ") {
+					break
+				}
+				insertAt++
+			}
+			out := append([]string{}, lines[:i+1]...)
+			out = append(out, entry)
+			out = append(out, lines[i+1:insertAt]...)
+			out = append(out, lines[insertAt:]...)
+			return strings.Join(out, "\n")
+		}
+	}
+	// Section not found → append a new one
+	if doc != "" && !strings.HasSuffix(doc, "\n") {
+		doc += "\n"
+	}
+	if doc != "" {
+		doc += "\n"
+	}
+	return doc + header + "\n" + entry + "\n"
+}

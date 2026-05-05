@@ -161,9 +161,13 @@ type AgentTaskResponse struct {
 	ParentTaskID            *string                        `json:"parent_task_id,omitempty"`
 	Agent                   *TaskAgentData                 `json:"agent,omitempty"`
 	Repos                   []RepoData                     `json:"repos,omitempty"`
-	ProjectID               string                         `json:"project_id,omitempty"`        // issue's project, when present
+	ProjectID               string                         `json:"project_id,omitempty"`        // issue's project (v1.0) or chat_session's v1.2 project workspace, when present
 	ProjectTitle            string                         `json:"project_title,omitempty"`     // for surfacing in agent context
 	ProjectResources        []ProjectResourceData          `json:"project_resources,omitempty"` // resources attached to the project
+	// Origin §17.5 — v1.2 project memory injection. Both empty when the
+	// task is not bound to a v1.2 project workspace.
+	ProjectMemoryDoc        string                         `json:"project_memory_doc,omitempty"`
+	AgentProjectMemory      string                         `json:"agent_project_memory,omitempty"`
 	CreatedAt               string                         `json:"created_at"`
 	PriorSessionID          string                         `json:"prior_session_id,omitempty"`          // session ID from a previous task on same issue
 	PriorWorkDir            string                         `json:"prior_work_dir,omitempty"`            // work_dir from a previous task on same issue

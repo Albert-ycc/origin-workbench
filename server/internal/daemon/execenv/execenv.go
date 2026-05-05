@@ -49,8 +49,10 @@ type TaskContextForEnv struct {
 	AgentInstructions       string // agent identity/persona instructions, injected into CLAUDE.md
 	AgentSkills             []SkillContextForEnv
 	Repos                   []RepoContextForEnv     // workspace repos available for checkout
-	ProjectID               string                  // issue's project, when present
+	ProjectID               string                  // issue's project (v1.0) or chat_session's v1.2 project workspace, when present
 	ProjectTitle            string                  // human-readable project title
+	ProjectMemoryDoc        string                  // PRD §17.5 — project memory doc for context injection
+	AgentProjectMemory      string                  // PRD §17.5 — this agent's per-project视角记忆
 	ProjectResources        []ProjectResourceForEnv // resources attached to the project
 	ChatSessionID           string                  // non-empty for chat tasks
 	AutopilotRunID          string              // non-empty for autopilot run_only tasks

@@ -47,9 +47,15 @@ type Task struct {
 	WorkspaceID             string                `json:"workspace_id"`
 	Agent                   *AgentData            `json:"agent,omitempty"`
 	Repos                   []RepoData            `json:"repos,omitempty"`
-	ProjectID               string                `json:"project_id,omitempty"`                // issue's project, when present
+	ProjectID               string                `json:"project_id,omitempty"`                // issue's project (v1.0) or chat_session's v1.2 project workspace, when present
 	ProjectTitle            string                `json:"project_title,omitempty"`             // human-readable project title for context injection
 	ProjectResources        []ProjectResourceData `json:"project_resources,omitempty"`         // project-scoped resources to expose to the agent
+	// Origin §17.5 — project memory injection. ProjectMemoryDoc is the
+	// shared "what this project is about" doc; AgentProjectMemory is this
+	// agent's per-project视角记忆 sidecar. Both empty when a chat/issue
+	// is not bound to a v1.2 project workspace.
+	ProjectMemoryDoc        string                `json:"project_memory_doc,omitempty"`
+	AgentProjectMemory      string                `json:"agent_project_memory,omitempty"`
 	PriorSessionID          string                `json:"prior_session_id,omitempty"`          // Claude session ID from a previous task on this issue
 	PriorWorkDir            string                `json:"prior_work_dir,omitempty"`            // work_dir from a previous task on this issue
 	TriggerCommentID        string                `json:"trigger_comment_id,omitempty"`        // comment that triggered this task

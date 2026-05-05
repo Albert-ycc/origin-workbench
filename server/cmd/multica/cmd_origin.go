@@ -424,6 +424,47 @@ func runMailboxGet(cmd *cobra.Command, args []string) error {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Project history (PRD §17.5.2 — onboarding surface)
+//
+// `multica project history <project_id>` extends the legacy v1.0 project
+// CLI (cmd_project.go) with a v1.2-shaped read endpoint. The legacy
+// list/get/create verbs still work for issue-classification projects;
+// `history` is the v1.2 project main chat reader.
+// ────────────────────────────────────────────────────────────────────────
+
+var projectHistoryCmd = &cobra.Command{
+	Use:   "history <project_id>",
+	Short: "Fetch the v1.2 project main chat history (chronological)",
+	Args:  exactArgs(1),
+	RunE:  runProjectHistory,
+}
+
+func runProjectHistory(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	params := url.Values{}
+	if v, _ := cmd.Flags().GetString("since"); v != "" {
+		params.Set("since", v)
+	}
+	if v, _ := cmd.Flags().GetInt("limit"); v > 0 {
+		params.Set("limit", fmt.Sprintf("%d", v))
+	}
+	path := "/api/v12/projects/" + args[0] + "/history"
+	if encoded := params.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var result map[string]any
+	if err := client.GetJSON(ctx, path, &result); err != nil {
+		return fmt.Errorf("get project history: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Wiring
 // ────────────────────────────────────────────────────────────────────────
 
@@ -453,6 +494,10 @@ func init() {
 	mailboxListCmd.Flags().String("agent", "", "Scope to one Agent's mailbox")
 	mailboxListCmd.Flags().Int("limit", 0, "Max number of items to return (default 20)")
 
+	// Project flags
+	projectHistoryCmd.Flags().String("since", "", "Only return messages after this RFC3339 timestamp")
+	projectHistoryCmd.Flags().Int("limit", 0, "Max number of messages to return (default 100, max 500)")
+
 	// Subcommand wiring
 	missionCmd.AddCommand(missionListCmd, missionGetCmd)
 	ideaCmd.AddCommand(ideaListCmd, ideaGetCmd)
@@ -460,4 +505,7 @@ func init() {
 	explorationCmd.AddCommand(explorationListCmd, explorationGetCmd)
 	toolBindingCmd.AddCommand(toolBindingListCmd, toolBindingGetCmd)
 	mailboxCmd.AddCommand(mailboxListCmd, mailboxGetCmd)
+	// v1.2 onboarding history surface attaches to the existing project verb
+	// declared in cmd_project.go (legacy v1.0 issue-classification CLI).
+	projectCmd.AddCommand(projectHistoryCmd)
 }

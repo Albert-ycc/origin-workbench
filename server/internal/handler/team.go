@@ -588,6 +588,17 @@ func (h *Handler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 		"agent_id": req.AgentID,
 		"team":     resp,
 	})
+
+	// PRD §17.5 onboarding hook — let the project main chat(s) know.
+	// Best-effort: failures are logged inside the helper, never bubble up.
+	if joined, err := h.Queries.GetAgent(r.Context(), agentUUID); err == nil {
+		captainName := ""
+		if cap, err := h.Queries.GetAgent(r.Context(), team.CaptainAgentID); err == nil {
+			captainName = cap.Name
+		}
+		h.PostProjectsBroadcastForTeamMemberChange(r.Context(), workspaceID, team, joined, captainName, "joined")
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -613,12 +624,24 @@ func (h *Handler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve the agent first so we can fan out the onboarding broadcast
+	// after removal succeeds. Looking it up after RemoveTeamMember risks
+	// the agent being archived/deleted in flight.
+	left, _ := h.Queries.GetAgent(r.Context(), memberUUID)
+
 	if err := h.Queries.RemoveTeamMember(r.Context(), db.RemoveTeamMemberParams{
 		TeamID:  team.ID,
 		AgentID: memberUUID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to remove member")
 		return
+	}
+	if left.ID.Valid {
+		captainName := ""
+		if cap, err := h.Queries.GetAgent(r.Context(), team.CaptainAgentID); err == nil {
+			captainName = cap.Name
+		}
+		h.PostProjectsBroadcastForTeamMemberChange(r.Context(), workspaceID, team, left, captainName, "left")
 	}
 
 	resp := teamToResponse(team, h.listTeamMembersOrEmpty(r, team.ID))
