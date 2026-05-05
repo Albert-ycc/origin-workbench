@@ -770,12 +770,26 @@ func (h *Handler) LocalSignIn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := qtx.CreateMember(ctx, db.CreateMemberParams{
-		WorkspaceID: ws.ID,
+	// Idempotent membership: pre-check before INSERT instead of catching the
+	// unique-violation, because PG marks the entire transaction as aborted on
+	// constraint violation — the next query (MarkUserOnboarded) would then
+	// fail with `current transaction is aborted`. Pre-check keeps the tx
+	// healthy for repeat sign-ins by an existing user.
+	_, memberErr := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
 		UserID:      user.ID,
-		Role:        "owner",
-	}); err != nil && !isUniqueViolation(err) {
-		writeError(w, http.StatusInternalServerError, "failed to join local workspace")
+		WorkspaceID: ws.ID,
+	})
+	if isNotFound(memberErr) {
+		if _, err := qtx.CreateMember(ctx, db.CreateMemberParams{
+			WorkspaceID: ws.ID,
+			UserID:      user.ID,
+			Role:        "owner",
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to join local workspace")
+			return
+		}
+	} else if memberErr != nil {
+		writeError(w, http.StatusInternalServerError, "failed to check local workspace membership")
 		return
 	}
 
