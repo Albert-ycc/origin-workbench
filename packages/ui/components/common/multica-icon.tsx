@@ -26,11 +26,43 @@ const borderedSizes = {
   lg: { wrapper: "p-2.5", icon: "size-5" },
 };
 
-/**
- * Pure CSS 8-pointed asterisk icon matching the Multica logo.
- * Uses currentColor so it adapts to light/dark themes automatically.
- * Clip-path polygon traced from the original SVG path coordinates.
- */
+// Origin Workbench logo — Cartesian origin (0,0): a filled center
+// point with a horizontal + vertical axis crossing through it. Adopts
+// currentColor so light/dark themes flow through. (Component name
+// stays `MulticaIcon` because rename has 5+ import sites; the visual
+// identity is what matters here.)
+function OriginGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 96 96"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn("block size-full", className)}
+      aria-hidden="true"
+    >
+      <line
+        x1="2"
+        y1="48"
+        x2="94"
+        y2="48"
+        stroke="currentColor"
+        strokeWidth="6"
+        strokeLinecap="square"
+      />
+      <line
+        x1="48"
+        y1="2"
+        x2="48"
+        y2="94"
+        stroke="currentColor"
+        strokeWidth="6"
+        strokeLinecap="square"
+      />
+      <circle cx="48" cy="48" r="14" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function MulticaIcon({
   className,
   animate = false,
@@ -47,15 +79,6 @@ export function MulticaIcon({
     return () => clearTimeout(timer);
   }, [animate]);
 
-  const clipPath = `polygon(
-    45% 62.1%, 45% 100%, 55% 100%, 55% 62.1%,
-    81.8% 88.9%, 88.9% 81.8%, 62.1% 55%, 100% 55%,
-    100% 45%, 62.1% 45%, 88.9% 18.2%, 81.8% 11.1%,
-    55% 37.9%, 55% 0%, 45% 0%, 45% 37.9%,
-    18.2% 11.1%, 11.1% 18.2%, 37.9% 45%, 0% 45%,
-    0% 55%, 37.9% 55%, 11.1% 81.8%, 18.2% 88.9%
-  )`;
-
   if (bordered) {
     const sizeConfig = borderedSizes[size];
     return (
@@ -63,7 +86,7 @@ export function MulticaIcon({
         className={cn(
           "inline-flex items-center justify-center border border-border rounded-md",
           sizeConfig.wrapper,
-          className
+          className,
         )}
         aria-hidden="true"
         {...props}
@@ -73,13 +96,10 @@ export function MulticaIcon({
             "block",
             sizeConfig.icon,
             !entranceDone && "animate-entrance-spin",
-            entranceDone && !noSpin && "hover:animate-spin"
+            entranceDone && !noSpin && "hover:animate-spin",
           )}
         >
-          <span
-            className="block size-full bg-current"
-            style={{ clipPath }}
-          />
+          <OriginGlyph />
         </span>
       </span>
     );
@@ -91,15 +111,12 @@ export function MulticaIcon({
         "inline-block size-[1em]",
         !entranceDone && "animate-entrance-spin",
         entranceDone && !noSpin && "hover:animate-spin",
-        className
+        className,
       )}
       aria-hidden="true"
       {...props}
     >
-      <span
-        className="block size-full bg-current"
-        style={{ clipPath }}
-      />
+      <OriginGlyph />
     </span>
   );
 }
