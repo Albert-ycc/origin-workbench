@@ -65,6 +65,24 @@ SELECT * FROM chat_message
 WHERE chat_session_id = $1
 ORDER BY created_at ASC;
 
+-- name: ListChatMessagesBySessionPage :many
+-- Cursor-paginated per-session message list (project main chat reuses this).
+-- Mirrors ListTeamChatMessagesPage but keys on chat_session_id directly so a
+-- team that hosts multiple project main chats doesn't merge them.
+SELECT cm.*
+FROM chat_message cm
+WHERE cm.chat_session_id = sqlc.arg('chat_session_id')
+  AND (
+    sqlc.narg('before_created_at')::timestamptz IS NULL
+    OR cm.created_at < sqlc.narg('before_created_at')::timestamptz
+    OR (
+      cm.created_at = sqlc.narg('before_created_at')::timestamptz
+      AND cm.id < sqlc.narg('before_id')::uuid
+    )
+  )
+ORDER BY cm.created_at DESC, cm.id DESC
+LIMIT sqlc.arg('limit_count');
+
 -- name: GetLatestUserChatMessage :one
 -- Used by mailbox dispatch: when an agent in mailbox mode receives a chat
 -- task, we need the user's prompt to display in workbench block 6 even

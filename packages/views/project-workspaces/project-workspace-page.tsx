@@ -1,16 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Bot, FileText, FolderOpen, MessageSquare, Network, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, FileText, FolderOpen, Network, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { projectV12DetailOptions } from "@multica/core/projects-v12";
-import { useUpdateProjectV12 } from "@multica/core/projects-v12";
+import { useAuthStore } from "@multica/core/auth";
+import { api } from "@multica/core/api";
+import {
+  projectV12DetailOptions,
+  projectMainChatOptions,
+  projectMainChatMessagesOptions,
+  projectV12Keys,
+  useUpdateProjectV12,
+  usePostProjectMainChatMessage,
+} from "@multica/core/projects-v12";
+import { teamDetailOptions } from "@multica/core/teams";
+import { agentListOptions } from "@multica/core/workspace/queries";
+import type { Agent } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
+import { ChatPane } from "../teams/team-detail-page";
 
 // Project workspace page (PRD §17.3). Two-column layout:
 //   left  — project main chat (one long timeline; reuses chat-window contract)
@@ -25,7 +38,40 @@ type DocTab = "files" | "memory" | "items";
 
 export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
   const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
   const { data: project, isLoading } = useQuery(projectV12DetailOptions(wsId, projectId));
+  const { data: mainChat } = useQuery({
+    ...projectMainChatOptions(wsId, projectId),
+    enabled: !!project,
+  });
+  const { data: messagePage } = useQuery({
+    ...projectMainChatMessagesOptions(wsId, projectId),
+    enabled: !!mainChat,
+  });
+  const messages = messagePage?.messages ?? [];
+  const teamId = project?.team_id ?? null;
+  const { data: team } = useQuery({
+    ...teamDetailOptions(wsId, teamId ?? ""),
+    enabled: !!teamId,
+  });
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const agentById = useMemo(
+    () => new Map(agents.map((a) => [a.id, a])),
+    [agents],
+  );
+  const captain = team ? agentById.get(team.captain_agent_id) : undefined;
+  const memberAgents = useMemo(() => {
+    if (!team) return [] as Agent[];
+    return team.members
+      .filter((m) => m.role !== "captain")
+      .map((m) => agentById.get(m.agent_id))
+      .filter((a): a is Agent => !!a);
+  }, [team, agentById]);
+
+  const postMessage = usePostProjectMainChatMessage(wsId);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
   const updateProject = useUpdateProjectV12(wsId);
   const [activeTab, setActiveTab] = useState<DocTab>("memory");
   const [editingMemory, setEditingMemory] = useState(false);
@@ -103,25 +149,65 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
       </PageHeader>
 
       <div className="flex flex-1 min-h-0">
-        {/* Left: project main chat */}
+        {/* Left: project main chat (PRD §17.3) */}
         <section className="flex flex-1 min-w-0 flex-col border-r">
-          <div className="flex items-center gap-2 border-b px-4 py-2.5 text-xs text-muted-foreground">
-            <MessageSquare className="size-3.5" />
-            <span>项目主聊（团队群聊）</span>
-            <span className="ml-auto text-[10px] font-mono">v1.2 stub · 接 chat_session WHERE project_id</span>
-          </div>
-          <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-sm text-muted-foreground">
-            <div className="rounded-2xl border border-dashed bg-muted/20 p-6 max-w-md">
-              <p className="font-medium text-foreground mb-1">项目主聊接入中</p>
-              <p className="text-xs leading-relaxed">
-                项目级 chat_session（<code className="font-mono">project_id={project.id.slice(0, 8)}</code>）作为单一长时间线，
-                团队成员的所有对话、Council 散会回写、Mission 创建事件、@提到都会汇集到这里。
-                <br /><br />
-                目前 v1.2 数据底座已经就位，主聊渲染等下一波 (Phase B 续) 接进来。
-                短期可以从 sidebar 进 Direct Chat 或会议室继续工作，待项目级 chat 跑通后会自动迁移。
-              </p>
+          {mainChat && team ? (
+            <ChatPane
+              team={{ id: team.id, name: project.title }}
+              messages={messages}
+              captain={captain}
+              memberAgents={memberAgents}
+              agentById={agentById}
+              currentUserId={currentUser?.id ?? null}
+              isSending={postMessage.isPending}
+              hasOlder={!!messagePage?.next_cursor}
+              loadingOlder={loadingOlder}
+              onLoadOlder={async () => {
+                if (!messagePage?.next_cursor) return;
+                setLoadingOlder(true);
+                try {
+                  const older = await api.listProjectMainChatMessages(projectId, {
+                    before: messagePage.next_cursor,
+                  });
+                  qc.setQueryData(
+                    projectV12Keys.mainChatMessages(wsId, projectId),
+                    {
+                      messages: [...older.messages, ...messages],
+                      next_cursor: older.next_cursor ?? null,
+                    },
+                  );
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : "加载更早消息失败",
+                  );
+                } finally {
+                  setLoadingOlder(false);
+                }
+              }}
+              onSend={(content) => {
+                const trimmed = content.trim();
+                if (!trimmed) return;
+                if (!currentUser) {
+                  toast.error("请先登录");
+                  return;
+                }
+                postMessage.mutate(
+                  { projectId, content: trimmed },
+                  {
+                    onError: (err) => {
+                      toast.error(
+                        err instanceof Error ? err.message : "发送失败",
+                      );
+                    },
+                  },
+                );
+              }}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-sm text-muted-foreground">
+              <Skeleton className="h-32 w-2/3" />
             </div>
-          </div>
+          )}
         </section>
 
         {/* Right: doc column */}

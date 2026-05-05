@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type ProjectV12Response struct {
 	ID                  string  `json:"id"`
 	WorkspaceID         string  `json:"workspace_id"`
 	TeamID              *string `json:"team_id"`
+	MainChatSessionID   *string `json:"main_chat_session_id"`
 	Title               string  `json:"title"`
 	Description         string  `json:"description"`
 	LocalDir            string  `json:"local_dir"`
@@ -69,6 +71,7 @@ func projectV12ToResponse(p db.Project) ProjectV12Response {
 		ID:                 uuidToString(p.ID),
 		WorkspaceID:        uuidToString(p.WorkspaceID),
 		TeamID:             uuidToPtr(p.TeamID),
+		MainChatSessionID:  uuidToPtr(p.MainChatSessionID),
 		Title:              p.Title,
 		Description:        desc,
 		LocalDir:           p.LocalDir,
@@ -203,9 +206,54 @@ func (h *Handler) CreateProjectV12(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create project: "+err.Error())
 		return
 	}
+	// Bind the project's main chat session so the workspace page can render it
+	// without a second user action. find-or-create on (team_id, project_id) is
+	// idempotent — calling it again is a no-op.
+	if _, err := h.ensureProjectMainChat(r.Context(), p, userUUID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to bind project main chat: "+err.Error())
+		return
+	}
+	// Reload to pick up main_chat_session_id.
+	p2, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID:          p.ID,
+		WorkspaceID: wsUUID,
+	})
+	if err == nil {
+		p = p2
+	}
 	resp := projectV12ToResponse(p)
 	h.publish(protocol.EventProjectCreated, uuidToString(p.WorkspaceID), "system", "", map[string]any{"project": resp})
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// ensureProjectMainChat returns the (team, project) chat_session, creating it
+// on first call and writing the id back to project.main_chat_session_id.
+// Used by CreateProjectV12 and the GetProjectMainChat endpoint (so the link
+// self-heals if a project predates this code).
+func (h *Handler) ensureProjectMainChat(ctx context.Context, p db.Project, userUUID pgtype.UUID) (db.ChatSession, error) {
+	if !p.TeamID.Valid {
+		return db.ChatSession{}, fmt.Errorf("project has no team bound")
+	}
+	session, err := h.Queries.GetOrCreateTeamChatSession(ctx, db.GetOrCreateTeamChatSessionParams{
+		TeamID:      p.TeamID,
+		WorkspaceID: p.WorkspaceID,
+		CreatorID:   userUUID,
+		Title:       p.Title,
+		ProjectID:   pgtype.UUID{Bytes: p.ID.Bytes, Valid: true},
+	})
+	if err != nil {
+		return db.ChatSession{}, fmt.Errorf("get-or-create main chat: %w", err)
+	}
+	// Bind anchor on first ensure; subsequent calls keep the same id.
+	if !p.MainChatSessionID.Valid {
+		if err := h.Queries.SetProjectMainChatSessionV12(ctx, db.SetProjectMainChatSessionV12Params{
+			ID:                 p.ID,
+			MainChatSessionID:  pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
+		}); err != nil {
+			return session, fmt.Errorf("bind main chat anchor: %w", err)
+		}
+	}
+	return session, nil
 }
 
 // findOrCreateTeamForAgents 给定 (workspace, captain, member set)，找 agent
@@ -510,4 +558,242 @@ func (h *Handler) ListAgentProjectMemoriesByProject(w http.ResponseWriter, r *ht
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"memories": resp, "total": len(resp)})
+}
+
+// =====================
+// Project main chat (PRD §17.3 — left-column chat surface)
+// =====================
+//
+// The project's main chat is a chat_session with both team_id and project_id
+// set. We reuse the team chat broadcast/dispatch pipeline so the underlying
+// daemon doesn't have to know about projects: the captain sees a normal team
+// chat task, just like in v1.0/v1.1 team rooms. Messages flow:
+//
+//   client → POST /api/v12/projects/:id/main-chat/messages
+//          → CreateTeamChatMessage
+//          → publishTeamMessage(team:message_created, payload includes chat_session_id)
+//          → TaskService.EnqueueChatTaskForAgent(captain)
+//          → daemon completes → service writes assistant msg → publishes again
+//   client receives team:message_created via WS, invalidates by chat_session_id
+
+type ProjectMainChatResponse struct {
+	ChatSessionID string  `json:"chat_session_id"`
+	ProjectID     string  `json:"project_id"`
+	TeamID        string  `json:"team_id"`
+	Title         string  `json:"title"`
+	Status        string  `json:"status"`
+}
+
+func (h *Handler) GetProjectMainChat(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
+	if !ok {
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	session, err := h.ensureProjectMainChat(r.Context(), p, userUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ProjectMainChatResponse{
+		ChatSessionID: uuidToString(session.ID),
+		ProjectID:     uuidToString(pid),
+		TeamID:        uuidToString(session.TeamID),
+		Title:         session.Title,
+		Status:        session.Status,
+	})
+}
+
+func (h *Handler) ListProjectMainChatMessages(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
+	if !ok {
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	session, err := h.ensureProjectMainChat(r.Context(), p, userUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	limit := int32(50)
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		if n > 100 {
+			n = 100
+		}
+		limit = int32(n)
+	}
+	var before pgtype.Timestamptz
+	var beforeID pgtype.UUID
+	if raw := r.URL.Query().Get("before"); raw != "" {
+		var ok bool
+		before, beforeID, ok = decodeTeamMessageCursor(raw)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid before")
+			return
+		}
+	}
+	rows, err := h.Queries.ListChatMessagesBySessionPage(r.Context(), db.ListChatMessagesBySessionPageParams{
+		ChatSessionID:   session.ID,
+		BeforeCreatedAt: before,
+		BeforeID:        beforeID,
+		LimitCount:      limit + 1,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list project main chat messages")
+		return
+	}
+	hasMore := len(rows) > int(limit)
+	if hasMore {
+		rows = rows[:limit]
+	}
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
+	teamIDStr := uuidToString(session.TeamID)
+	resp := make([]TeamMessageResponse, len(rows))
+	for i, m := range rows {
+		resp[i] = teamMessageToResponse(m, teamIDStr)
+	}
+	var nextCursor *string
+	if hasMore && len(rows) > 0 {
+		cursor := encodeTeamMessageCursor(rows[0])
+		nextCursor = &cursor
+	}
+	writeJSON(w, http.StatusOK, ListTeamMessagesResponse{Messages: resp, NextCursor: nextCursor})
+}
+
+type PostProjectMainChatMessageRequest struct {
+	Content string `json:"content"`
+}
+
+func (h *Handler) PostProjectMainChatMessage(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
+	if !ok {
+		return
+	}
+	var req PostProjectMainChatMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		writeError(w, http.StatusBadRequest, "content is required")
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	session, err := h.ensureProjectMainChat(r.Context(), p, userUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	msg, err := h.Queries.CreateTeamChatMessage(r.Context(), db.CreateTeamChatMessageParams{
+		ChatSessionID: session.ID,
+		Role:          "user",
+		Content:       req.Content,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to post message")
+		return
+	}
+	resp := teamMessageToResponse(msg, uuidToString(session.TeamID))
+	h.publishTeamMessage(uuidToString(wsUUID), "member", userID, msg, session.TeamID)
+
+	// Dispatch to captain via the same chat-task pipeline as v1.0 team rooms.
+	captain, capErr := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+		ID:          h.captainForSession(r.Context(), session),
+		WorkspaceID: session.WorkspaceID,
+	})
+	if capErr != nil || captain.ArchivedAt.Valid {
+		h.appendTeamSystemMessage(r, uuidToString(wsUUID), userID, session.ID, session.TeamID, "项目负责人智能体不可用，消息已保留但暂时无法派发。")
+		writeJSON(w, http.StatusCreated, resp)
+		return
+	}
+	if _, err := h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, captain.ID); err != nil {
+		h.appendTeamSystemMessage(r, uuidToString(wsUUID), userID, session.ID, session.TeamID, "负责人暂时无法接管这条消息："+err.Error())
+		writeJSON(w, http.StatusCreated, resp)
+		return
+	}
+	if err := h.Queries.TouchChatSession(r.Context(), session.ID); err != nil {
+		// Non-fatal; the message and dispatch already succeeded.
+		_ = err
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// captainForSession returns the captain agent id for a project main chat
+// session by reading it off the bound team. Falls back to a zero UUID on
+// error so callers must check ArchivedAt / GetAgent error.
+func (h *Handler) captainForSession(ctx context.Context, session db.ChatSession) pgtype.UUID {
+	if !session.TeamID.Valid {
+		return pgtype.UUID{}
+	}
+	team, err := h.Queries.GetTeam(ctx, session.TeamID)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	return team.CaptainAgentID
 }

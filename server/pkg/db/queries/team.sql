@@ -94,18 +94,27 @@ SELECT EXISTS(
 -- =====================
 
 -- name: GetOrCreateTeamChatSession :one
--- A team has at most one chat_session. The partial unique index on
--- chat_session(team_id) makes this safe for concurrent first messages:
--- one insert wins, the other gets the existing row via DO UPDATE.
-INSERT INTO chat_session (workspace_id, team_id, agent_id, creator_id, title)
-VALUES ($2, $1, NULL, $3, $4)
-ON CONFLICT (team_id) WHERE team_id IS NOT NULL DO UPDATE
+-- A (team, project) pair has at most one chat_session. v1.1 enforced this on
+-- (team_id) alone; v1.2 widens the key to (team_id, project_id) so a single
+-- team can host multiple project main chats. NULL project_id keeps the
+-- legacy "team-level group chat" form usable when no project is bound.
+INSERT INTO chat_session (workspace_id, team_id, project_id, agent_id, creator_id, title)
+VALUES ($2, $1, sqlc.narg('project_id'), NULL, $3, $4)
+ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL DO UPDATE
     SET updated_at = chat_session.updated_at
 RETURNING *;
 
 -- name: GetTeamChatSession :one
+-- v1.1 path (team-only group chat). project_id IS NULL means the team's
+-- legacy room without a project anchor.
 SELECT * FROM chat_session
-WHERE team_id = $1;
+WHERE team_id = $1 AND project_id IS NULL;
+
+-- name: GetProjectMainChatSession :one
+-- v1.2 path: a project's main chat is the (team, project) chat_session.
+-- Used by the project workspace page to bind the left chat column.
+SELECT * FROM chat_session
+WHERE team_id = $1 AND project_id = $2;
 
 -- name: ListTeamChatMessages :many
 SELECT cm.*

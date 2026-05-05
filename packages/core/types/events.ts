@@ -346,5 +346,9 @@ export interface InvitationRevokedPayload {
 
 export interface TeamMessageCreatedPayload {
   team_id: string;
+  // v1.2 — present when the message belongs to a project main chat
+  // (chat_session has both team_id and project_id). Used by realtime sync
+  // to invalidate the project workspace's chat cache without polling.
+  project_id?: string;
   message?: TeamMessage;
 }

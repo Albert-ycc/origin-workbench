@@ -134,6 +134,7 @@ import type {
   MailboxItemFilter,
   ListMailboxItemsResponse,
   ProjectV12,
+  ProjectMainChat,
   ListProjectsV12Response,
   CreateProjectV12Request,
   UpdateProjectV12Request,
@@ -1704,6 +1705,39 @@ export class ApiClient {
 
   async appendProjectMemoryDoc(id: string, data: AppendMemoryDocRequest): Promise<ProjectV12> {
     return this.fetch(`/api/v12/projects/${id}/memory-doc/append`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ── Project main chat (Origin §17.3) ────────────────────────────────────
+  // The project workspace's left chat column. Backed by the same
+  // chat_session/chat_message tables as v1.0 team rooms but disambiguated
+  // on (team_id, project_id). Reuses TeamMessage/ListTeamMessagesResponse
+  // shapes since the daemon dispatch path is shared.
+
+  async getProjectMainChat(projectId: string): Promise<ProjectMainChat> {
+    return this.fetch(`/api/v12/projects/${projectId}/main-chat`);
+  }
+
+  async listProjectMainChatMessages(
+    projectId: string,
+    opts?: { limit?: number; before?: string },
+  ): Promise<ListTeamMessagesResponse> {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.before) params.set("before", opts.before);
+    const query = params.toString();
+    return this.fetch(
+      `/api/v12/projects/${projectId}/main-chat/messages${query ? `?${query}` : ""}`,
+    );
+  }
+
+  async postProjectMainChatMessage(
+    projectId: string,
+    data: { content: string },
+  ): Promise<TeamMessage> {
+    return this.fetch(`/api/v12/projects/${projectId}/main-chat/messages`, {
       method: "POST",
       body: JSON.stringify(data),
     });

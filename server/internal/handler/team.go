@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
@@ -100,10 +101,21 @@ func teamMessageToResponse(m db.ChatMessage, teamID string) TeamMessageResponse 
 
 func (h *Handler) publishTeamMessage(workspaceID, actorType, actorID string, msg db.ChatMessage, teamID pgtype.UUID) {
 	resp := teamMessageToResponse(msg, uuidToString(teamID))
-	h.publish(protocol.EventTeamMessageCreated, workspaceID, actorType, actorID, map[string]any{
+	payload := map[string]any{
 		"team_id": uuidToString(teamID),
 		"message": resp,
-	})
+	}
+	// Project main chat (PRD §17.3): if the message belongs to a (team,
+	// project) chat_session, surface project_id so the frontend can
+	// invalidate the project workspace's chat cache directly. Pulled by
+	// session_id rather than message_id to keep this off the message hot
+	// path; lookup is a single-row index hit.
+	if msg.ChatSessionID.Valid {
+		if session, err := h.Queries.GetChatSession(context.Background(), msg.ChatSessionID); err == nil && session.ProjectID.Valid {
+			payload["project_id"] = uuidToString(session.ProjectID)
+		}
+	}
+	h.publish(protocol.EventTeamMessageCreated, workspaceID, actorType, actorID, payload)
 }
 
 func (h *Handler) appendTeamSystemMessage(r *http.Request, workspaceID, userID string, sessionID, teamID pgtype.UUID, content string) {

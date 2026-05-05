@@ -424,6 +424,67 @@ func (q *Queries) ListChatMessages(ctx context.Context, chatSessionID pgtype.UUI
 	return items, nil
 }
 
+const listChatMessagesBySessionPage = `-- name: ListChatMessagesBySessionPage :many
+SELECT cm.id, cm.chat_session_id, cm.role, cm.content, cm.task_id, cm.created_at, cm.failure_reason, cm.elapsed_ms, cm.sender_agent_id
+FROM chat_message cm
+WHERE cm.chat_session_id = $1
+  AND (
+    $2::timestamptz IS NULL
+    OR cm.created_at < $2::timestamptz
+    OR (
+      cm.created_at = $2::timestamptz
+      AND cm.id < $3::uuid
+    )
+  )
+ORDER BY cm.created_at DESC, cm.id DESC
+LIMIT $4
+`
+
+type ListChatMessagesBySessionPageParams struct {
+	ChatSessionID   pgtype.UUID        `json:"chat_session_id"`
+	BeforeCreatedAt pgtype.Timestamptz `json:"before_created_at"`
+	BeforeID        pgtype.UUID        `json:"before_id"`
+	LimitCount      int32              `json:"limit_count"`
+}
+
+// Cursor-paginated per-session message list (project main chat reuses this).
+// Mirrors ListTeamChatMessagesPage but keys on chat_session_id directly so a
+// team that hosts multiple project main chats doesn't merge them.
+func (q *Queries) ListChatMessagesBySessionPage(ctx context.Context, arg ListChatMessagesBySessionPageParams) ([]ChatMessage, error) {
+	rows, err := q.db.Query(ctx, listChatMessagesBySessionPage,
+		arg.ChatSessionID,
+		arg.BeforeCreatedAt,
+		arg.BeforeID,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatMessage{}
+	for rows.Next() {
+		var i ChatMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChatSessionID,
+			&i.Role,
+			&i.Content,
+			&i.TaskID,
+			&i.CreatedAt,
+			&i.FailureReason,
+			&i.ElapsedMs,
+			&i.SenderAgentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChatSessionsByCreator = `-- name: ListChatSessionsByCreator :many
 SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.team_id, cs.project_id, cs.last_compacted_at, cs.compacted_into_session_id,
        (cs.unread_since IS NOT NULL)::bool AS has_unread

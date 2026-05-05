@@ -14,7 +14,7 @@ import (
 const archiveProjectV12 = `-- name: ArchiveProjectV12 :one
 UPDATE project SET status = 'archived', updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id
 `
 
 func (q *Queries) ArchiveProjectV12(ctx context.Context, id pgtype.UUID) (Project, error) {
@@ -37,6 +37,7 @@ func (q *Queries) ArchiveProjectV12(ctx context.Context, id pgtype.UUID) (Projec
 		&i.MemoryDoc,
 		&i.MemoryDocUpdatedAt,
 		&i.CompactionCount,
+		&i.MainChatSessionID,
 	)
 	return i, err
 }
@@ -46,7 +47,7 @@ INSERT INTO project (
     workspace_id, team_id, title, description, local_dir, memory_doc, status
 )
 VALUES ($1, $2, $3, $4, $5, $6, 'active')
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id
 `
 
 type CreateProjectV12Params struct {
@@ -85,6 +86,7 @@ func (q *Queries) CreateProjectV12(ctx context.Context, arg CreateProjectV12Para
 		&i.MemoryDoc,
 		&i.MemoryDocUpdatedAt,
 		&i.CompactionCount,
+		&i.MainChatSessionID,
 	)
 	return i, err
 }
@@ -118,7 +120,7 @@ func (q *Queries) GetAgentProjectMemory(ctx context.Context, arg GetAgentProject
 }
 
 const getProjectInWorkspaceV12 = `-- name: GetProjectInWorkspaceV12 :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count FROM project WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id FROM project WHERE id = $1 AND workspace_id = $2
 `
 
 type GetProjectInWorkspaceV12Params struct {
@@ -146,12 +148,13 @@ func (q *Queries) GetProjectInWorkspaceV12(ctx context.Context, arg GetProjectIn
 		&i.MemoryDoc,
 		&i.MemoryDocUpdatedAt,
 		&i.CompactionCount,
+		&i.MainChatSessionID,
 	)
 	return i, err
 }
 
 const getProjectV12 = `-- name: GetProjectV12 :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count FROM project WHERE id = $1
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id FROM project WHERE id = $1
 `
 
 func (q *Queries) GetProjectV12(ctx context.Context, id pgtype.UUID) (Project, error) {
@@ -174,6 +177,7 @@ func (q *Queries) GetProjectV12(ctx context.Context, id pgtype.UUID) (Project, e
 		&i.MemoryDoc,
 		&i.MemoryDocUpdatedAt,
 		&i.CompactionCount,
+		&i.MainChatSessionID,
 	)
 	return i, err
 }
@@ -184,7 +188,7 @@ UPDATE project SET
     memory_doc_updated_at = now(),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id
 `
 
 func (q *Queries) IncrementProjectCompactionV12(ctx context.Context, id pgtype.UUID) (Project, error) {
@@ -207,12 +211,13 @@ func (q *Queries) IncrementProjectCompactionV12(ctx context.Context, id pgtype.U
 		&i.MemoryDoc,
 		&i.MemoryDocUpdatedAt,
 		&i.CompactionCount,
+		&i.MainChatSessionID,
 	)
 	return i, err
 }
 
 const listActiveProjectsV12 = `-- name: ListActiveProjectsV12 :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id FROM project
 WHERE workspace_id = $1 AND status IN ('active', 'paused')
 ORDER BY updated_at DESC
 `
@@ -244,6 +249,7 @@ func (q *Queries) ListActiveProjectsV12(ctx context.Context, workspaceID pgtype.
 			&i.MemoryDoc,
 			&i.MemoryDocUpdatedAt,
 			&i.CompactionCount,
+			&i.MainChatSessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -289,7 +295,7 @@ func (q *Queries) ListAgentProjectMemoriesByProject(ctx context.Context, project
 }
 
 const listProjectsByTeamV12 = `-- name: ListProjectsByTeamV12 :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id FROM project
 WHERE team_id = $1 AND status != 'archived'
 ORDER BY updated_at DESC
 `
@@ -320,6 +326,7 @@ func (q *Queries) ListProjectsByTeamV12(ctx context.Context, teamID pgtype.UUID)
 			&i.MemoryDoc,
 			&i.MemoryDocUpdatedAt,
 			&i.CompactionCount,
+			&i.MainChatSessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -333,7 +340,7 @@ func (q *Queries) ListProjectsByTeamV12(ctx context.Context, teamID pgtype.UUID)
 
 const listProjectsV12 = `-- name: ListProjectsV12 :many
 
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id FROM project
 WHERE workspace_id = $1
   AND status IN ('active', 'paused', 'completed')
 ORDER BY
@@ -372,6 +379,7 @@ func (q *Queries) ListProjectsV12(ctx context.Context, workspaceID pgtype.UUID) 
 			&i.MemoryDoc,
 			&i.MemoryDocUpdatedAt,
 			&i.CompactionCount,
+			&i.MainChatSessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -383,6 +391,41 @@ func (q *Queries) ListProjectsV12(ctx context.Context, workspaceID pgtype.UUID) 
 	return items, nil
 }
 
+const replaceProjectMainChatSessionV12 = `-- name: ReplaceProjectMainChatSessionV12 :exec
+UPDATE project SET main_chat_session_id = $2, updated_at = now()
+WHERE id = $1
+`
+
+type ReplaceProjectMainChatSessionV12Params struct {
+	ID                pgtype.UUID `json:"id"`
+	MainChatSessionID pgtype.UUID `json:"main_chat_session_id"`
+}
+
+// Replace the bound main chat session unconditionally. Compaction (§17.4.5)
+// archives the old session and points the project at a freshly-created one.
+func (q *Queries) ReplaceProjectMainChatSessionV12(ctx context.Context, arg ReplaceProjectMainChatSessionV12Params) error {
+	_, err := q.db.Exec(ctx, replaceProjectMainChatSessionV12, arg.ID, arg.MainChatSessionID)
+	return err
+}
+
+const setProjectMainChatSessionV12 = `-- name: SetProjectMainChatSessionV12 :exec
+UPDATE project SET main_chat_session_id = $2, updated_at = now()
+WHERE id = $1 AND main_chat_session_id IS NULL
+`
+
+type SetProjectMainChatSessionV12Params struct {
+	ID                pgtype.UUID `json:"id"`
+	MainChatSessionID pgtype.UUID `json:"main_chat_session_id"`
+}
+
+// Bind the project's main chat session anchor. Only writes when current value
+// is NULL so the first compaction-rewrite or boot-time backfill cannot
+// clobber a session the user is actively chatting in.
+func (q *Queries) SetProjectMainChatSessionV12(ctx context.Context, arg SetProjectMainChatSessionV12Params) error {
+	_, err := q.db.Exec(ctx, setProjectMainChatSessionV12, arg.ID, arg.MainChatSessionID)
+	return err
+}
+
 const updateProjectV12 = `-- name: UpdateProjectV12 :one
 UPDATE project SET
     title       = COALESCE($2, title),
@@ -392,7 +435,7 @@ UPDATE project SET
     memory_doc_updated_at = COALESCE($6, memory_doc_updated_at),
     updated_at  = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, team_id, local_dir, memory_doc, memory_doc_updated_at, compaction_count, main_chat_session_id
 `
 
 type UpdateProjectV12Params struct {
@@ -431,6 +474,7 @@ func (q *Queries) UpdateProjectV12(ctx context.Context, arg UpdateProjectV12Para
 		&i.MemoryDoc,
 		&i.MemoryDocUpdatedAt,
 		&i.CompactionCount,
+		&i.MainChatSessionID,
 	)
 	return i, err
 }

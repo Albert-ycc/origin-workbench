@@ -41,6 +41,19 @@ UPDATE project SET
 WHERE id = $1
 RETURNING *;
 
+-- name: SetProjectMainChatSessionV12 :exec
+-- Bind the project's main chat session anchor. Only writes when current value
+-- is NULL so the first compaction-rewrite or boot-time backfill cannot
+-- clobber a session the user is actively chatting in.
+UPDATE project SET main_chat_session_id = $2, updated_at = now()
+WHERE id = $1 AND main_chat_session_id IS NULL;
+
+-- name: ReplaceProjectMainChatSessionV12 :exec
+-- Replace the bound main chat session unconditionally. Compaction (§17.4.5)
+-- archives the old session and points the project at a freshly-created one.
+UPDATE project SET main_chat_session_id = $2, updated_at = now()
+WHERE id = $1;
+
 -- name: ArchiveProjectV12 :one
 UPDATE project SET status = 'archived', updated_at = now()
 WHERE id = $1

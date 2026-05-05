@@ -178,9 +178,9 @@ func (q *Queries) GetLatestTeamChatMessageForTask(ctx context.Context, arg GetLa
 
 const getOrCreateTeamChatSession = `-- name: GetOrCreateTeamChatSession :one
 
-INSERT INTO chat_session (workspace_id, team_id, agent_id, creator_id, title)
-VALUES ($2, $1, NULL, $3, $4)
-ON CONFLICT (team_id) WHERE team_id IS NOT NULL DO UPDATE
+INSERT INTO chat_session (workspace_id, team_id, project_id, agent_id, creator_id, title)
+VALUES ($2, $1, $5, NULL, $3, $4)
+ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL DO UPDATE
     SET updated_at = chat_session.updated_at
 RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id
 `
@@ -190,21 +190,59 @@ type GetOrCreateTeamChatSessionParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	CreatorID   pgtype.UUID `json:"creator_id"`
 	Title       string      `json:"title"`
+	ProjectID   pgtype.UUID `json:"project_id"`
 }
 
 // =====================
 // Team Chat (group session)
 // =====================
-// A team has at most one chat_session. The partial unique index on
-// chat_session(team_id) makes this safe for concurrent first messages:
-// one insert wins, the other gets the existing row via DO UPDATE.
+// A (team, project) pair has at most one chat_session. v1.1 enforced this on
+// (team_id) alone; v1.2 widens the key to (team_id, project_id) so a single
+// team can host multiple project main chats. NULL project_id keeps the
+// legacy "team-level group chat" form usable when no project is bound.
 func (q *Queries) GetOrCreateTeamChatSession(ctx context.Context, arg GetOrCreateTeamChatSessionParams) (ChatSession, error) {
 	row := q.db.QueryRow(ctx, getOrCreateTeamChatSession,
 		arg.TeamID,
 		arg.WorkspaceID,
 		arg.CreatorID,
 		arg.Title,
+		arg.ProjectID,
 	)
+	var i ChatSession
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatorID,
+		&i.Title,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnreadSince,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.LastCompactedAt,
+		&i.CompactedIntoSessionID,
+	)
+	return i, err
+}
+
+const getProjectMainChatSession = `-- name: GetProjectMainChatSession :one
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+WHERE team_id = $1 AND project_id = $2
+`
+
+type GetProjectMainChatSessionParams struct {
+	TeamID    pgtype.UUID `json:"team_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+}
+
+// v1.2 path: a project's main chat is the (team, project) chat_session.
+// Used by the project workspace page to bind the left chat column.
+func (q *Queries) GetProjectMainChatSession(ctx context.Context, arg GetProjectMainChatSessionParams) (ChatSession, error) {
+	row := q.db.QueryRow(ctx, getProjectMainChatSession, arg.TeamID, arg.ProjectID)
 	var i ChatSession
 	err := row.Scan(
 		&i.ID,
@@ -250,9 +288,11 @@ func (q *Queries) GetTeam(ctx context.Context, id pgtype.UUID) (Team, error) {
 
 const getTeamChatSession = `-- name: GetTeamChatSession :one
 SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
-WHERE team_id = $1
+WHERE team_id = $1 AND project_id IS NULL
 `
 
+// v1.1 path (team-only group chat). project_id IS NULL means the team's
+// legacy room without a project anchor.
 func (q *Queries) GetTeamChatSession(ctx context.Context, teamID pgtype.UUID) (ChatSession, error) {
 	row := q.db.QueryRow(ctx, getTeamChatSession, teamID)
 	var i ChatSession

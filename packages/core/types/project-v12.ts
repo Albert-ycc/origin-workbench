@@ -8,6 +8,9 @@ export interface Project {
   id: string;
   workspace_id: string;
   team_id: string | null;
+  // v1.2 — 项目主聊（chat_session）锚点。CreateProjectV12 时即写入；
+  // 压缩（§17.4.5）会在归档旧主聊时把这个指针指向新建的空主聊。
+  main_chat_session_id: string | null;
   title: string;
   description: string;
   local_dir: string;
@@ -17,6 +20,14 @@ export interface Project {
   status: ProjectStatus;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectMainChat {
+  chat_session_id: string;
+  project_id: string;
+  team_id: string;
+  title: string;
+  status: string;
 }
 
 export interface ListProjectsResponse {

@@ -180,6 +180,7 @@ export type {
 export type {
   Project as ProjectV12,
   ProjectStatus as ProjectV12Status,
+  ProjectMainChat,
   ListProjectsResponse as ListProjectsV12Response,
   CreateProjectRequest as CreateProjectV12Request,
   UpdateProjectRequest as UpdateProjectV12Request,

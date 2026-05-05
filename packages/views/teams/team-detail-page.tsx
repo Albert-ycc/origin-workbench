@@ -238,7 +238,7 @@ function shouldOpenMention(value: string, at: number): boolean {
   return prev === " " || prev === "\n" || prev === "\t";
 }
 
-function ChatPane({
+export function ChatPane({
   team,
   messages,
   captain,

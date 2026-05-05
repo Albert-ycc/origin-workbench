@@ -665,8 +665,37 @@ export function useRealtimeSync(
             };
           },
         );
+        // PRD §17.3 — when this message lives in a project main chat,
+        // also push it into the project workspace cache. The two caches
+        // share the underlying chat_session so the data is identical;
+        // we keep separate keys so each surface can list/sort/scroll
+        // independently.
+        if (payload.project_id) {
+          qc.setQueryData<{ messages: typeof payload.message[]; next_cursor?: string | null }>(
+            ["projects-v12", wsId, "main-chat-messages", payload.project_id],
+            (old) => {
+              const current = old ?? { messages: [], next_cursor: null };
+              if (current.messages.some((m) => m.id === payload.message!.id)) {
+                return current;
+              }
+              return {
+                ...current,
+                messages: [...current.messages, payload.message!].sort(
+                  (a, b) =>
+                    new Date(a.created_at).getTime() -
+                    new Date(b.created_at).getTime(),
+                ),
+              };
+            },
+          );
+        }
       } else {
         qc.invalidateQueries({ queryKey: teamKeys.messages(wsId, payload.team_id) });
+        if (payload.project_id) {
+          qc.invalidateQueries({
+            queryKey: ["projects-v12", wsId, "main-chat-messages", payload.project_id],
+          });
+        }
       }
     });
 

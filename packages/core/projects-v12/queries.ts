@@ -10,6 +10,10 @@ export const projectV12Keys = {
     [...projectV12Keys.all(wsId), "by-team", teamId] as const,
   memories: (wsId: string, projectId: string) =>
     [...projectV12Keys.all(wsId), "memories", projectId] as const,
+  mainChat: (wsId: string, projectId: string) =>
+    [...projectV12Keys.all(wsId), "main-chat", projectId] as const,
+  mainChatMessages: (wsId: string, projectId: string) =>
+    [...projectV12Keys.all(wsId), "main-chat-messages", projectId] as const,
 };
 
 export function projectV12ListOptions(wsId: string) {
@@ -34,5 +38,21 @@ export function projectsByTeamV12Options(wsId: string, teamId: string) {
     queryFn: () => api.listProjectsByTeamV12(teamId),
     select: (data) => data.projects,
     enabled: !!teamId,
+  });
+}
+
+export function projectMainChatOptions(wsId: string, projectId: string) {
+  return queryOptions({
+    queryKey: projectV12Keys.mainChat(wsId, projectId),
+    queryFn: () => api.getProjectMainChat(projectId),
+    enabled: !!projectId,
+  });
+}
+
+export function projectMainChatMessagesOptions(wsId: string, projectId: string) {
+  return queryOptions({
+    queryKey: projectV12Keys.mainChatMessages(wsId, projectId),
+    queryFn: () => api.listProjectMainChatMessages(projectId),
+    enabled: !!projectId,
   });
 }

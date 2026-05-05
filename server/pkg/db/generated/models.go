@@ -606,6 +606,7 @@ type Project struct {
 	MemoryDoc          string             `json:"memory_doc"`
 	MemoryDocUpdatedAt pgtype.Timestamptz `json:"memory_doc_updated_at"`
 	CompactionCount    int32              `json:"compaction_count"`
+	MainChatSessionID  pgtype.UUID        `json:"main_chat_session_id"`
 }
 
 type ProjectResource struct {
