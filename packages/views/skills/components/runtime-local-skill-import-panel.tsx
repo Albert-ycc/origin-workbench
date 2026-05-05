@@ -182,6 +182,10 @@ export function RuntimeLocalSkillImportPanel({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [importing, setImporting] = useState(false);
+  // Live progress for batch imports — done = number of skills that have
+  // resolved (success or failure), total = batch size. Shown in the bottom
+  // status bar so 60+ skills don't feel like a black-box hang.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Default to the first local runtime once the list lands.
   useEffect(() => {
@@ -269,11 +273,19 @@ export function RuntimeLocalSkillImportPanel({
     const useUserEdits = targets.length === 1;
 
     setImporting(true);
+    setProgress({ done: 0, total: targets.length });
     let successCount = 0;
     let lastImported: Skill | null = null;
     const failures: { name: string; error: string }[] = [];
 
-    for (const skill of targets) {
+    // Bounded concurrency: 6 imports in flight at once. Higher values risk
+    // overloading the daemon (it spawns a child process per skill scan); 6
+    // empirically saturates a typical local daemon without thrashing. Single-
+    // skill flow takes the fast path with no worker pool overhead.
+    const CONCURRENCY = 6;
+    let cursor = 0;
+
+    const runOne = async (skill: RuntimeLocalSkillSummary) => {
       try {
         const result = await resolveRuntimeLocalSkillImport(selectedRuntimeId, {
           skill_key: skill.key,
@@ -294,7 +306,26 @@ export function RuntimeLocalSkillImportPanel({
           name: skill.name,
           error: error instanceof Error ? error.message : "导入失败",
         });
+      } finally {
+        // Functional update — multiple workers may resolve concurrently and
+        // we'd lose increments under stale-closure semantics otherwise.
+        setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
       }
+    };
+
+    if (targets.length === 1) {
+      await runOne(targets[0]!);
+    } else {
+      const workers = Array.from(
+        { length: Math.min(CONCURRENCY, targets.length) },
+        async () => {
+          while (cursor < targets.length) {
+            const idx = cursor++;
+            await runOne(targets[idx]!);
+          }
+        },
+      );
+      await Promise.all(workers);
     }
 
     await Promise.all([
@@ -328,6 +359,7 @@ export function RuntimeLocalSkillImportPanel({
     }
 
     setImporting(false);
+    setProgress(null);
     setSelectedKeys(new Set());
     setName("");
     setDescription("");
@@ -523,7 +555,15 @@ export function RuntimeLocalSkillImportPanel({
       {/* Sticky bottom: Import button + context */}
       <div className="flex shrink-0 items-center gap-3 border-t bg-muted/30 px-5 py-3">
         <div className="min-w-0 flex-1 text-xs text-muted-foreground">
-          {selectedKeys.size === 0 ? (
+          {importing && progress && progress.total > 1 ? (
+            <>
+              正在导入{" "}
+              <span className="font-medium text-foreground">
+                {progress.done} / {progress.total}
+              </span>
+              ，请稍候。
+            </>
+          ) : selectedKeys.size === 0 ? (
             "选择一个或多个技能继续。"
           ) : selectedKeys.size === 1 && focusedSkill ? (
             <>
