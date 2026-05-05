@@ -280,7 +280,7 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
               id="proj-dir"
               value={localDir}
               onChange={(e) => setLocalDir(e.target.value)}
-              placeholder="~/<redacted>/营养管理"
+              placeholder="~/work/my-project"
               className="font-mono text-[12px]"
             />
             <p className="text-[11px] text-muted-foreground">

@@ -809,7 +809,7 @@ func (h *Handler) LocalSignIn(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// utf8RuneCount counts visible characters (so "alice" -> 6, "李雷" -> 3)
+// utf8RuneCount counts visible characters (so "alice" -> 5, "李雷" -> 2)
 // to bound display name length consistently across encodings.
 func utf8RuneCount(s string) int {
 	n := 0

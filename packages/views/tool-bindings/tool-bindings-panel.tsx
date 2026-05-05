@@ -56,7 +56,7 @@ const TOOL_TYPE_OPTIONS: Array<{
   { value: "lark_doc", label: "飞书文档", placeholder: "https://xxx.feishu.cn/docx/..." },
   { value: "lark_whiteboard", label: "飞书画板", placeholder: "https://xxx.feishu.cn/board/..." },
   { value: "figma_file", label: "Figma 文件", placeholder: "https://figma.com/file/..." },
-  { value: "obsidian_note", label: "Obsidian 笔记", placeholder: "/Volumes/<redacted>/Norma/note.md" },
+  { value: "obsidian_note", label: "Obsidian 笔记", placeholder: "~/Documents/Obsidian/note.md" },
   { value: "local_repo", label: "本地仓库", placeholder: "/Users/you/code/repo" },
 ];
 
