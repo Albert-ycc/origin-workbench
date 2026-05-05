@@ -292,17 +292,35 @@ func TestCompleteTeamCaptainMessageDelegatesMentionedMember(t *testing.T) {
 		t.Fatalf("complete captain task: %v", err)
 	}
 
-	var memberTaskCount int
+	// D 方案 (commit c996f62f): captain @ 派活落地为 issue 卡片，不再起独立
+	// chat task。member 拿到的是 issue assignment 自动 enqueue 的 task（带
+	// issue_id，无 chat_session_id），所以验证从 agent_task_queue 移到 issue。
+	var memberIssueID string
+	var issueDescription string
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM agent_task_queue
-		WHERE agent_id = $1 AND chat_session_id IS NOT NULL AND status = 'queued'
-	`, memberID).Scan(&memberTaskCount); err != nil {
-		t.Fatalf("count member tasks: %v", err)
+		SELECT id::text, COALESCE(description, '') FROM issue
+		WHERE assignee_id = $1 AND source_team_message_id IS NOT NULL
+		ORDER BY created_at DESC LIMIT 1
+	`, memberID).Scan(&memberIssueID, &issueDescription); err != nil {
+		t.Fatalf("load member delegated issue: %v", err)
 	}
-	if memberTaskCount != 1 {
-		t.Fatalf("expected one queued delegated member task, got %d", memberTaskCount)
+	if !strings.Contains(issueDescription, "前端交互") {
+		t.Fatalf("issue description should carry captain's instruction text, got %q", issueDescription)
 	}
 
+	var memberIssueCount int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*) FROM issue
+		WHERE assignee_id = $1 AND source_team_message_id IS NOT NULL
+	`, memberID).Scan(&memberIssueCount); err != nil {
+		t.Fatalf("count member issues: %v", err)
+	}
+	if memberIssueCount != 1 {
+		t.Fatalf("expected exactly one delegated issue for member, got %d", memberIssueCount)
+	}
+
+	// captain 派活后写一条 system message 通报群聊（D 方案文案：「负责人 X
+	// 已派任务给 Y（共 N 张任务卡片）。」），同时点出 captain 名和被 @ 的成员名。
 	var systemMessage string
 	if err := testPool.QueryRow(context.Background(), `
 		SELECT content FROM chat_message
@@ -315,29 +333,20 @@ func TestCompleteTeamCaptainMessageDelegatesMentionedMember(t *testing.T) {
 	`, captainTaskID).Scan(&systemMessage); err != nil {
 		t.Fatalf("load delegation system message: %v", err)
 	}
-	if systemMessage == "" || systemMessage == "负责人已分派任务。" {
-		t.Fatalf("expected detailed delegation system message, got %q", systemMessage)
+	if !strings.Contains(systemMessage, "Delegating Captain") || !strings.Contains(systemMessage, "Frontend Delegate") {
+		t.Fatalf("expected system message to name captain and delegate, got %q", systemMessage)
 	}
 
-	var delegatedContext []byte
+	// 新创建的 issue 应该已经被 EnqueueTaskForIssue 自动排上一条 member task。
+	var memberTaskCount int
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT context FROM agent_task_queue
-		WHERE agent_id = $1 AND chat_session_id IS NOT NULL AND status = 'queued'
-		ORDER BY created_at DESC LIMIT 1
-	`, memberID).Scan(&delegatedContext); err != nil {
-		t.Fatalf("load delegated task context: %v", err)
+		SELECT count(*) FROM agent_task_queue
+		WHERE agent_id = $1 AND issue_id::text = $2 AND status = 'queued'
+	`, memberID, memberIssueID).Scan(&memberTaskCount); err != nil {
+		t.Fatalf("count member task for issue: %v", err)
 	}
-	var delegation struct {
-		Type            string `json:"type"`
-		SourceAgentName string `json:"source_agent_name"`
-		TargetAgentName string `json:"target_agent_name"`
-		Instruction     string `json:"instruction"`
-	}
-	if err := json.Unmarshal(delegatedContext, &delegation); err != nil {
-		t.Fatalf("decode delegated context: %v", err)
-	}
-	if delegation.Type != "team_delegation" || delegation.TargetAgentName != "Frontend Delegate" || delegation.Instruction == "" {
-		t.Fatalf("unexpected delegated context: %+v", delegation)
+	if memberTaskCount != 1 {
+		t.Fatalf("expected one queued task for delegated issue, got %d", memberTaskCount)
 	}
 }
 
@@ -398,55 +407,45 @@ func TestMissionCaptainDelegationCreatesMissionAssignmentAndEvent(t *testing.T) 
 		t.Fatalf("complete captain task: %v", err)
 	}
 
-	var memberTaskID string
+	// D 方案 (commit c996f62f): mission 群聊也是 team session，captain @ 派活
+	// 走同一条 delegateTeamMentions → issue 卡片链路。旧 mission_assignment /
+	// mission_event(member_delegated) / mission_plan_item(in_progress execute)
+	// 状态机已成 dead code（createMissionDelegation 没有调用者），mission
+	// 状态机回填留给 v1.3。这里改成验证 issue 卡片在 mission session 下创建。
+	var memberIssueID string
+	var issueDescription string
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT id FROM agent_task_queue
-		WHERE agent_id = $1 AND chat_session_id = $2 AND status = 'queued'
+		SELECT id::text, COALESCE(description, '') FROM issue
+		WHERE assignee_id = $1 AND source_team_session_id::text = $2
 		ORDER BY created_at DESC LIMIT 1
-	`, memberID, missionResp.Mission.ChatSessionID).Scan(&memberTaskID); err != nil {
-		t.Fatalf("load member task: %v", err)
+	`, memberID, missionResp.Mission.ChatSessionID).Scan(&memberIssueID, &issueDescription); err != nil {
+		t.Fatalf("load mission delegated issue: %v", err)
+	}
+	if !strings.Contains(issueDescription, "第一轮实现") {
+		t.Fatalf("mission issue description should carry captain's instruction, got %q", issueDescription)
 	}
 
-	var planCount int
+	var issueCount int
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM mission_plan_item
-		WHERE mission_id = $1
-		  AND assigned_agent_id = $2
-		  AND status = 'in_progress'
-		  AND phase = 'execute'
-	`, missionResp.Mission.ID, memberID).Scan(&planCount); err != nil {
-		t.Fatalf("count delegated plan items: %v", err)
+		SELECT count(*) FROM issue
+		WHERE assignee_id = $1 AND source_team_session_id::text = $2
+	`, memberID, missionResp.Mission.ChatSessionID).Scan(&issueCount); err != nil {
+		t.Fatalf("count mission delegated issues: %v", err)
 	}
-	if planCount != 1 {
-		t.Fatalf("expected one in-progress delegated mission plan item, got %d", planCount)
+	if issueCount != 1 {
+		t.Fatalf("expected one delegated issue in mission room, got %d", issueCount)
 	}
 
-	var assignmentCount int
+	// 派出的 issue 应自动 enqueue 一条 member task（无 chat_session_id, 仅 issue_id）。
+	var memberTaskCount int
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM mission_assignment
-		WHERE mission_id = $1
-		  AND agent_id = $2
-		  AND task_id = $3
-		  AND status = 'dispatched'
-	`, missionResp.Mission.ID, memberID, memberTaskID).Scan(&assignmentCount); err != nil {
-		t.Fatalf("count delegated assignments: %v", err)
+		SELECT count(*) FROM agent_task_queue
+		WHERE agent_id = $1 AND issue_id::text = $2 AND status = 'queued'
+	`, memberID, memberIssueID).Scan(&memberTaskCount); err != nil {
+		t.Fatalf("count member task: %v", err)
 	}
-	if assignmentCount != 1 {
-		t.Fatalf("expected one dispatched mission assignment, got %d", assignmentCount)
-	}
-
-	var eventCount int
-	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM mission_event
-		WHERE mission_id = $1
-		  AND actor_type = 'agent'
-		  AND actor_id = $2
-		  AND kind = 'member_delegated'
-	`, missionResp.Mission.ID, captainID).Scan(&eventCount); err != nil {
-		t.Fatalf("count mission delegation events: %v", err)
-	}
-	if eventCount != 1 {
-		t.Fatalf("expected one member_delegated mission event, got %d", eventCount)
+	if memberTaskCount != 1 {
+		t.Fatalf("expected one queued task for delegated issue, got %d", memberTaskCount)
 	}
 }
 
@@ -581,12 +580,24 @@ func TestMissionMemberCompletionCreatesTimelineAndMemoryCandidate(t *testing.T) 
 		t.Fatalf("complete captain task: %v", err)
 	}
 
+	// D 方案 (commit c996f62f): captain @ 派活落地为 issue 卡片，member 拿到的
+	// task 走 issue assignment 链路（无 chat_session_id）。旧 mission_assignment
+	// 状态机已成 dead code，故 mission_event(assignment_completed) /
+	// agent_event(mission_assignment_completed) / mission_reflection memory
+	// 都不再写入。这些产品行为转 v1.3 follow-up（recordMissionAgentCompletion
+	// 早 return），这里改成验证 D 方案的实际产物：完成 issue task 时按
+	// invariant 写一条 agent comment 到 issue（task.go:715-734）。
+	var memberIssueID string
 	var memberTaskID string
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT id FROM agent_task_queue
-		WHERE agent_id = $1 AND chat_session_id = $2 AND status = 'queued'
-		ORDER BY created_at DESC LIMIT 1
-	`, memberID, missionResp.Mission.ChatSessionID).Scan(&memberTaskID); err != nil {
+		SELECT t.id::text, t.issue_id::text
+		FROM agent_task_queue t
+		JOIN issue i ON i.id = t.issue_id
+		WHERE t.agent_id = $1
+		  AND i.source_team_session_id::text = $2
+		  AND t.status = 'queued'
+		ORDER BY t.created_at DESC LIMIT 1
+	`, memberID, missionResp.Mission.ChatSessionID).Scan(&memberTaskID, &memberIssueID); err != nil {
 		t.Fatalf("load member task: %v", err)
 	}
 	claimedMember, err := testHandler.TaskService.ClaimTask(context.Background(), parseUUID(memberID))
@@ -607,71 +618,22 @@ func TestMissionMemberCompletionCreatesTimelineAndMemoryCandidate(t *testing.T) 
 		t.Fatalf("complete member task: %v", err)
 	}
 
-	var assignmentStatus string
+	var commentCount int
+	var commentBody string
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT status FROM mission_assignment
-		WHERE task_id = $1
-	`, memberTaskID).Scan(&assignmentStatus); err != nil {
-		t.Fatalf("load member assignment: %v", err)
+		SELECT count(*), COALESCE(MAX(content), '')
+		FROM comment
+		WHERE issue_id::text = $1
+		  AND author_type = 'agent'
+		  AND author_id = $2
+	`, memberIssueID, memberID).Scan(&commentCount, &commentBody); err != nil {
+		t.Fatalf("count agent comments on issue: %v", err)
 	}
-	if assignmentStatus != "completed" {
-		t.Fatalf("assignment status = %q, want completed", assignmentStatus)
+	if commentCount < 1 {
+		t.Fatalf("expected at least one agent comment on completed issue, got %d", commentCount)
 	}
-
-	var eventCount int
-	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM mission_event
-		WHERE mission_id = $1
-		  AND actor_type = 'agent'
-		  AND actor_id = $2
-		  AND kind = 'assignment_completed'
-	`, missionResp.Mission.ID, memberID).Scan(&eventCount); err != nil {
-		t.Fatalf("count mission completion events: %v", err)
-	}
-	if eventCount != 1 {
-		t.Fatalf("expected one mission completion event, got %d", eventCount)
-	}
-
-	events, err := testHandler.Queries.ListAgentEvents(context.Background(), db.ListAgentEventsParams{
-		WorkspaceID: parseUUID(testWorkspaceID),
-		AgentID:     parseUUID(memberID),
-		Limit:       20,
-	})
-	if err != nil {
-		t.Fatalf("list agent events: %v", err)
-	}
-	foundTimeline := false
-	for _, event := range events {
-		if event.Kind == "mission_assignment_completed" {
-			foundTimeline = true
-			break
-		}
-	}
-	if !foundTimeline {
-		t.Fatalf("expected mission_assignment_completed agent event, got %+v", events)
-	}
-
-	memories, err := testHandler.Queries.ListAgentMemories(context.Background(), db.ListAgentMemoriesParams{
-		WorkspaceID: parseUUID(testWorkspaceID),
-		AgentID:     parseUUID(memberID),
-		Limit:       20,
-		Statuses:    []string{"candidate", "confirmed"},
-	})
-	if err != nil {
-		t.Fatalf("list agent memories: %v", err)
-	}
-	foundMemory := false
-	for _, memory := range memories {
-		if memory.Kind == "mission_reflection" && memory.RefType == "mission_assignment" {
-			if memory.Status != "candidate" {
-				t.Fatalf("mission reflection should remain a candidate until confirmed, got %q", memory.Status)
-			}
-			foundMemory = true
-			break
-		}
-	}
-	if !foundMemory {
-		t.Fatalf("expected mission_reflection memory candidate, got %+v", memories)
+	if !strings.Contains(commentBody, "已实现核心流程") {
+		t.Fatalf("comment should carry agent's final output, got %q", commentBody)
 	}
 }
 
