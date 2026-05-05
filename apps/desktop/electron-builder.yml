@@ -1,5 +1,5 @@
-appId: ai.multica.desktop.local
-productName: Multica Local
+appId: ai.origin.desktop
+productName: Origin
 directories:
   buildResources: build
   output: dist-local
@@ -24,14 +24,14 @@ mac:
   # `${name}` produces for scoped package names.
   # Naming scheme: multica-desktop-<version>-<platform>-<arch>.<ext>
   # so the filename alone surfaces kind, version, platform, and CPU arch.
-  artifactName: multica-local-${version}-mac-${arch}.${ext}
+  artifactName: origin-${version}-mac-${arch}.${ext}
   # Notarize via notarytool. Requires APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD
   # + APPLE_TEAM_ID env vars at package time. Non-mac contributors are
   # unaffected because `pnpm package` already requires the Developer ID
   # signing cert — notarization is a strict superset.
   notarize: true
 dmg:
-  artifactName: multica-local-${version}-mac-${arch}.${ext}
+  artifactName: origin-${version}-mac-${arch}.${ext}
 linux:
   target:
     - AppImage

@@ -179,12 +179,12 @@ const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   : "Multica Canary";
 
 function isLocalDesktopBuild(): boolean {
-  return process.execPath.includes("Multica Local.app");
+  return process.execPath.includes("Origin.app");
 }
 
 if (!is.dev && isLocalDesktopBuild()) {
-  app.setName("Multica Local");
-  app.setPath("userData", join(app.getPath("appData"), "Multica Local"));
+  app.setName("Origin");
+  app.setPath("userData", join(app.getPath("appData"), "Origin"));
 }
 
 if (is.dev) {
