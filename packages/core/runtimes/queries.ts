@@ -50,6 +50,11 @@ export function runtimeListOptions(wsId: string, owner?: "me") {
   return queryOptions({
     queryKey: owner === "me" ? runtimeKeys.listMine(wsId) : runtimeKeys.list(wsId),
     queryFn: () => api.listRuntimes({ workspace_id: wsId, owner }),
+    // Keep the runtime pool fresh even when daemon:register WS events miss
+    // (e.g. websocket reconnect race after a daemon restart). 15 s matches
+    // the daemon heartbeat cadence so a newly registered runtime can take at
+    // most one heartbeat to surface in the UI.
+    refetchInterval: 15_000,
   });
 }
 
