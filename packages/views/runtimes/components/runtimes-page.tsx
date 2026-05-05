@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Server } from "lucide-react";
+import { Plus, RefreshCw, Search, Server } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -20,6 +20,7 @@ import {
   workspaceKeys,
 } from "@multica/core/workspace/queries";
 import { Button } from "@multica/ui/components/ui/button";
+import { cn } from "@multica/ui/lib/utils";
 import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import {
@@ -182,6 +183,10 @@ export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {})
       <PageHeaderBar
         totalCount={totalCount}
         onConnectRemote={() => setShowConnectDialog(true)}
+        onRefresh={() => {
+          qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
+        }}
+        refreshing={fetching}
       />
 
       <div className="flex flex-1 min-h-0 flex-col gap-4 p-6">
@@ -245,9 +250,17 @@ export function RuntimesPage({ topSlot, bootstrapping }: RuntimesPageProps = {})
 function PageHeaderBar({
   totalCount,
   onConnectRemote,
+  onRefresh,
+  refreshing,
 }: {
   totalCount: number;
   onConnectRemote: () => void;
+  // Manual refresh — runtime list updates are infrequent (daemon
+  // restart / new connect), so we don't poll. The button covers the
+  // rare case where a daemon:register WS event miss leaves the list
+  // stale.
+  onRefresh: () => void;
+  refreshing: boolean;
 }) {
   return (
     <PageHeader className="justify-between px-5">
@@ -263,10 +276,23 @@ function PageHeaderBar({
           展示本机已登录 CLI 和外部 API Provider；用户确认后再绑定为智能体。
         </p>
       </div>
-      <Button type="button" size="sm" onClick={onConnectRemote}>
-        <Plus className="h-3 w-3" />
-        添加能力来源
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onRefresh}
+          disabled={refreshing}
+          title="刷新能力池"
+          className="size-7 p-0"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+        </Button>
+        <Button type="button" size="sm" onClick={onConnectRemote}>
+          <Plus className="h-3 w-3" />
+          添加能力来源
+        </Button>
+      </div>
     </PageHeader>
   );
 }

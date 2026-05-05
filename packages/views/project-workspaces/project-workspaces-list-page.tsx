@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, Plus } from "lucide-react";
+import { FolderOpen, PanelLeftClose, Plus } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import {
@@ -44,22 +44,50 @@ export function ProjectWorkspacesListPage() {
 
   const activeId = routeId ?? projects[0]?.id ?? "";
 
+  // Sidebar collapse — persisted so the user's preference survives reloads.
+  // The chat column is the protagonist of this page; the project picker is
+  // navigation overhead and should be hideable on smaller windows.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("origin:project-sidebar-collapsed") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "origin:project-sidebar-collapsed",
+      sidebarCollapsed ? "1" : "0",
+    );
+  }, [sidebarCollapsed]);
+
   return (
     <div className="flex flex-1 min-h-0 bg-background">
-      {/* 左侧项目列表 */}
-      <aside className="flex w-[260px] shrink-0 flex-col border-r">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-          <span className="text-sm font-semibold">项目工作区</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setCreating(true)}
-            className="size-7 p-0"
-            title="新建项目"
-          >
-            <Plus className="size-4" />
-          </Button>
-        </header>
+      {/* 左侧项目列表 — collapsible via the in-header chevron button. When
+          collapsed, the aside is removed from the DOM entirely so the chat
+          column reclaims the full width without leaving a dead strip. The
+          ProjectWorkspacePage shows an expand button in its PageHeader. */}
+      {!sidebarCollapsed && (
+        <aside className="flex w-[260px] shrink-0 flex-col border-r">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+            <span className="flex-1 text-sm font-semibold">项目工作区</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setCreating(true)}
+              className="size-7 p-0"
+              title="新建项目"
+            >
+              <Plus className="size-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSidebarCollapsed(true)}
+              className="size-7 p-0"
+              title="收起项目列表"
+            >
+              <PanelLeftClose className="size-4" />
+            </Button>
+          </header>
         <div className="flex-1 overflow-y-auto p-2">
           {isLoading ? (
             <div className="space-y-2 p-1">
@@ -137,11 +165,17 @@ export function ProjectWorkspacesListPage() {
           )}
         </div>
       </aside>
+      )}
 
       {/* 右侧主区 */}
       <main className="flex flex-1 min-w-0">
         {activeId ? (
-          <ProjectWorkspacePage key={activeId} projectId={activeId} />
+          <ProjectWorkspacePage
+            key={activeId}
+            projectId={activeId}
+            sidebarCollapsed={sidebarCollapsed}
+            onExpandSidebar={() => setSidebarCollapsed(false)}
+          />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center p-12 text-center">
             <FolderOpen className="mb-3 size-12 text-muted-foreground opacity-40" />

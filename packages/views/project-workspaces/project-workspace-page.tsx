@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveX, Bot, FileText, FolderOpen, Network, Sparkles, UserPlus, Users } from "lucide-react";
+import { Archive, ArchiveX, Bot, FileText, FolderOpen, Network, PanelLeft, PanelRightClose, PanelRightOpen, Sparkles, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
@@ -62,7 +62,18 @@ import { EditTeamDialog } from "../teams/edit-team-dialog";
 
 type DocTab = "files" | "memory" | "items" | "archive";
 
-export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
+export function ProjectWorkspacePage({
+  projectId,
+  sidebarCollapsed = false,
+  onExpandSidebar,
+}: {
+  projectId: string;
+  // Optional sidebar-coordination props (only set when rendered inside
+  // ProjectWorkspacesListPage). When sidebar is collapsed, we render an
+  // expand button in the leftmost slot of the PageHeader.
+  sidebarCollapsed?: boolean;
+  onExpandSidebar?: () => void;
+}) {
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
@@ -103,6 +114,19 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
   const [activeTab, setActiveTab] = useState<DocTab>("memory");
   const [editingMemory, setEditingMemory] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
+  // Right-side doc panel — collapsible like the project sidebar. Persisted so
+  // a 13" screen user who lives in chat doesn't have to close it every time.
+  const [docCollapsed, setDocCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("origin:project-doc-collapsed") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "origin:project-doc-collapsed",
+      docCollapsed ? "1" : "0",
+    );
+  }, [docCollapsed]);
 
   if (isLoading) {
     return (
@@ -154,6 +178,17 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-1 flex-col bg-background">
       <PageHeader className="gap-1.5">
+        {sidebarCollapsed && onExpandSidebar && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onExpandSidebar}
+            className="size-7 p-0"
+            title="展开项目列表"
+          >
+            <PanelLeft className="size-4" />
+          </Button>
+        )}
         <span className="text-sm text-muted-foreground">项目工作区 / </span>
         <span className="text-sm font-medium">{project.title}</span>
         <Badge variant="secondary" className={cn("ml-2", statusTone[project.status])}>
@@ -181,6 +216,19 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
           {project.status !== "archived" && (
             <ArchiveProjectButton projectId={project.id} projectTitle={project.title} />
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setDocCollapsed((v) => !v)}
+            className="size-7 p-0"
+            title={docCollapsed ? "展开文档面板" : "收起文档面板"}
+          >
+            {docCollapsed ? (
+              <PanelRightOpen className="size-4" />
+            ) : (
+              <PanelRightClose className="size-4" />
+            )}
+          </Button>
         </div>
       </PageHeader>
 
@@ -258,9 +306,13 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
           )}
         </section>
 
-        {/* Right: doc column */}
-        <aside className="flex w-[480px] flex-col">
-          <div className="flex h-11 items-center gap-1 border-b px-3">
+        {/* Right: doc column — collapsible. When collapsed, removed from the
+            DOM so the chat column reclaims the full width; expand control
+            lives in the PageHeader as PanelRightOpen. Width drops to 420px
+            on smaller screens to stop the header buttons from clipping. */}
+        {!docCollapsed && (
+        <aside className="flex w-[420px] xl:w-[480px] shrink-0 flex-col border-l">
+          <div className="flex h-11 items-center gap-1 overflow-x-auto border-b px-3">
             <DocTabBtn active={activeTab === "files"} onClick={() => setActiveTab("files")} icon={FolderOpen}>
               团队工作文件
             </DocTabBtn>
@@ -351,6 +403,7 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
             <ArchivedSessionsTab projectId={projectId} />
           )}
         </aside>
+        )}
       </div>
     </div>
   );
@@ -698,7 +751,7 @@ function DocTabBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs",
+        "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs",
         active
           ? "bg-muted text-foreground font-medium"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
