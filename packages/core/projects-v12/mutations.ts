@@ -53,8 +53,15 @@ export function useAppendProjectMemoryDoc(wsId: string) {
 export function usePostProjectMainChatMessage(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, content }: { projectId: string; content: string }) =>
-      api.postProjectMainChatMessage(projectId, { content }),
+    mutationFn: ({
+      projectId,
+      content,
+      skill_ids,
+    }: {
+      projectId: string;
+      content: string;
+      skill_ids?: string[];
+    }) => api.postProjectMainChatMessage(projectId, { content, skill_ids }),
     onSuccess: (_, { projectId }) => {
       qc.invalidateQueries({
         queryKey: projectV12Keys.mainChatMessages(wsId, projectId),

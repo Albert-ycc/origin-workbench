@@ -19,7 +19,10 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { api } from "@multica/core/api";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
-import { agentListOptions } from "@multica/core/workspace/queries";
+import {
+  agentListOptions,
+  skillListOptions,
+} from "@multica/core/workspace/queries";
 import {
   teamDetailOptions,
   teamKeys,
@@ -27,7 +30,7 @@ import {
   useDeleteTeam,
   usePostTeamMessage,
 } from "@multica/core/teams";
-import type { Agent, Issue, TeamMessage } from "@multica/core/types";
+import type { Agent, Issue, Skill, TeamMessage } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
@@ -36,6 +39,16 @@ import { PageHeader } from "../layout/page-header";
 import { ActorAvatar } from "../common/actor-avatar";
 import { Markdown } from "../common/markdown";
 import { AppLink, useNavigation } from "../navigation";
+import {
+  findSlashSkillTrigger,
+  filterSlashSkills,
+  removeSlashSkillTrigger,
+  type SlashSkillTrigger,
+} from "../chat/components/skill-slash";
+import {
+  SelectedSkillChips,
+  SkillSlashMenu,
+} from "../chat/components/skill-slash-menu";
 
 interface TeamDetailPageProps {
   teamId: string;
@@ -186,7 +199,7 @@ export function TeamDetailPage({ teamId }: TeamDetailPageProps) {
               setLoadingOlder(false);
             }
           }}
-          onSend={(content) => {
+          onSend={(content, options) => {
             const trimmed = content.trim();
             if (!trimmed) return;
             if (!currentUser) {
@@ -194,7 +207,7 @@ export function TeamDetailPage({ teamId }: TeamDetailPageProps) {
               return;
             }
             postMessage.mutate(
-              { teamId: team.id, content: trimmed },
+              { teamId: team.id, content: trimmed, skill_ids: options?.skillIds },
               {
                 onError: (err) => {
                   toast.error(
@@ -227,6 +240,14 @@ interface MentionState {
   triggerStart: number; // index in draft of the `@` itself
   query: string;
   selectedIndex: number;
+}
+
+interface SlashSkillState extends SlashSkillTrigger {
+  selectedIndex: number;
+}
+
+interface ChatSendOptions {
+  skillIds?: string[];
 }
 
 // Decide whether a `@` at position `at` (just before the caret) should open
@@ -263,15 +284,19 @@ export function ChatPane({
   hasOlder: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
-  onSend: (content: string) => void;
+  onSend: (content: string, options?: ChatSendOptions) => void;
   // PRD §17.4.2 — when present, each message renders a "钉到记忆" action.
   // Project workspace passes this; team room (no project_id) leaves undefined.
   onPin?: (message: TeamMessage) => void;
 }) {
+  const wsId = useWorkspaceId();
   const [draft, setDraft] = useState("");
   const [mention, setMention] = useState<MentionState | null>(null);
+  const [skillSlash, setSkillSlash] = useState<SlashSkillState | null>(null);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
 
   // "Captain is thinking" indicator: visible whenever the most recent
   // message is from a user (server hasn't enqueued the assistant row yet)
@@ -324,6 +349,22 @@ export function ChatPane({
     return allMembers.filter((opt) => opt.searchable.includes(q));
   }, [mention, allMembers]);
 
+  const selectedSkills = useMemo(() => {
+    const byId = new Map(workspaceSkills.map((skill) => [skill.id, skill]));
+    return selectedSkillIds
+      .map((id) => byId.get(id))
+      .filter((skill): skill is Skill => !!skill);
+  }, [selectedSkillIds, workspaceSkills]);
+
+  const filteredSkills = useMemo(() => {
+    if (!skillSlash) return [] as Skill[];
+    const selected = new Set(selectedSkillIds);
+    return filterSlashSkills(
+      workspaceSkills.filter((skill) => !selected.has(skill.id)),
+      skillSlash.query,
+    ).slice(0, 8);
+  }, [skillSlash, selectedSkillIds, workspaceSkills]);
+
   // Boundary: filtering can collapse the option list. Snap selectedIndex
   // back into range silently so a stale index never mismatches the row
   // about to be rendered (and accepted via Enter).
@@ -335,6 +376,24 @@ export function ChatPane({
       );
     }
   }, [mention, filteredOptions.length]);
+
+  useEffect(() => {
+    if (
+      !skillSlash ||
+      filteredSkills.length === 0 ||
+      skillSlash.selectedIndex < filteredSkills.length
+    ) {
+      return;
+    }
+    setSkillSlash((state) =>
+      state
+        ? {
+            ...state,
+            selectedIndex: Math.max(0, filteredSkills.length - 1),
+          }
+        : state,
+    );
+  }, [skillSlash, filteredSkills.length]);
 
   const updateDraft = (next: string, caret: number) => {
     setDraft(next);
@@ -348,15 +407,27 @@ export function ChatPane({
       }
       if (ch === " " || ch === "\n" || ch === "\t") break;
     }
-    if (lastAt < 0 || !shouldOpenMention(next, lastAt)) {
-      if (mention) setMention(null);
+    if (lastAt >= 0 && shouldOpenMention(next, lastAt)) {
+      const query = next.slice(lastAt + 1, caret);
+      setMention((prev) => ({
+        triggerStart: lastAt,
+        query,
+        selectedIndex: prev?.triggerStart === lastAt ? prev.selectedIndex : 0,
+      }));
+      if (skillSlash) setSkillSlash(null);
       return;
     }
-    const query = next.slice(lastAt + 1, caret);
-    setMention((prev) => ({
-      triggerStart: lastAt,
-      query,
-      selectedIndex: prev?.triggerStart === lastAt ? prev.selectedIndex : 0,
+    if (mention) setMention(null);
+
+    const trigger = findSlashSkillTrigger(next, caret);
+    if (!trigger) {
+      if (skillSlash) setSkillSlash(null);
+      return;
+    }
+    setSkillSlash((prev) => ({
+      ...trigger,
+      selectedIndex:
+        prev?.triggerStart === trigger.triggerStart ? prev.selectedIndex : 0,
     }));
   };
 
@@ -379,11 +450,35 @@ export function ChatPane({
     });
   };
 
+  const acceptSkill = (skill: Skill) => {
+    if (!skillSlash) return;
+    const before = draft.slice(0, skillSlash.triggerStart);
+    const next = removeSlashSkillTrigger(draft, skillSlash);
+    setSelectedSkillIds((ids) =>
+      ids.includes(skill.id) ? ids : [...ids, skill.id],
+    );
+    setDraft(next);
+    setSkillSlash(null);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const pos = Math.min(before.length, next.length);
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    });
+  };
+
   const submit = () => {
     if (!draft.trim()) return;
-    onSend(draft);
+    const skillIdsAtSend = selectedSkillIds;
+    onSend(
+      draft,
+      skillIdsAtSend.length ? { skillIds: skillIdsAtSend } : undefined,
+    );
     setDraft("");
     setMention(null);
+    setSkillSlash(null);
+    setSelectedSkillIds([]);
   };
 
   return (
@@ -441,6 +536,20 @@ export function ChatPane({
                 captainId={captain?.id ?? null}
               />
             )}
+            {skillSlash && filteredSkills.length > 0 && (
+              <SkillSlashMenu
+                skills={filteredSkills}
+                selectedIndex={skillSlash.selectedIndex}
+                onPick={acceptSkill}
+              />
+            )}
+            <SelectedSkillChips
+              skills={selectedSkills}
+              onRemove={(skillId) =>
+                setSelectedSkillIds((ids) => ids.filter((id) => id !== skillId))
+              }
+              className="mb-2"
+            />
             <Textarea
               ref={textareaRef}
               value={draft}
@@ -491,12 +600,51 @@ export function ChatPane({
                     return;
                   }
                 }
+                if (skillSlash && filteredSkills.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSkillSlash((state) =>
+                      state
+                        ? {
+                            ...state,
+                            selectedIndex:
+                              (state.selectedIndex + 1) % filteredSkills.length,
+                          }
+                        : state,
+                    );
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSkillSlash((state) =>
+                      state
+                        ? {
+                            ...state,
+                            selectedIndex:
+                              (state.selectedIndex - 1 + filteredSkills.length) %
+                              filteredSkills.length,
+                          }
+                        : state,
+                    );
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    acceptSkill(filteredSkills[skillSlash.selectedIndex]!);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setSkillSlash(null);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   submit();
                 }
               }}
-              placeholder={`和「${team.name}」说点什么…  输入 @ 提及成员 / Enter 发送 / Shift+Enter 换行`}
+              placeholder={`和「${team.name}」说点什么…  输入 @ 提及成员 / 输入 / 调用技能 / Enter 发送`}
               rows={2}
               className="resize-none"
             />

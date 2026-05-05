@@ -1,17 +1,36 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@multica/ui/lib/utils";
 import { ContentEditor, type ContentEditorRef } from "../../editor";
 import { SubmitButton } from "@multica/ui/components/common/submit-button";
 import { useChatStore, DRAFT_NEW_SESSION } from "@multica/core/chat";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { skillListOptions } from "@multica/core/workspace/queries";
+import type { Skill } from "@multica/core/types";
 import { createLogger } from "@multica/core/logger";
+import {
+  findSlashSkillTrigger,
+  filterSlashSkills,
+  removeSlashSkillTrigger,
+  type SlashSkillTrigger,
+} from "./skill-slash";
+import { SelectedSkillChips, SkillSlashMenu } from "./skill-slash-menu";
 
 const logger = createLogger("chat.ui");
 
+interface ChatSendOptions {
+  skillIds?: string[];
+}
+
+interface SlashSkillState extends SlashSkillTrigger {
+  selectedIndex: number;
+}
+
 interface ChatInputProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, options?: ChatSendOptions) => void;
   onStop?: () => void;
   isRunning?: boolean;
   disabled?: boolean;
@@ -41,6 +60,7 @@ export function ChatInput({
   rightAdornment,
   topSlot,
 }: ChatInputProps) {
+  const wsId = useWorkspaceId();
   const editorRef = useRef<ContentEditorRef>(null);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const selectedAgentId = useChatStore((s) => s.selectedAgentId);
@@ -57,6 +77,48 @@ export function ChatInput({
   const setInputDraft = useChatStore((s) => s.setInputDraft);
   const clearInputDraft = useChatStore((s) => s.clearInputDraft);
   const [isEmpty, setIsEmpty] = useState(!inputDraft.trim());
+  const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [skillSlash, setSkillSlash] = useState<SlashSkillState | null>(null);
+
+  const selectedSkills = useMemo(() => {
+    const byId = new Map(workspaceSkills.map((skill) => [skill.id, skill]));
+    return selectedSkillIds
+      .map((id) => byId.get(id))
+      .filter((skill): skill is Skill => !!skill);
+  }, [selectedSkillIds, workspaceSkills]);
+
+  const slashOptions = useMemo(() => {
+    if (!skillSlash) return [] as Skill[];
+    const selected = new Set(selectedSkillIds);
+    return filterSlashSkills(
+      workspaceSkills.filter((skill) => !selected.has(skill.id)),
+      skillSlash.query,
+    ).slice(0, 8);
+  }, [skillSlash, selectedSkillIds, workspaceSkills]);
+
+  useEffect(() => {
+    setSelectedSkillIds([]);
+    setSkillSlash(null);
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (
+      !skillSlash ||
+      slashOptions.length === 0 ||
+      skillSlash.selectedIndex < slashOptions.length
+    ) {
+      return;
+    }
+    setSkillSlash((state) =>
+      state
+        ? {
+            ...state,
+            selectedIndex: Math.max(0, slashOptions.length - 1),
+          }
+        : state,
+    );
+  }, [skillSlash, slashOptions.length]);
 
   const handleSend = () => {
     const content = editorRef.current?.getMarkdown()?.replace(/(\n\s*)+$/, "").trim();
@@ -74,7 +136,11 @@ export function ChatInput({
     // at the new session and leave the old draft orphaned.
     const keyAtSend = draftKey;
     logger.info("input.send", { contentLength: content.length, draftKey: keyAtSend });
-    onSend(content);
+    const skillIdsAtSend = selectedSkillIds;
+    onSend(
+      content,
+      skillIdsAtSend.length ? { skillIds: skillIdsAtSend } : undefined,
+    );
     editorRef.current?.clearContent();
     // Drop focus so the caret doesn't keep blinking under the StatusPill /
     // streaming reply that's about to take over the user's attention. The
@@ -86,6 +152,77 @@ export function ChatInput({
     editorRef.current?.blur();
     clearInputDraft(keyAtSend);
     setIsEmpty(true);
+    setSelectedSkillIds([]);
+    setSkillSlash(null);
+  };
+
+  const updateSlashState = (markdown: string) => {
+    const trigger = findSlashSkillTrigger(markdown, markdown.length);
+    if (!trigger) {
+      setSkillSlash(null);
+      return;
+    }
+    setSkillSlash((prev) => ({
+      ...trigger,
+      selectedIndex:
+        prev?.triggerStart === trigger.triggerStart ? prev.selectedIndex : 0,
+    }));
+  };
+
+  const acceptSkill = (skill: Skill) => {
+    if (!skillSlash) return;
+    const currentDraft = editorRef.current?.getMarkdown() ?? inputDraft;
+    const next = removeSlashSkillTrigger(currentDraft, skillSlash);
+    setSelectedSkillIds((ids) =>
+      ids.includes(skill.id) ? ids : [...ids, skill.id],
+    );
+    setInputDraft(draftKey, next);
+    setIsEmpty(!next.trim());
+    setSkillSlash(null);
+    editorRef.current?.setPlainText(next);
+    requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
+  const handleEditorKeyDown = (event: KeyboardEvent): boolean => {
+    if (skillSlash && slashOptions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSkillSlash((state) =>
+          state
+            ? {
+                ...state,
+                selectedIndex: (state.selectedIndex + 1) % slashOptions.length,
+              }
+            : state,
+        );
+        return true;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSkillSlash((state) =>
+          state
+            ? {
+                ...state,
+                selectedIndex:
+                  (state.selectedIndex - 1 + slashOptions.length) %
+                  slashOptions.length,
+              }
+            : state,
+        );
+        return true;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        acceptSkill(slashOptions[skillSlash.selectedIndex]!);
+        return true;
+      }
+    }
+    if (event.key === "Escape" && skillSlash) {
+      event.preventDefault();
+      setSkillSlash(null);
+      return true;
+    }
+    return false;
   };
 
   const placeholder = noAgent
@@ -120,7 +257,22 @@ export function ChatInput({
         )}
         aria-disabled={noAgent || undefined}
       >
+        {skillSlash && slashOptions.length > 0 && (
+          <SkillSlashMenu
+            skills={slashOptions}
+            selectedIndex={skillSlash.selectedIndex}
+            onPick={acceptSkill}
+            className="left-3"
+          />
+        )}
         {topSlot}
+        <SelectedSkillChips
+          skills={selectedSkills}
+          onRemove={(skillId) =>
+            setSelectedSkillIds((ids) => ids.filter((id) => id !== skillId))
+          }
+          className="px-3 pt-2"
+        />
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
           <ContentEditor
             // Remount the editor when the active session changes so its
@@ -132,8 +284,10 @@ export function ChatInput({
             onUpdate={(md) => {
               setIsEmpty(!md.trim());
               setInputDraft(draftKey, md);
+              updateSlashState(md);
             }}
             onSubmit={handleSend}
+            onKeyDown={handleEditorKeyDown}
             debounceMs={100}
             // Chat is short-form — the floating formatting toolbar is
             // more distraction than feature here.

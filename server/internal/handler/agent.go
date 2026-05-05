@@ -192,6 +192,7 @@ type AgentTaskResponse struct {
 	QuickCreatePrompt       string                         `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
 	ProjectCompaction       *ProjectCompactionTaskData     `json:"project_compaction,omitempty"`        // async project main-chat /sync preview task
 	OperatorPreferences     *OperatorPreferencesData       `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
+	RequestedSkills         []string                       `json:"requested_skills,omitempty"`          // skills explicitly selected from chat slash menu for this turn
 	Kind                    string                         `json:"kind"`                                // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
 }
 

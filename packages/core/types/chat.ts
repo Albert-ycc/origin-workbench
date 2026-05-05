@@ -59,6 +59,10 @@ export interface SendChatMessageResponse {
   created_at: string;
 }
 
+export interface SendChatMessageOptions {
+  skill_ids?: string[];
+}
+
 /**
  * Response from GET /api/chat/sessions/{id}/pending-task.
  * All fields are absent when the session has no in-flight task.

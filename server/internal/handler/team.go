@@ -192,7 +192,8 @@ type AddTeamMemberRequest struct {
 }
 
 type PostTeamMessageRequest struct {
-	Content string `json:"content"`
+	Content  string   `json:"content"`
+	SkillIDs []string `json:"skill_ids"`
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -737,6 +738,10 @@ func (h *Handler) PostTeamMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "content is required")
 		return
 	}
+	taskContext, ok := h.buildChatSkillContextOrBadRequest(w, r, team.WorkspaceID, req.SkillIDs)
+	if !ok {
+		return
+	}
 
 	// Lazy-create the team's group chat session on first message. The query
 	// is idempotent and concurrency-safe via the unique team_id index.
@@ -784,7 +789,7 @@ func (h *Handler) PostTeamMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, resp)
 		return
 	}
-	if _, err := h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, captain.ID); err != nil {
+	if _, err := h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, captain.ID, taskContext); err != nil {
 		// The user's message is already part of the team history. Treat
 		// dispatch failure as a visible system event in the room instead of
 		// making the client roll back a message that actually exists.

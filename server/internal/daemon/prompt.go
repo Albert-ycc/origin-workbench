@@ -228,13 +228,30 @@ func buildChatPrompt(task Task) string {
 			fmt.Fprintf(&b, "Delegation from %s:\n%s\n\n", source, task.TeamDelegation.Instruction)
 			b.WriteString("You are the delegated member for this turn. Do the work requested of you, then reply back to the group chat with your findings, decisions, blockers, or handoff notes.\n\n")
 		}
+		writeRequestedSkills(&b, task.RequestedSkills)
 		fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
 		return b.String()
 	}
 	b.WriteString("You are running as the user's Origin Direct Chat partner — Origin's primary product surface.\n")
 	b.WriteString("Stay in your role (see Agent Identity / operator preferences above). Do NOT introduce yourself as a \"Multica platform agent\" or describe your capabilities in terms of `multica issue` / `multica autopilot` / workspace management — those are local CLI plumbing and the user does not see them. Talk in Origin terms (Mission / Idea Pool / Council Session / Branching Exploration / Tool Binding) when describing what you can do.\n\n")
+	writeRequestedSkills(&b, task.RequestedSkills)
 	fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
 	return b.String()
+}
+
+func writeRequestedSkills(b *strings.Builder, skills []string) {
+	if len(skills) == 0 {
+		return
+	}
+	b.WriteString("Requested skills for this turn:\n")
+	for _, skill := range skills {
+		name := strings.TrimSpace(skill)
+		if name == "" {
+			continue
+		}
+		fmt.Fprintf(b, "- %s\n", name)
+	}
+	b.WriteString("Use the selected skill instructions for this turn before answering.\n\n")
 }
 
 // buildAutopilotPrompt constructs a prompt for run_only autopilot tasks.

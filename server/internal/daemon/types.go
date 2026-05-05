@@ -78,6 +78,7 @@ type Task struct {
 	QuickCreatePrompt       string                 `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
 	ProjectCompaction       *ProjectCompactionData `json:"project_compaction,omitempty"`        // async project main-chat /sync preview task
 	OperatorPreferences     *OperatorPreferences   `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
+	RequestedSkills         []string               `json:"requested_skills,omitempty"`          // skills explicitly selected from chat slash menu for this turn
 }
 
 // OperatorPreferences carries the user-written identity card and communication

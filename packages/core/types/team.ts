@@ -55,6 +55,7 @@ export interface AddTeamMemberRequest {
 
 export interface PostTeamMessageRequest {
   content: string;
+  skill_ids?: string[];
 }
 
 export interface ListTeamsResponse {

@@ -74,6 +74,7 @@ interface ContentEditorProps {
   className?: string;
   debounceMs?: number;
   onSubmit?: () => void;
+  onKeyDown?: (event: KeyboardEvent) => boolean;
   onBlur?: () => void;
   onUploadFile?: (file: File) => Promise<UploadResult | null>;
   /** Show the floating formatting toolbar on text selection. Defaults true. */
@@ -97,6 +98,7 @@ interface ContentEditorProps {
 interface ContentEditorRef {
   getMarkdown: () => string;
   clearContent: () => void;
+  setPlainText: (value: string) => void;
   focus: () => void;
   /** Drop focus from the editor — used by chat after send so the caret
    *  stops competing with the StatusPill / streaming reply for the user's
@@ -120,6 +122,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       className,
       debounceMs = 300,
       onSubmit,
+      onKeyDown,
       onBlur,
       onUploadFile,
       showBubbleMenu = true,
@@ -132,6 +135,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
     const onUpdateRef = useRef(onUpdate);
     const onSubmitRef = useRef(onSubmit);
+    const onKeyDownRef = useRef(onKeyDown);
     const onBlurRef = useRef(onBlur);
     const onUploadFileRef = useRef(onUploadFile);
     const lastEmittedRef = useRef<string | null>(null);
@@ -146,6 +150,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     // Keep refs in sync without recreating editor
     onUpdateRef.current = onUpdate;
     onSubmitRef.current = onSubmit;
+    onKeyDownRef.current = onKeyDown;
     onBlurRef.current = onBlur;
     onUploadFileRef.current = onUploadFile;
 
@@ -184,6 +189,9 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       },
       editorProps: {
         handleDOMEvents: {
+          keydown(_view, event) {
+            return onKeyDownRef.current?.(event) ?? false;
+          },
           click(_view, event) {
             const target = event.target as HTMLElement;
             // Skip links inside NodeView wrappers — they handle their own clicks
@@ -215,6 +223,12 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       getMarkdown: () => stripBlobUrls(editor?.getMarkdown() ?? ""),
       clearContent: () => {
         editor?.commands.clearContent();
+      },
+      setPlainText: (value: string) => {
+        editor?.commands.clearContent();
+        if (value) {
+          editor?.commands.insertContent(value);
+        }
       },
       focus: () => {
         editor?.commands.focus();

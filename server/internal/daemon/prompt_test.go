@@ -35,3 +35,22 @@ func TestBuildPromptProjectCompactionRequiresStrictJSON(t *testing.T) {
 		t.Fatalf("compaction prompt must not ask for issue workflow\n%s", prompt)
 	}
 }
+
+func TestBuildPromptChatIncludesRequestedSkills(t *testing.T) {
+	prompt := BuildPrompt(Task{
+		ChatSessionID:   "chat-1",
+		ChatMessage:     "帮我整理成 PRD",
+		RequestedSkills: []string{"prd-writer", "lark-doc"},
+	})
+
+	for _, want := range []string{
+		"Requested skills for this turn",
+		"prd-writer",
+		"lark-doc",
+		"User message:\n帮我整理成 PRD",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q\n%s", want, prompt)
+		}
+	}
+}

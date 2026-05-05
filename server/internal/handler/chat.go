@@ -204,7 +204,8 @@ func (h *Handler) ArchiveChatSession(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type SendChatMessageRequest struct {
-	Content string `json:"content"`
+	Content  string   `json:"content"`
+	SkillIDs []string `json:"skill_ids"`
 }
 
 type SendChatMessageResponse struct {
@@ -245,6 +246,10 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "chat session is archived")
 		return
 	}
+	taskContext, ok := h.buildChatSkillContextOrBadRequest(w, r, session.WorkspaceID, req.SkillIDs)
+	if !ok {
+		return
+	}
 
 	// Create the user message first so the daemon can always find it.
 	msg, err := h.Queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
@@ -258,7 +263,7 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue a chat task after the message exists.
-	task, err := h.TaskService.EnqueueChatTask(r.Context(), session)
+	task, err := h.TaskService.EnqueueChatTask(r.Context(), session, taskContext)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to enqueue chat task: "+err.Error())
 		return

@@ -359,11 +359,11 @@ func (s *TaskService) EnqueueProjectCompactionTask(ctx context.Context, workspac
 
 // EnqueueChatTask creates a queued task for a chat session.
 // Unlike issue tasks, chat tasks have no issue_id.
-func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSession) (db.AgentTaskQueue, error) {
+func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSession, taskContexts ...[]byte) (db.AgentTaskQueue, error) {
 	if !chatSession.AgentID.Valid {
 		return db.AgentTaskQueue{}, fmt.Errorf("chat session has no agent — call EnqueueChatTaskForAgent for team sessions")
 	}
-	return s.EnqueueChatTaskForAgent(ctx, chatSession, chatSession.AgentID)
+	return s.EnqueueChatTaskForAgent(ctx, chatSession, chatSession.AgentID, taskContexts...)
 }
 
 // EnqueueChatTaskForAgent enqueues a chat task on a specific agent. It exists
@@ -1309,6 +1309,97 @@ type AgentSkillData struct {
 type AgentSkillFileData struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+}
+
+const ChatSkillInvocationContextType = "chat_skill_invocation"
+
+type ChatSkillInvocationContext struct {
+	Type     string   `json:"type"`
+	SkillIDs []string `json:"skill_ids"`
+}
+
+func BuildChatSkillInvocationContext(skillIDs []string) ([]byte, bool) {
+	seen := make(map[string]struct{}, len(skillIDs))
+	normalized := make([]string, 0, len(skillIDs))
+	for _, raw := range skillIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	if len(normalized) == 0 {
+		return nil, false
+	}
+	payload, err := json.Marshal(ChatSkillInvocationContext{
+		Type:     ChatSkillInvocationContextType,
+		SkillIDs: normalized,
+	})
+	if err != nil {
+		return nil, false
+	}
+	return payload, true
+}
+
+func ParseChatSkillInvocationContext(raw []byte) (ChatSkillInvocationContext, bool) {
+	if len(raw) == 0 {
+		return ChatSkillInvocationContext{}, false
+	}
+	var ctx ChatSkillInvocationContext
+	if err := json.Unmarshal(raw, &ctx); err != nil {
+		return ChatSkillInvocationContext{}, false
+	}
+	if ctx.Type != ChatSkillInvocationContextType || len(ctx.SkillIDs) == 0 {
+		return ChatSkillInvocationContext{}, false
+	}
+	return ctx, true
+}
+
+func (s *TaskService) LoadAgentSkillsForTask(ctx context.Context, agentID, workspaceID pgtype.UUID, taskContext []byte) ([]AgentSkillData, []string) {
+	skills := s.LoadAgentSkills(ctx, agentID)
+	invocation, ok := ParseChatSkillInvocationContext(taskContext)
+	if !ok {
+		return skills, nil
+	}
+
+	seenNames := make(map[string]struct{}, len(skills)+len(invocation.SkillIDs))
+	for _, skill := range skills {
+		seenNames[strings.ToLower(skill.Name)] = struct{}{}
+	}
+
+	requestedNames := make([]string, 0, len(invocation.SkillIDs))
+	for _, rawID := range invocation.SkillIDs {
+		skillID, err := util.ParseUUID(rawID)
+		if err != nil {
+			slog.Warn("chat skill invocation has invalid skill id", "skill_id", rawID, "error", err)
+			continue
+		}
+		skill, err := s.Queries.GetSkillInWorkspace(ctx, db.GetSkillInWorkspaceParams{
+			ID:          skillID,
+			WorkspaceID: workspaceID,
+		})
+		if err != nil {
+			slog.Warn("chat skill invocation references missing skill", "skill_id", rawID, "error", err)
+			continue
+		}
+		requestedNames = append(requestedNames, skill.Name)
+		key := strings.ToLower(skill.Name)
+		if _, exists := seenNames[key]; exists {
+			continue
+		}
+		seenNames[key] = struct{}{}
+		data := AgentSkillData{Name: skill.Name, Content: skill.Content}
+		files, _ := s.Queries.ListSkillFiles(ctx, skill.ID)
+		for _, f := range files {
+			data.Files = append(data.Files, AgentSkillFileData{Path: f.Path, Content: f.Content})
+		}
+		skills = append(skills, data)
+	}
+	return skills, requestedNames
 }
 
 // computeChatElapsedMs returns the wall-clock duration from task creation

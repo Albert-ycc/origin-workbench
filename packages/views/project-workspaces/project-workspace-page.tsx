@@ -290,7 +290,7 @@ export function ProjectWorkspacePage({
                   setLoadingOlder(false);
                 }
               }}
-              onSend={(content) => {
+              onSend={(content, options) => {
                 const trimmed = content.trim();
                 if (!trimmed) return;
                 if (!currentUser) {
@@ -298,7 +298,11 @@ export function ProjectWorkspacePage({
                   return;
                 }
                 postMessage.mutate(
-                  { projectId, content: trimmed },
+                  {
+                    projectId,
+                    content: trimmed,
+                    skill_ids: options?.skillIds,
+                  },
                   {
                     onError: (err) => {
                       toast.error(

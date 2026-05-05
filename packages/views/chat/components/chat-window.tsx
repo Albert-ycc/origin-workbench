@@ -169,7 +169,7 @@ export function ChatWindow() {
   const { candidate: anchorCandidate } = useRouteAnchorCandidate(wsId);
 
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, options?: { skillIds?: string[] }) => {
       if (!activeAgent) {
         apiLogger.warn("sendChatMessage skipped: no active agent");
         return;
@@ -230,7 +230,9 @@ export function ChatWindow() {
       });
       apiLogger.debug("sendChatMessage.optimistic", { sessionId, optimisticId: optimistic.id });
 
-      const result = await api.sendChatMessage(sessionId, finalContent);
+      const result = await api.sendChatMessage(sessionId, finalContent, {
+        skill_ids: options?.skillIds,
+      });
       apiLogger.info("sendChatMessage.success", {
         sessionId,
         messageId: result.message_id,

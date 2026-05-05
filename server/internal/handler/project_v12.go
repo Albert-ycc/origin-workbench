@@ -708,7 +708,8 @@ func (h *Handler) ListProjectMainChatMessages(w http.ResponseWriter, r *http.Req
 }
 
 type PostProjectMainChatMessageRequest struct {
-	Content string `json:"content"`
+	Content  string   `json:"content"`
+	SkillIDs []string `json:"skill_ids"`
 }
 
 func (h *Handler) PostProjectMainChatMessage(w http.ResponseWriter, r *http.Request) {
@@ -750,6 +751,10 @@ func (h *Handler) PostProjectMainChatMessage(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	taskContext, ok := h.buildChatSkillContextOrBadRequest(w, r, session.WorkspaceID, req.SkillIDs)
+	if !ok {
+		return
+	}
 
 	msg, err := h.Queries.CreateTeamChatMessage(r.Context(), db.CreateTeamChatMessageParams{
 		ChatSessionID: session.ID,
@@ -773,7 +778,7 @@ func (h *Handler) PostProjectMainChatMessage(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusCreated, resp)
 		return
 	}
-	if _, err := h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, captain.ID); err != nil {
+	if _, err := h.TaskService.EnqueueChatTaskForAgent(r.Context(), session, captain.ID, taskContext); err != nil {
 		h.appendTeamSystemMessage(r, uuidToString(wsUUID), userID, session.ID, session.TeamID, "负责人暂时无法接管这条消息："+err.Error())
 		writeJSON(w, http.StatusCreated, resp)
 		return

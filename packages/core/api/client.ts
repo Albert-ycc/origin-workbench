@@ -58,6 +58,7 @@ import type {
   ChatPendingTask,
   PendingChatTasksResponse,
   SendChatMessageResponse,
+  SendChatMessageOptions,
   Project,
   CreateProjectRequest,
   UpdateProjectRequest,
@@ -1145,10 +1146,14 @@ export class ApiClient {
     return this.fetch(`/api/chat/sessions/${sessionId}/messages`);
   }
 
-  async sendChatMessage(sessionId: string, content: string): Promise<SendChatMessageResponse> {
+  async sendChatMessage(
+    sessionId: string,
+    content: string,
+    options?: SendChatMessageOptions,
+  ): Promise<SendChatMessageResponse> {
     return this.fetch(`/api/chat/sessions/${sessionId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, skill_ids: options?.skill_ids }),
     });
   }
 
@@ -1785,7 +1790,7 @@ export class ApiClient {
 
   async postProjectMainChatMessage(
     projectId: string,
-    data: { content: string },
+    data: { content: string; skill_ids?: string[] },
   ): Promise<TeamMessage> {
     return this.fetch(`/api/v12/projects/${projectId}/main-chat/messages`, {
       method: "POST",
