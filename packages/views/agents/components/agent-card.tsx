@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Sparkles, Users } from "lucide-react";
+import { MessageSquare, Sparkles } from "lucide-react";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
@@ -14,13 +14,11 @@ export function AgentCard({
   onOpen,
   onChat,
   onDuplicate,
-  onCreateTeam,
 }: {
   row: AgentRow;
   onOpen: () => void;
   onChat: () => void;
   onDuplicate: () => void;
-  onCreateTeam: () => void;
 }) {
   const { agent, presence, runtime, canManage } = row;
   const archived = !!agent.archived_at;
@@ -96,7 +94,7 @@ export function AgentCard({
         </div>
       </button>
 
-      <div className="mt-3 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
         <Button
           type="button"
           size="sm"
@@ -106,17 +104,6 @@ export function AgentCard({
         >
           <MessageSquare className="h-3.5 w-3.5" />
           对话
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7 w-full rounded-full text-xs text-muted-foreground hover:text-foreground"
-          disabled={archived}
-          onClick={onCreateTeam}
-        >
-          <Users className="h-3.5 w-3.5" />
-          创建团队
         </Button>
       </div>
 

@@ -45,7 +45,6 @@ import { availabilityConfig, availabilityOrder } from "../presence";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import { type AgentRow } from "./agent-columns";
 import { AgentCard } from "./agent-card";
-import { CreateTeamDialog } from "./create-team-dialog";
 
 // Filter axes:
 //
@@ -110,7 +109,6 @@ export function AgentsPage() {
   const [sort, setSort] = useState<SortKey>("recent");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [teamCaptain, setTeamCaptain] = useState<Agent | null>(null);
   // When set, the Create dialog opens pre-populated with this agent's
   // config — driven by the row-level "Duplicate" action. We keep this
   // separate from `showCreate` so a stray null-template doesn't open the
@@ -477,7 +475,6 @@ export function AgentsPage() {
               onOpen={(agent) => navigation.push(paths.agentDetail(agent.id))}
               onChat={handleChat}
               onDuplicate={handleDuplicate}
-              onCreateTeam={(agent) => setTeamCaptain(agent)}
             />
           </div>
         )}
@@ -498,13 +495,6 @@ export function AgentsPage() {
         />
       )}
 
-      {teamCaptain && (
-        <CreateTeamDialog
-          captain={teamCaptain}
-          agents={agents}
-          onClose={() => setTeamCaptain(null)}
-        />
-      )}
     </div>
   );
 }
@@ -517,7 +507,6 @@ function AgentGrid({
   onOpen,
   onChat,
   onDuplicate,
-  onCreateTeam,
 }: {
   view: View;
   rows: AgentRow[];
@@ -526,7 +515,6 @@ function AgentGrid({
   onOpen: (agent: Agent) => void;
   onChat: (agent: Agent) => void;
   onDuplicate: (agent: Agent) => void;
-  onCreateTeam: (agent: Agent) => void;
 }) {
   if (rows.length === 0 && view !== "active") {
     return <NoMatches view={view} search={search} scope={scope} />;
@@ -546,7 +534,6 @@ function AgentGrid({
             onOpen={() => onOpen(row.agent)}
             onChat={() => onChat(row.agent)}
             onDuplicate={() => onDuplicate(row.agent)}
-            onCreateTeam={() => onCreateTeam(row.agent)}
           />
         ))}
       </div>
