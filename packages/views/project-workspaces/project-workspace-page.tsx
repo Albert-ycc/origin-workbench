@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Bot, FileText, FolderOpen, Network, Sparkles, Users } from "lucide-react";
+import { Archive, ArchiveX, Bot, FileText, FolderOpen, Network, Sparkles, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
@@ -17,13 +17,14 @@ import {
   usePinChatMessageToProjectMemory,
   usePreviewProjectCompaction,
   useConfirmProjectCompaction,
+  useArchiveProjectV12,
   projectArchivedSessionsOptions,
 } from "@multica/core/projects-v12";
 import type { CompactionPreview, PinnedQuoteCandidate } from "@multica/core/types";
 import { teamDetailOptions } from "@multica/core/teams";
 import { useCreateCouncilSession } from "@multica/core/councils";
 import { agentListOptions } from "@multica/core/workspace/queries";
-import type { Agent } from "@multica/core/types";
+import type { Agent, Team } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -35,9 +36,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@multica/ui/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { ChatPane } from "../teams/team-detail-page";
+import { EditTeamDialog } from "../teams/edit-team-dialog";
 
 // Project workspace page (PRD §17.3). Two-column layout:
 //   left  — project main chat (one long timeline; reuses chat-window contract)
@@ -156,6 +168,7 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
           <span className="text-[11px] text-muted-foreground">
             第 {project.compaction_count} 次压缩
           </span>
+          {team && <ManageMembersButton team={team} />}
           {mainChat && (
             <ConveneCouncilButton
               projectId={projectId}
@@ -165,6 +178,9 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
             />
           )}
           <CompactionButton projectId={projectId} />
+          {project.status !== "archived" && (
+            <ArchiveProjectButton projectId={project.id} projectTitle={project.title} />
+          )}
         </div>
       </PageHeader>
 
@@ -306,12 +322,16 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
           )}
 
           {activeTab === "files" && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
               <FolderOpen className="size-8 opacity-40" />
-              <p className="text-xs leading-relaxed max-w-xs">
-                本地文件浏览器接入中
-                <br />
-                绑定目录：<code className="font-mono text-[11px]">{project.local_dir || "（未设置）"}</code>
+              <p className="max-w-xs text-xs leading-relaxed">
+                团队工作文件浏览器还没接入。当前项目绑定的本地目录是：
+              </p>
+              <code className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground">
+                {project.local_dir || "（未设置）"}
+              </code>
+              <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground/80">
+                Phase B+ 计划接 chokidar IPC，让你在这里直接看 / 双击打开 / 钉文件给 Agent。在那之前，请先在 Finder 里打开这个目录。
               </p>
             </div>
           )}
@@ -687,5 +707,80 @@ function DocTabBtn({
       <Icon className="size-3.5" />
       {children}
     </button>
+  );
+}
+
+function ManageMembersButton({ team }: { team: Team }) {
+  const [open, setOpen] = useState(false);
+  // captain + 非 captain 成员，去重计数。
+  const memberCount = team.members.length;
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+        title="管理项目成员"
+      >
+        <UserPlus className="size-3" />
+        成员 · {memberCount}
+      </Button>
+      {open && <EditTeamDialog team={team} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function ArchiveProjectButton({
+  projectId,
+  projectTitle,
+}: {
+  projectId: string;
+  projectTitle: string;
+}) {
+  const wsId = useWorkspaceId();
+  const [open, setOpen] = useState(false);
+  const archive = useArchiveProjectV12(wsId);
+
+  const submit = async () => {
+    try {
+      await archive.mutateAsync(projectId);
+      toast.success(`「${projectTitle}」已归档`);
+      setOpen(false);
+    } catch (err) {
+      toast.error("归档失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={() => setOpen(true)}
+        title="归档项目"
+      >
+        <ArchiveX className="size-3" />
+        归档
+      </Button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>归档「{projectTitle}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              归档后项目从工作区列表里隐藏，主聊和记忆文档保留可查。本地目录不会被删。需要重新启用时联系下棒手工 unarchive。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={archive.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={submit} disabled={archive.isPending}>
+              {archive.isPending ? "归档中…" : "确认归档"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

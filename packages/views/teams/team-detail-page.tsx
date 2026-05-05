@@ -34,6 +34,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { PageHeader } from "../layout/page-header";
 import { ActorAvatar } from "../common/actor-avatar";
+import { Markdown } from "../common/markdown";
 import { AppLink, useNavigation } from "../navigation";
 
 interface TeamDetailPageProps {
@@ -386,7 +387,7 @@ export function ChatPane({
   };
 
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {messages.length === 0 ? (
           <EmptyChat captain={captain} memberAgents={memberAgents} />
@@ -687,13 +688,17 @@ function Message({
         </div>
         <div
           className={cn(
-            "whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed",
+            "rounded-2xl px-3 py-2 text-sm leading-relaxed",
             isMe
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-foreground",
+              ? "whitespace-pre-wrap bg-primary text-primary-foreground"
+              : "prose prose-sm dark:prose-invert max-w-none bg-muted text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           )}
         >
-          {message.content}
+          {isMe ? (
+            message.content
+          ) : (
+            <Markdown>{message.content}</Markdown>
+          )}
         </div>
         {/* D 方案: captain 派活的任务卡片挂在 captain reply 下面 */}
         {isCaptain && agentById && (

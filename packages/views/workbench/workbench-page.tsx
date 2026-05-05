@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bot,
+  Briefcase,
   ChevronRight,
   Clock3,
   Compass,
@@ -27,6 +28,7 @@ import { useChatStore } from "@multica/core/chat";
 import { ideaKeys, ideaListOptions } from "@multica/core/ideas";
 import { mailboxListOptions } from "@multica/core/mailbox";
 import { missionListOptions } from "@multica/core/missions";
+import { projectV12ListOptions } from "@multica/core/projects-v12";
 import { deriveRuntimeHealth } from "@multica/core/runtimes";
 import { runtimeListOptions } from "@multica/core/runtimes/queries";
 import { agentListOptions } from "@multica/core/workspace/queries";
@@ -158,6 +160,8 @@ export function WorkbenchPage() {
   const { data: missions = [], isLoading: missionsLoading } = useQuery(missionListOptions(wsId));
   const { data: runtimes = [], isLoading: runtimesLoading } = useQuery(runtimeListOptions(wsId));
   const { data: ideas = [], isLoading: ideasLoading } = useQuery(ideaListOptions(wsId));
+  // v1.2 (PRD §17): 项目工作区是首页主线——把持续推进的事打包成项目并落主聊。
+  const { data: projectsV12 = [], isLoading: projectsLoading } = useQuery(projectV12ListOptions(wsId));
   // Workbench block 6: top mailbox reports across all mailbox-mode agents.
   // Limit 5 mirrors the visible row cap below; the user can navigate to the
   // agent detail page (Stage 4 UI) for the full history.
@@ -214,6 +218,10 @@ export function WorkbenchPage() {
   const activeAgents = useMemo(() => agents.filter(isActiveAgent), [agents]);
   const favoriteAgents = activeAgents.slice(0, 5);
   const openMissions = useMemo(() => missions.filter(activeMission), [missions]);
+  const activeProjects = useMemo(
+    () => projectsV12.filter((proj) => proj.status === "active"),
+    [projectsV12],
+  );
   const leaderMissionCount = useMemo(() => {
     const map = new Map<string, number>();
     for (const mission of openMissions) {
@@ -266,8 +274,8 @@ export function WorkbenchPage() {
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <Metric label="智能体" value={activeAgents.length} loading={agentsLoading} />
-                <Metric label="Mission" value={openMissions.length} loading={missionsLoading} />
-                <Metric label="能力" value={runtimeSummary.online} loading={runtimesLoading} />
+                <Metric label="进行中 Mission" value={openMissions.length} loading={missionsLoading} />
+                <Metric label="在线能力" value={runtimeSummary.online} loading={runtimesLoading} />
               </div>
             </div>
 
@@ -361,7 +369,48 @@ export function WorkbenchPage() {
 
           <section className="space-y-4">
             <WorkbenchCard
-              title="常驻智能体私聊"
+              title="项目工作区"
+              icon={Briefcase}
+              action={
+                <Button variant="outline" size="sm" render={<AppLink href={p.projectWorkspaces()} />}>
+                  全部项目
+                </Button>
+              }
+            >
+              {projectsLoading ? (
+                <StackSkeleton rows={3} />
+              ) : activeProjects.length === 0 ? (
+                <EmptyText text="把一摊持续工作的事打包成项目，跟智能体在主聊里一起推进。点「全部项目」开第一个。" />
+              ) : (
+                <div className="divide-y rounded-lg border">
+                  {activeProjects.slice(0, 4).map((proj) => (
+                    <AppLink
+                      key={proj.id}
+                      href={p.projectWorkspaceDetail(proj.id)}
+                      className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/40"
+                    >
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                        <Briefcase className="size-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{proj.title}</div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {proj.description || "暂无描述"}
+                        </div>
+                      </div>
+                      {proj.compaction_count > 0 ? (
+                        <Badge variant="secondary" className="text-[10px]">
+                          已压缩 {proj.compaction_count} 次
+                        </Badge>
+                      ) : null}
+                    </AppLink>
+                  ))}
+                </div>
+              )}
+            </WorkbenchCard>
+
+            <WorkbenchCard
+              title="我的智能体"
               icon={Bot}
               action={
                 <Button variant="outline" size="sm" render={<AppLink href={p.agents()} />}>
@@ -380,30 +429,34 @@ export function WorkbenchPage() {
                 <EmptyText text="先从能力池创建一个智能体，再建立长期私聊。" />
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {favoriteAgents.map((agent) => (
-                    <AppLink
-                      key={agent.id}
-                      href={p.agentDetail(agent.id)}
-                      className="group rounded-lg border bg-background p-3 transition-all hover:border-primary/30 hover:shadow-sm"
-                    >
-                      <div className="flex items-center gap-3">
-                        <ActorAvatar actorType="agent" actorId={agent.id} size={36} showStatusDot />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold">{agent.name}</div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            {agent.model || agent.runtime_mode}
+                  {favoriteAgents.map((agent) => {
+                    const leadingCount = leaderMissionCount.get(agent.id) ?? 0;
+                    return (
+                      <AppLink
+                        key={agent.id}
+                        href={p.agentDetail(agent.id)}
+                        className="group rounded-lg border bg-background p-3 transition-all hover:border-primary/30 hover:shadow-sm"
+                      >
+                        <div className="flex items-center gap-3">
+                          <ActorAvatar actorType="agent" actorId={agent.id} size={36} showStatusDot />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold">{agent.name}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {agent.model || agent.runtime_mode}
+                            </div>
                           </div>
+                          <MessageSquare className="size-4 text-muted-foreground transition-colors group-hover:text-primary" />
                         </div>
-                        <MessageSquare className="size-4 text-muted-foreground transition-colors group-hover:text-primary" />
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span>长期上下文</span>
-                        <Badge variant="secondary" className="bg-muted text-muted-foreground">
-                          {leaderMissionCount.get(agent.id) ?? 0} 个牵头 Mission
-                        </Badge>
-                      </div>
-                    </AppLink>
-                  ))}
+                        {leadingCount > 0 ? (
+                          <div className="mt-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                            <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                              牵头 {leadingCount} 个 Mission
+                            </Badge>
+                          </div>
+                        ) : null}
+                      </AppLink>
+                    );
+                  })}
                 </div>
               )}
             </WorkbenchCard>
@@ -420,7 +473,7 @@ export function WorkbenchPage() {
               {missionsLoading ? (
                 <StackSkeleton rows={5} />
               ) : openMissions.length === 0 ? (
-                <EmptyText text="当前没有进行中的 Mission。" />
+                <EmptyText text="还没有进行中的 Mission。把想法池里养熟的一条点「升级 Mission」，或在项目工作区开个新主聊。" />
               ) : (
                 <div className="divide-y rounded-lg border">
                   {openMissions.slice(0, 6).map((mission) => (
@@ -491,7 +544,7 @@ export function WorkbenchPage() {
               )}
             </WorkbenchCard>
 
-            <WorkbenchCard title="会议室与分叉" icon={Users}>
+            <WorkbenchCard title="常用入口" icon={Users}>
               <div className="grid gap-2">
                 <Shortcut href={p.councils()} icon={Users} title="Council Session" desc="临时拉多个 Agent 讨论和决策" />
                 <Shortcut href={p.explorations()} icon={Route} title="分叉探索" desc="保留多套方案路径和取舍记录" />
