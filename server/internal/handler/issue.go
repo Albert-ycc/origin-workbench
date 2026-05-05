@@ -53,29 +53,36 @@ type IssueResponse struct {
 	// preserves whatever labels are already in cache. nil pointer = "field
 	// absent, do not touch"; non-nil (incl. empty slice) = authoritative list.
 	Labels             *[]LabelResponse        `json:"labels,omitempty"`
+	// 团队群聊派活回链（Origin §17 D 方案）。captain 在群聊里 @ 派的 issue
+	// 这两列指回它来自哪条 captain message + 哪个群聊 session，前端据此把
+	// 任务卡片挂到 captain 的 reply 下。普通 issue 这两个字段都是 null。
+	SourceTeamMessageID *string `json:"source_team_message_id,omitempty"`
+	SourceTeamSessionID *string `json:"source_team_session_id,omitempty"`
 }
 
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 	identifier := issuePrefix + "-" + strconv.Itoa(int(i.Number))
 	return IssueResponse{
-		ID:            uuidToString(i.ID),
-		WorkspaceID:   uuidToString(i.WorkspaceID),
-		Number:        i.Number,
-		Identifier:    identifier,
-		Title:         i.Title,
-		Description:   textToPtr(i.Description),
-		Status:        i.Status,
-		Priority:      i.Priority,
-		AssigneeType:  textToPtr(i.AssigneeType),
-		AssigneeID:    uuidToPtr(i.AssigneeID),
-		CreatorType:   i.CreatorType,
-		CreatorID:     uuidToString(i.CreatorID),
-		ParentIssueID: uuidToPtr(i.ParentIssueID),
-		ProjectID:     uuidToPtr(i.ProjectID),
-		Position:      i.Position,
-		DueDate:       timestampToPtr(i.DueDate),
-		CreatedAt:     timestampToString(i.CreatedAt),
-		UpdatedAt:     timestampToString(i.UpdatedAt),
+		ID:                  uuidToString(i.ID),
+		WorkspaceID:         uuidToString(i.WorkspaceID),
+		Number:              i.Number,
+		Identifier:          identifier,
+		Title:               i.Title,
+		Description:         textToPtr(i.Description),
+		Status:              i.Status,
+		Priority:            i.Priority,
+		AssigneeType:        textToPtr(i.AssigneeType),
+		AssigneeID:          uuidToPtr(i.AssigneeID),
+		CreatorType:         i.CreatorType,
+		CreatorID:           uuidToString(i.CreatorID),
+		ParentIssueID:       uuidToPtr(i.ParentIssueID),
+		ProjectID:           uuidToPtr(i.ProjectID),
+		Position:            i.Position,
+		DueDate:             timestampToPtr(i.DueDate),
+		CreatedAt:           timestampToString(i.CreatedAt),
+		UpdatedAt:           timestampToString(i.UpdatedAt),
+		SourceTeamMessageID: uuidToPtr(i.SourceTeamMessageID),
+		SourceTeamSessionID: uuidToPtr(i.SourceTeamSessionID),
 	}
 }
 
@@ -759,6 +766,38 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		"issues": resp,
 		"total":  total,
 	})
+}
+
+// ListIssuesByTeamMessage returns the list of issues that captain spawned
+// from a given group-chat message (the @-mention "task cards"). Frontend uses
+// this on the team detail page to render TaskCard chips beneath the captain
+// reply that issued the delegation.
+func (h *Handler) ListIssuesByTeamMessage(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	mid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "messageId"), "message id")
+	if !ok {
+		return
+	}
+	rows, err := h.Queries.ListIssuesByTeamMessage(r.Context(), pgtype.UUID{Bytes: mid.Bytes, Valid: true})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list issues by team message")
+		return
+	}
+	prefix := h.getIssuePrefix(r.Context(), wsUUID)
+	resp := make([]IssueResponse, 0, len(rows))
+	for _, i := range rows {
+		// Defensive workspace scoping (the message could in theory live in
+		// another workspace if a stale UUID is probed).
+		if !uuidEqual(i.WorkspaceID, wsUUID) {
+			continue
+		}
+		resp = append(resp, issueToResponse(i, prefix))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"issues": resp, "total": len(resp)})
 }
 
 func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
@@ -1512,6 +1551,15 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// is a user-initiated terminal action that should stop execution.
 	if statusChanged && issue.Status == "cancelled" {
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
+	}
+
+	// Team chat issue 完成回流（D 方案 §17 团队群聊任务卡片）：
+	// 来自团队群聊 captain 派活的 issue 在切到 in_review/done 时，把
+	// agent 写的最终 comment mirror 成一条 assistant 消息写到原群聊，让
+	// 群聊里能看到「@xxx 完成了 → 回报内容」事件，保持派活闭环。
+	if statusChanged && issue.SourceTeamSessionID.Valid &&
+		(issue.Status == "in_review" || issue.Status == "done") {
+		h.TaskService.MirrorIssueCompletionToTeamSession(r.Context(), issue)
 	}
 
 	writeJSON(w, http.StatusOK, resp)

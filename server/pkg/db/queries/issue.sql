@@ -34,6 +34,34 @@ INSERT INTO issue (
 SELECT * FROM issue
 WHERE workspace_id = $1 AND number = $2;
 
+-- name: CreateIssueFromTeamMessage :one
+-- D 方案：captain 在群聊里 @ 派活时创建的 issue。比 CreateIssue 多两列
+-- (source_team_message_id, source_team_session_id) 让 issue 知道自己来自
+-- 哪条群聊消息——完成时回流到原群聊、前端在 captain message 下面查到
+-- 派出的 issue 卡片都靠这两列。
+INSERT INTO issue (
+    workspace_id, title, description, status, priority,
+    assignee_type, assignee_id, creator_type, creator_id,
+    parent_issue_id, position, due_date, number, project_id,
+    source_team_message_id, source_team_session_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+) RETURNING *;
+
+-- name: ListIssuesByTeamMessage :many
+-- 反查 captain 的某条 message 派出了哪些 issue（前端 TaskCardList 用）。
+-- 按 created_at 顺序返回，让 chip 排列跟 captain 在 message 里 @ 的顺序对应。
+SELECT * FROM issue
+WHERE source_team_message_id = $1
+ORDER BY created_at ASC;
+
+-- name: ListIssuesByTeamSession :many
+-- 反查某个团队 chat session 的所有派出 issue（团队详情页可用，未来对账）。
+SELECT * FROM issue
+WHERE source_team_session_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+
 -- name: UpdateIssue :one
 UPDATE issue SET
     title = COALESCE(sqlc.narg('title'), title),

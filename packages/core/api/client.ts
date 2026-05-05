@@ -1708,4 +1708,11 @@ export class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  // ── Team chat issue cards (Origin §17 D 方案) ──────────────────────────
+  // captain 在群聊 @ 派活的 issue 反查（前端在 captain message 下挂任务卡片）
+
+  async listIssuesByTeamMessage(messageId: string): Promise<{ issues: Issue[]; total: number }> {
+    return this.fetch(`/api/issues/by-team-message/${messageId}`);
+  }
 }

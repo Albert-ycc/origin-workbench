@@ -1539,13 +1539,18 @@ func (s *TaskService) loadTeamRosterAgents(ctx context.Context, teamID pgtype.UU
 }
 
 func (s *TaskService) delegateTeamMentions(ctx context.Context, session db.ChatSession, team db.Team, roster []teamRosterAgent, sourceAgentID pgtype.UUID, sourceMessage db.ChatMessage) {
+	// D 方案 (Origin §17 v1.2 + 团队群聊 issue 卡片复用):
+	// captain 在群聊里 @ 派活时不再起独立 chat task，改为创建一个 issue
+	// 卡片，assignee = 被 @ 的 agent，source_team_message_id 指回 captain
+	// 这条 message。issue 创建后既有的 issue assignment 链路自动 enqueue
+	// task；agent 干完写 issue comment 后由 mirrorIssueCompletionToTeamSession
+	// 把结果同步回群聊。
 	content := sourceMessage.Content
-	targets := mentionedTeamAgents(roster, sourceAgentID, content)
-	if len(targets) == 0 {
+	tasks := parseTeamMentionTasks(roster, sourceAgentID, content)
+	if len(tasks) == 0 {
 		return
 	}
 
-	activeMission, hasMission := s.activeMissionForTeamSession(ctx, session, team)
 	sourceAgentName := ""
 	for _, member := range roster {
 		if uuidEqual(member.ID, sourceAgentID) {
@@ -1553,61 +1558,53 @@ func (s *TaskService) delegateTeamMentions(ctx context.Context, session db.ChatS
 			break
 		}
 	}
+
 	var delegated []string
 	var failed []string
-	for _, target := range targets {
-		taskContext, _ := json.Marshal(TeamDelegationContext{
-			Type:            TeamDelegationContextType,
-			TeamID:          util.UUIDToString(team.ID),
-			ChatSessionID:   util.UUIDToString(session.ID),
-			SourceAgentID:   util.UUIDToString(sourceAgentID),
-			SourceAgentName: sourceAgentName,
-			TargetAgentID:   util.UUIDToString(target.ID),
-			TargetAgentName: target.Name,
-			SourceMessageID: util.UUIDToString(sourceMessage.ID),
-			Instruction:     content,
-		})
-		task, err := s.EnqueueChatTaskForAgent(ctx, session, target.ID, taskContext)
+	for _, t := range tasks {
+		issue, err := s.createTeamMentionIssue(ctx, session, team, sourceMessage, t)
 		if err != nil {
-			failed = append(failed, target.Name)
-			slog.Warn("team delegation failed",
+			failed = append(failed, t.AgentName)
+			slog.Warn("team delegation issue creation failed",
 				"team_id", util.UUIDToString(team.ID),
 				"source_agent_id", util.UUIDToString(sourceAgentID),
-				"target_agent_id", util.UUIDToString(target.ID),
+				"target_agent_id", util.UUIDToString(t.AgentID),
 				"error", err)
 			continue
 		}
-		delegated = append(delegated, target.Name)
+		// issue 创建后自动 enqueue assignment task（沿用 v1.0 issue 流）。
+		if _, err := s.EnqueueTaskForIssue(ctx, issue); err != nil {
+			failed = append(failed, t.AgentName)
+			slog.Warn("team delegation issue task enqueue failed",
+				"issue_id", util.UUIDToString(issue.ID),
+				"target_agent_id", util.UUIDToString(t.AgentID),
+				"error", err)
+			continue
+		}
+		delegated = append(delegated, t.AgentName)
 		payload, _ := json.Marshal(map[string]any{
 			"team_id":         util.UUIDToString(team.ID),
 			"chat_session_id": util.UUIDToString(session.ID),
 			"source_agent_id": util.UUIDToString(sourceAgentID),
-			"target_agent_id": util.UUIDToString(target.ID),
-			"task_id":         util.UUIDToString(task.ID),
+			"target_agent_id": util.UUIDToString(t.AgentID),
+			"issue_id":        util.UUIDToString(issue.ID),
+			"issue_number":    issue.Number,
 		})
-		if hasMission {
-			s.createMissionDelegation(ctx, activeMission, team, target, sourceAgentID, sourceMessage, task)
-		}
 		if _, err := s.Queries.CreateAgentEvent(ctx, db.CreateAgentEventParams{
 			WorkspaceID: team.WorkspaceID,
-			AgentID:     target.ID,
+			AgentID:     t.AgentID,
 			Kind:        "team_task_delegated",
 			Title:       "团队负责人分派了群聊任务",
-			Body:        truncateForSummary(content, triggerSummaryMaxLen),
+			Body:        truncateForSummary(t.TaskText, triggerSummaryMaxLen),
 			Payload:     payload,
-		}); err != nil {
-			slog.Warn("failed to create team delegation event",
-				"team_id", util.UUIDToString(team.ID),
-				"target_agent_id", util.UUIDToString(target.ID),
-				"error", err)
-		} else {
-			s.publishAgentEvent(ctx, team.WorkspaceID, target.ID)
+		}); err == nil {
+			s.publishAgentEvent(ctx, team.WorkspaceID, t.AgentID)
 		}
 	}
 
 	body := ""
 	if len(delegated) > 0 {
-		body = "负责人已分派给 " + strings.Join(delegated, "、") + "。"
+		body = fmt.Sprintf("负责人 %s 已派任务给 %s（共 %d 张任务卡片）。", sourceAgentName, strings.Join(delegated, "、"), len(delegated))
 	}
 	if len(failed) > 0 {
 		if body != "" {
@@ -1615,7 +1612,235 @@ func (s *TaskService) delegateTeamMentions(ctx context.Context, session db.ChatS
 		}
 		body += "以下成员暂时无法接管：" + strings.Join(failed, "、") + "。"
 	}
-	s.createTeamSystemMessage(ctx, session, team.ID, body)
+	if body != "" {
+		s.createTeamSystemMessage(ctx, session, team.ID, body)
+	}
+}
+
+// teamMentionTask 是从 captain reply 里解析出的一条派活：被 @ 的 agent +
+// 该 agent 应该执行的指令文本（@token 之后到下一个 @token 或段落末尾）。
+type teamMentionTask struct {
+	AgentID   pgtype.UUID
+	AgentName string
+	TaskText  string
+}
+
+// parseTeamMentionTasks 解析 captain 消息里的 @ 派活：每个 @成员名 后续
+// 文本（到下一个 @ 或段落结束）作为该成员的任务。@全体 → 所有人共享全文。
+func parseTeamMentionTasks(roster []teamRosterAgent, sourceAgentID pgtype.UUID, content string) []teamMentionTask {
+	rs := []rune(content)
+	type segment struct {
+		token string
+		start int
+		end   int
+	}
+	var segs []segment
+	for i := 0; i < len(rs); i++ {
+		if rs[i] != '@' {
+			continue
+		}
+		j := i + 1
+		for j < len(rs) {
+			r := rs[j]
+			if unicode.IsSpace(r) || strings.ContainsRune("，。,.!！?？:：;；()（）[]【】<>《》\"'“”‘’", r) {
+				break
+			}
+			j++
+		}
+		token := strings.TrimSpace(string(rs[i+1 : j]))
+		if token != "" {
+			segs = append(segs, segment{token: token, start: i, end: j})
+		}
+		i = j
+	}
+	if len(segs) == 0 {
+		return nil
+	}
+	// 给每个 segment 算它的任务文本范围：到下一个 segment 之前。
+	var out []teamMentionTask
+	for idx, seg := range segs {
+		taskEnd := len(rs)
+		if idx+1 < len(segs) {
+			taskEnd = segs[idx+1].start
+		}
+		taskText := strings.TrimSpace(string(rs[seg.end:taskEnd]))
+		// @全体 → 所有 roster 成员共享全文（除了 source agent 自己）
+		if seg.token == "全体" || strings.EqualFold(seg.token, "all") || strings.EqualFold(seg.token, "everyone") {
+			fullContent := strings.TrimSpace(content)
+			for _, member := range roster {
+				if uuidEqual(member.ID, sourceAgentID) {
+					continue
+				}
+				out = append(out, teamMentionTask{
+					AgentID:   member.ID,
+					AgentName: member.Name,
+					TaskText:  fullContent,
+				})
+			}
+			continue
+		}
+		// 普通 @成员名 → 该成员独占这段任务
+		for _, member := range roster {
+			if uuidEqual(member.ID, sourceAgentID) {
+				continue
+			}
+			if teamMentionMatches(seg.token, member.Name) {
+				if taskText == "" {
+					// 没有具体指令文本时回落到全文，避免空任务
+					taskText = strings.TrimSpace(content)
+				}
+				out = append(out, teamMentionTask{
+					AgentID:   member.ID,
+					AgentName: member.Name,
+					TaskText:  taskText,
+				})
+				break
+			}
+		}
+	}
+	// 按 AgentID 去重（如果 captain 在同一段里 @ 了同一个人多次）
+	seen := map[string]bool{}
+	deduped := make([]teamMentionTask, 0, len(out))
+	for _, t := range out {
+		key := util.UUIDToString(t.AgentID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		deduped = append(deduped, t)
+	}
+	return deduped
+}
+
+// createTeamMentionIssue 把一条 @ 派活落成 issue。Title 取 TaskText 第一行
+// 截断 60 字；description 是 TaskText 全文（可能含 markdown）；
+// source_team_message_id / source_team_session_id 指回 captain message + 群聊
+// session，作为完成回流的桥梁。
+func (s *TaskService) createTeamMentionIssue(ctx context.Context, session db.ChatSession, team db.Team, sourceMessage db.ChatMessage, t teamMentionTask) (db.Issue, error) {
+	title := teamMentionTaskTitle(t.TaskText, t.AgentName)
+	number, err := s.Queries.IncrementIssueCounter(ctx, team.WorkspaceID)
+	if err != nil {
+		return db.Issue{}, fmt.Errorf("issue counter: %w", err)
+	}
+	issue, err := s.Queries.CreateIssueFromTeamMessage(ctx, db.CreateIssueFromTeamMessageParams{
+		WorkspaceID:          team.WorkspaceID,
+		Title:                title,
+		Description:          pgtype.Text{String: t.TaskText, Valid: t.TaskText != ""},
+		Status:               "todo",
+		Priority:             "medium",
+		AssigneeType:         pgtype.Text{String: "agent", Valid: true},
+		AssigneeID:           pgtype.UUID{Bytes: t.AgentID.Bytes, Valid: true},
+		CreatorType:          "agent",
+		CreatorID:            sourceMessage.SenderAgentID,
+		ParentIssueID:        pgtype.UUID{},
+		Position:             0,
+		DueDate:              pgtype.Timestamptz{},
+		Number:               number,
+		ProjectID:            pgtype.UUID{},
+		SourceTeamMessageID:  pgtype.UUID{Bytes: sourceMessage.ID.Bytes, Valid: true},
+		SourceTeamSessionID:  pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
+	})
+	if err != nil {
+		return db.Issue{}, fmt.Errorf("create issue: %w", err)
+	}
+	return issue, nil
+}
+
+// MirrorIssueCompletionToTeamSession 把团队 captain 派的 issue 完成事件
+// 同步成一条 assistant chat_message 写到原群聊里。这样 captain 在群聊看
+// 到的是任务派出去 → 任务卡片状态变 in_review → assistant 完成回报，
+// 整条闭环都在主聊时间线上。
+//
+// Caller 应该已经验证 issue.SourceTeamSessionID.Valid。这里防御性再次检查。
+func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, issue db.Issue) {
+	if !issue.SourceTeamSessionID.Valid {
+		return
+	}
+	session, err := s.Queries.GetChatSession(ctx, issue.SourceTeamSessionID)
+	if err != nil {
+		return
+	}
+	// 拉 agent 在这个 issue 写的最新 comment（agent 干完一般会调
+	// multica issue comment add 写一条 final result）。如果没找到 comment
+	// 也照样发一条简短回报，让群聊知道任务已完成。
+	comments, err := s.Queries.ListComments(ctx, db.ListCommentsParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	finalContent := ""
+	if err == nil {
+		// 取 assignee 写的最新一条 comment
+		for i := len(comments) - 1; i >= 0; i-- {
+			c := comments[i]
+			if c.AuthorType == "agent" && uuidEqual(c.AuthorID, issue.AssigneeID) {
+				finalContent = c.Content
+				break
+			}
+		}
+	}
+	if finalContent == "" {
+		finalContent = "（已完成，无文字回报）"
+	}
+
+	// 拉 assignee agent 名字 + issue prefix 拼完成 header
+	agentName := ""
+	if issue.AssigneeID.Valid {
+		if agent, err := s.Queries.GetAgent(ctx, issue.AssigneeID); err == nil {
+			agentName = agent.Name
+		}
+	}
+	statusLabel := "待评审"
+	if issue.Status == "done" {
+		statusLabel = "已完成"
+	}
+	header := fmt.Sprintf("✅ @%s %s [%s]\n\n", agentName, statusLabel, issue.Title)
+	body := header + finalContent
+
+	if _, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		ChatSessionID: session.ID,
+		Role:          "assistant",
+		Content:       body,
+		SenderAgentID: issue.AssigneeID,
+	}); err != nil {
+		slog.Warn("mirror issue completion to team session failed",
+			"issue_id", util.UUIDToString(issue.ID),
+			"team_session_id", util.UUIDToString(session.ID),
+			"error", err)
+		return
+	}
+
+	// 广播 team:message_created 让前端实时刷新群聊
+	if session.TeamID.Valid {
+		s.Bus.Publish(events.Event{
+			Type:        protocol.EventTeamMessageCreated,
+			WorkspaceID: util.UUIDToString(session.WorkspaceID),
+			ActorType:   "agent",
+			ActorID:     util.UUIDToString(issue.AssigneeID),
+			Payload: map[string]any{
+				"team_id":         util.UUIDToString(session.TeamID),
+				"chat_session_id": util.UUIDToString(session.ID),
+				"issue_id":        util.UUIDToString(issue.ID),
+				"event":           "team_task_completed",
+			},
+		})
+	}
+}
+
+// teamMentionTaskTitle 从派活文本里抽一行作为 issue 标题。优先第一行，
+// 截断到 60 字；如果空则回落到「Agent 的群聊任务」。
+func teamMentionTaskTitle(taskText, agentName string) string {
+	first := strings.TrimSpace(taskText)
+	if newline := strings.IndexAny(first, "\n。；;"); newline > 0 {
+		first = strings.TrimSpace(first[:newline])
+	}
+	rs := []rune(first)
+	if len(rs) > 60 {
+		first = string(rs[:60]) + "…"
+	}
+	if first == "" {
+		first = agentName + " 的群聊任务"
+	}
+	return first
 }
 
 func (s *TaskService) activeMissionForTeamSession(ctx context.Context, session db.ChatSession, team db.Team) (db.Mission, bool) {

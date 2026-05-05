@@ -43,4 +43,9 @@ export interface Issue {
   labels?: Label[];
   created_at: string;
   updated_at: string;
+  // 团队群聊派活回链 (Origin §17 D 方案)。captain 在群聊里 @ 派的 issue
+  // 这两个字段指回派活来自的 captain message + 群聊 session。普通 issue
+  // 这两个字段都是 undefined。
+  source_team_message_id?: string | null;
+  source_team_session_id?: string | null;
 }
