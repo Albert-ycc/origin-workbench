@@ -1,11 +1,28 @@
+<div align="center">
+
+<img src="apps/desktop/build/icon.png" alt="Origin Workbench" width="120" />
+
 # Origin Workbench
 
-> A single-user local AI Agent workbench, forked from
-> [multica-ai/multica](https://github.com/multica-ai/multica).
->
-> **Powered by Multica** · Apache 2.0 (with the upstream's additional conditions —
-> see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)).
-> The original Multica README is preserved at [`README.upstream.md`](README.upstream.md).
+### A single-user local AI Agent workbench
+
+**One operator, one machine, one workspace, many agents.**
+The personal notebook + multi-agent control plane I want on my own laptop.
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Powered by Multica](https://img.shields.io/badge/Powered%20by-Multica-7c3aed.svg)](https://github.com/multica-ai/multica)
+[![Desktop · macOS](https://img.shields.io/badge/Desktop-macOS%20arm64-000.svg)](#build-a-release-desktop-app)
+[![Status · Active fork](https://img.shields.io/badge/Status-Active%20fork-orange.svg)](#status)
+
+[Upstream](https://github.com/multica-ai/multica) · [License](LICENSE) · [Notice](NOTICE) · [Contributing](CONTRIBUTING.md) · [Changelog](https://github.com/Albert-ycc/origin-workbench/releases)
+
+**English** | [简体中文](README.zh-CN.md)
+
+</div>
+
+---
+
+> Forked from [multica-ai/multica](https://github.com/multica-ai/multica). **Powered by Multica** · Apache 2.0 (with the upstream's additional conditions — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)). The original Multica README is preserved at [`README.upstream.md`](README.upstream.md).
 
 ---
 
