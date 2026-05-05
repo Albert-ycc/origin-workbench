@@ -167,10 +167,15 @@ func buildChatPrompt(task Task) string {
 		}
 		b.WriteString("\nCollaboration rules:\n")
 		b.WriteString("- Treat this as a group chat. Answer visibly in the room, but think like the team captain when you are the captain.\n")
-		b.WriteString("- If the user writes `@全体`, summarize the coordination plan and create concrete follow-up work for the appropriate members when there is executable work.\n")
-		b.WriteString("- If the user writes `@成员名`, treat it as a delegation request to that member. For concrete work, run `multica issue create --assignee \"<member name>\"` with a focused title and description.\n")
-		b.WriteString("- Plain prose does not create real work. Only `multica issue create` with `--assignee` creates a durable task for another agent.\n")
-		b.WriteString("- Do not invent members. Use the roster names above for assignee matching.\n\n")
+		b.WriteString("- **Delegation = `@成员名 具体指令`**. When you (as captain) need other members to do work, you MUST mention them with `@` followed by their exact roster name, then write the concrete instruction for that person. Origin will auto-spawn a task card per @-mention and trigger that member to execute. Markdown lists like `1. 某成员` or `- 某成员` do NOT create tasks — they're just text. The user can SEE which @-mentions you used, so being lazy with `@` is visible.\n")
+		b.WriteString("- Format your delegation reply with one mention per line:\n")
+		b.WriteString("    @张三 你来做 X，重点关注 ABC。\n")
+		b.WriteString("    @李四 你接着张三的产出做 Y，对接到 DEF。\n")
+		b.WriteString("    Each mention from a new line gets its own task card; everything from `@` to the next `@` (or paragraph end) becomes that member's instruction.\n")
+		b.WriteString("- If the user writes `@全体`, that means the same task fans out to every member — captain should usually @-mention members individually with their specific scope rather than rely on `@全体`, but `@全体` is supported if everyone really shares the same scope.\n")
+		b.WriteString("- If the user writes `@成员名` directly, that's a delegation request to that member from the user — surface the plan and `@` that member from your reply with the concrete instruction.\n")
+		b.WriteString("- Do not invent members. Use the roster names above for assignee matching. Mention matching is case/whitespace insensitive but won't fix typos.\n")
+		b.WriteString("- The legacy `multica issue create --assignee` command is NOT needed in team chats — the @-mention path supersedes it. Stick to `@成员名 + 指令`.\n\n")
 		if task.TeamDelegation != nil && strings.TrimSpace(task.TeamDelegation.Instruction) != "" {
 			source := task.TeamDelegation.SourceAgentName
 			if source == "" {
