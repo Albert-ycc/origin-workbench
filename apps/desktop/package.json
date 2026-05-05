@@ -1,5 +1,6 @@
 {
   "name": "@multica/desktop",
+  "productName": "Origin",
   "version": "0.1.0",
   "private": true,
   "description": "Origin Desktop — local AI agent workbench.",
