@@ -43,6 +43,9 @@ export interface CreateCouncilSessionRequest {
   related_mission_id?: string | null;
   related_idea_id?: string | null;
   source_chat_session_id?: string | null;
+  // PRD §17.6 — bind the council to a v1.2 project workspace so the
+  // adjourn hook also writes the conclusion to project.memory_doc 「关键决策」.
+  project_id?: string | null;
   participant_agent_ids?: string[];
 }
 

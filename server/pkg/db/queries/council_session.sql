@@ -21,7 +21,7 @@ WHERE id = $1 AND workspace_id = $2;
 -- name: CreateCouncilSession :one
 INSERT INTO council_session (
     workspace_id, convener_user_id, convener_agent_id,
-    related_mission_id, related_idea_id, source_chat_session_id,
+    related_mission_id, related_idea_id, source_chat_session_id, project_id,
     topic, summary, activity_level, status
 ) VALUES (
     $1,
@@ -30,6 +30,7 @@ INSERT INTO council_session (
     sqlc.narg('related_mission_id')::uuid,
     sqlc.narg('related_idea_id')::uuid,
     sqlc.narg('source_chat_session_id')::uuid,
+    sqlc.narg('project_id')::uuid,
     $2, $3, $4, $5
 )
 RETURNING *;

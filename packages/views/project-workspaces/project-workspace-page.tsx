@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, FileText, FolderOpen, Network, Sparkles } from "lucide-react";
+import { Bot, FileText, FolderOpen, Network, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
@@ -16,11 +16,20 @@ import {
   usePostProjectMainChatMessage,
 } from "@multica/core/projects-v12";
 import { teamDetailOptions } from "@multica/core/teams";
+import { useCreateCouncilSession } from "@multica/core/councils";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import type { Agent } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { Textarea } from "@multica/ui/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@multica/ui/components/ui/dialog";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { ChatPane } from "../teams/team-detail-page";
@@ -141,6 +150,14 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
           <span className="text-[11px] text-muted-foreground">
             第 {project.compaction_count} 次压缩
           </span>
+          {mainChat && (
+            <ConveneCouncilButton
+              projectId={projectId}
+              chatSessionId={mainChat.chat_session_id}
+              memberAgents={memberAgents}
+              captain={captain}
+            />
+          )}
           <Button size="sm" variant="outline" disabled>
             <Sparkles className="size-3" />
             整理 + 重新出发
@@ -294,6 +311,115 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+function ConveneCouncilButton({
+  projectId,
+  chatSessionId,
+  memberAgents,
+  captain,
+}: {
+  projectId: string;
+  chatSessionId: string;
+  memberAgents: Agent[];
+  captain: Agent | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const [topic, setTopic] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const create = useCreateCouncilSession();
+
+  const candidates = useMemo(() => {
+    const list: Agent[] = [];
+    if (captain) list.push(captain);
+    for (const a of memberAgents) list.push(a);
+    return list;
+  }, [captain, memberAgents]);
+
+  const submit = async () => {
+    const trimmed = topic.trim();
+    if (!trimmed) return;
+    try {
+      await create.mutateAsync({
+        topic: trimmed,
+        activity_level: "concise",
+        project_id: projectId,
+        source_chat_session_id: chatSessionId,
+        participant_agent_ids: Array.from(picked),
+      });
+      toast.success("会议室已开 — 散会后结论会自动写入项目记忆「关键决策」段");
+      setOpen(false);
+      setTopic("");
+      setPicked(new Set());
+    } catch (err) {
+      toast.error("召开失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Users className="size-3" />
+        召开 Council
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>召开 Council Session</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Textarea
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="议题：要让多个角色对齐什么？"
+            rows={2}
+          />
+          <div className="text-xs text-muted-foreground">参会角色（默认全选 captain + 成员）：</div>
+          <div className="flex flex-wrap gap-1.5">
+            {candidates.length === 0 ? (
+              <span className="text-xs text-muted-foreground">还没有可邀请的 Agent</span>
+            ) : (
+              candidates.map((a) => {
+                const on = picked.has(a.id);
+                return (
+                  <Button
+                    key={a.id}
+                    size="sm"
+                    variant={on ? "default" : "outline"}
+                    onClick={() =>
+                      setPicked((curr) => {
+                        const next = new Set(curr);
+                        if (next.has(a.id)) next.delete(a.id);
+                        else next.add(a.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {a.name}
+                  </Button>
+                );
+              })
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            散会时会议结论会自动追加到项目记忆文档「关键决策」段（PRD §17.6），
+            同时回写到本项目主聊。
+          </p>
+        </div>
+        <DialogFooter>
+          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+          <Button size="sm" onClick={submit} disabled={!topic.trim() || create.isPending}>
+            召开
+          </Button>
+        </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

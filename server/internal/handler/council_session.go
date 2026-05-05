@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -67,6 +69,9 @@ type CreateCouncilSessionRequest struct {
 	RelatedMissionID     *string  `json:"related_mission_id"`
 	RelatedIdeaID        *string  `json:"related_idea_id"`
 	SourceChatSessionID  *string  `json:"source_chat_session_id"`
+	// PRD §17.6 — when convened from a project workspace's main chat,
+	// project_id binds the council so adjourn writes back to memory_doc.
+	ProjectID            *string  `json:"project_id"`
 	ParticipantAgentIDs  []string `json:"participant_agent_ids"`
 }
 
@@ -313,6 +318,19 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 		}
 		params.SourceChatSessionID = uuid
 	}
+	if req.ProjectID != nil && strings.TrimSpace(*req.ProjectID) != "" {
+		uuid, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(*req.ProjectID), "project_id")
+		if !ok {
+			return
+		}
+		if _, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+			ID: uuid, WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "project_id must be a project in this workspace")
+			return
+		}
+		params.ProjectID = uuid
+	}
 
 	// Validate all participant agents up front before any inserts
 	participantUUIDs := make([]pgtype.UUID, 0, len(req.ParticipantAgentIDs))
@@ -477,7 +495,47 @@ func (h *Handler) AdjournCouncilSession(w http.ResponseWriter, r *http.Request) 
 		h.relayCouncilAdjournmentToSource(r, adjourned, participants, userID)
 	}
 
+	// PRD §17.6 — when the council session is bound to a v1.2 project
+	// workspace, also append the conclusion to project.memory_doc 「关键决策」.
+	// Single-agent direct chat councils (project_id IS NULL) keep the v1.1
+	// behaviour above, no memory write.
+	if adjourned.ProjectID.Valid && strings.TrimSpace(adjourned.Conclusion) != "" {
+		h.appendCouncilConclusionToProjectMemory(r.Context(), adjourned)
+	}
+
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// appendCouncilConclusionToProjectMemory prepends a one-line entry under
+// "## 关键决策" of project.memory_doc with topic + conclusion + council link.
+// Best-effort; failures are logged but do not roll back the adjourn.
+func (h *Handler) appendCouncilConclusionToProjectMemory(ctx context.Context, session db.CouncilSession) {
+	p, err := h.Queries.GetProjectV12(ctx, session.ProjectID)
+	if err != nil {
+		slog.Warn("council memory append: project not found",
+			"council_id", uuidToString(session.ID),
+			"project_id", uuidToString(session.ProjectID),
+			"err", err)
+		return
+	}
+	topic := strings.TrimSpace(session.Topic)
+	if topic == "" {
+		topic = "（未命名议题）"
+	}
+	conclusion := strings.TrimSpace(session.Conclusion)
+	stamp := time.Now().Format("2006-01-02")
+	entry := fmt.Sprintf("- %s · %s → %s（[查看会议](origin://councils/%s)）", stamp, topic, conclusion, uuidToString(session.ID))
+	newDoc := appendToMemorySection(p.MemoryDoc, "## 关键决策", entry)
+	if _, err := h.Queries.UpdateProjectV12(ctx, db.UpdateProjectV12Params{
+		ID:                 p.ID,
+		MemoryDoc:          pgtype.Text{String: newDoc, Valid: true},
+		MemoryDocUpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}); err != nil {
+		slog.Warn("council memory append: update failed",
+			"council_id", uuidToString(session.ID),
+			"project_id", uuidToString(session.ProjectID),
+			"err", err)
+	}
 }
 
 // relayCouncilAdjournmentToSource appends an assistant-role message to the

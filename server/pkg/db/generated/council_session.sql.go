@@ -113,7 +113,7 @@ func (q *Queries) ArchiveCouncilSession(ctx context.Context, id pgtype.UUID) (Co
 const createCouncilSession = `-- name: CreateCouncilSession :one
 INSERT INTO council_session (
     workspace_id, convener_user_id, convener_agent_id,
-    related_mission_id, related_idea_id, source_chat_session_id,
+    related_mission_id, related_idea_id, source_chat_session_id, project_id,
     topic, summary, activity_level, status
 ) VALUES (
     $1,
@@ -122,6 +122,7 @@ INSERT INTO council_session (
     $8::uuid,
     $9::uuid,
     $10::uuid,
+    $11::uuid,
     $2, $3, $4, $5
 )
 RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id
@@ -138,6 +139,7 @@ type CreateCouncilSessionParams struct {
 	RelatedMissionID    pgtype.UUID `json:"related_mission_id"`
 	RelatedIdeaID       pgtype.UUID `json:"related_idea_id"`
 	SourceChatSessionID pgtype.UUID `json:"source_chat_session_id"`
+	ProjectID           pgtype.UUID `json:"project_id"`
 }
 
 func (q *Queries) CreateCouncilSession(ctx context.Context, arg CreateCouncilSessionParams) (CouncilSession, error) {
@@ -152,6 +154,7 @@ func (q *Queries) CreateCouncilSession(ctx context.Context, arg CreateCouncilSes
 		arg.RelatedMissionID,
 		arg.RelatedIdeaID,
 		arg.SourceChatSessionID,
+		arg.ProjectID,
 	)
 	var i CouncilSession
 	err := row.Scan(
