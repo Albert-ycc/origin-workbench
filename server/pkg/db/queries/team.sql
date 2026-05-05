@@ -94,13 +94,14 @@ SELECT EXISTS(
 -- =====================
 
 -- name: GetOrCreateTeamChatSession :one
--- A (team, project) pair has at most one chat_session. v1.1 enforced this on
--- (team_id) alone; v1.2 widens the key to (team_id, project_id) so a single
--- team can host multiple project main chats. NULL project_id keeps the
--- legacy "team-level group chat" form usable when no project is bound.
+-- A (team, project) pair has at most one *active* chat_session. v1.1
+-- enforced this on (team_id) alone; v1.2 widens the key to
+-- (team_id, project_id). The partial index also requires status = 'active'
+-- so §17.4.5 compaction can archive the old row and re-INSERT a fresh
+-- main chat without an ON CONFLICT collision.
 INSERT INTO chat_session (workspace_id, team_id, project_id, agent_id, creator_id, title)
 VALUES ($2, $1, sqlc.narg('project_id'), NULL, $3, $4)
-ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL DO UPDATE
+ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL AND status = 'active' DO UPDATE
     SET updated_at = chat_session.updated_at
 RETURNING *;
 

@@ -84,3 +84,34 @@ export function usePinChatMessageToProjectMemory(wsId: string) {
     },
   });
 }
+
+export function usePreviewProjectCompaction() {
+  return useMutation({
+    mutationFn: (projectId: string) => api.previewProjectCompaction(projectId),
+  });
+}
+
+export function useConfirmProjectCompaction(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      data,
+    }: {
+      projectId: string;
+      data: import("../types").ConfirmCompactionRequest;
+    }) => api.confirmProjectCompaction(projectId, data),
+    onSuccess: (_, { projectId }) => {
+      qc.invalidateQueries({ queryKey: projectV12Keys.detail(wsId, projectId) });
+      qc.invalidateQueries({
+        queryKey: projectV12Keys.mainChatMessages(wsId, projectId),
+      });
+      qc.invalidateQueries({
+        queryKey: projectV12Keys.mainChat(wsId, projectId),
+      });
+      qc.invalidateQueries({
+        queryKey: projectV12Keys.archivedSessions(wsId, projectId),
+      });
+    },
+  });
+}

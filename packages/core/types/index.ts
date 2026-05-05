@@ -186,4 +186,9 @@ export type {
   UpdateProjectRequest as UpdateProjectV12Request,
   AppendMemoryDocRequest,
   AgentProjectMemory,
+  CompactionPreview,
+  ConfirmCompactionRequest,
+  ConfirmCompactionResponse,
+  PinnedQuoteCandidate,
+  ArchivedChatSession,
 } from "./project-v12";

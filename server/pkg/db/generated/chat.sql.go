@@ -21,6 +21,28 @@ func (q *Queries) ArchiveChatSession(ctx context.Context, id pgtype.UUID) error 
 	return err
 }
 
+const archiveChatSessionWithCompactionPointer = `-- name: ArchiveChatSessionWithCompactionPointer :exec
+UPDATE chat_session
+SET status = 'archived',
+    compacted_into_session_id = $2,
+    last_compacted_at = now(),
+    updated_at = now()
+WHERE id = $1
+`
+
+type ArchiveChatSessionWithCompactionPointerParams struct {
+	ID                     pgtype.UUID `json:"id"`
+	CompactedIntoSessionID pgtype.UUID `json:"compacted_into_session_id"`
+}
+
+// Used by §17.4.5 compaction: archives the old main chat and stamps the
+// compacted_into_session_id pointer so the right-rail "归档会话" tab can
+// thread back to the new session.
+func (q *Queries) ArchiveChatSessionWithCompactionPointer(ctx context.Context, arg ArchiveChatSessionWithCompactionPointerParams) error {
+	_, err := q.db.Exec(ctx, archiveChatSessionWithCompactionPointer, arg.ID, arg.CompactedIntoSessionID)
+	return err
+}
+
 const createChatMessage = `-- name: CreateChatMessage :one
 INSERT INTO chat_message (chat_session_id, role, content, task_id, failure_reason, elapsed_ms, sender_agent_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -377,6 +399,51 @@ func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllC
 			&i.LastCompactedAt,
 			&i.CompactedIntoSessionID,
 			&i.HasUnread,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArchivedChatSessionsByProject = `-- name: ListArchivedChatSessionsByProject :many
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+WHERE project_id = $1 AND status = 'archived'
+ORDER BY last_compacted_at DESC NULLS LAST, created_at DESC
+`
+
+// Right-rail "归档会话" Tab — chronological list of all archived main chat
+// sessions for a project, plus the compaction pointer so the UI can group
+// "snapshot N → snapshot N+1".
+func (q *Queries) ListArchivedChatSessionsByProject(ctx context.Context, projectID pgtype.UUID) ([]ChatSession, error) {
+	rows, err := q.db.Query(ctx, listArchivedChatSessionsByProject, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatSession{}
+	for rows.Next() {
+		var i ChatSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.CreatorID,
+			&i.Title,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UnreadSince,
+			&i.TeamID,
+			&i.ProjectID,
+			&i.LastCompactedAt,
+			&i.CompactedIntoSessionID,
 		); err != nil {
 			return nil, err
 		}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, FileText, FolderOpen, Network, Sparkles, Users } from "lucide-react";
+import { Archive, Bot, FileText, FolderOpen, Network, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
@@ -15,7 +15,11 @@ import {
   useUpdateProjectV12,
   usePostProjectMainChatMessage,
   usePinChatMessageToProjectMemory,
+  usePreviewProjectCompaction,
+  useConfirmProjectCompaction,
+  projectArchivedSessionsOptions,
 } from "@multica/core/projects-v12";
+import type { CompactionPreview, PinnedQuoteCandidate } from "@multica/core/types";
 import { teamDetailOptions } from "@multica/core/teams";
 import { useCreateCouncilSession } from "@multica/core/councils";
 import { agentListOptions } from "@multica/core/workspace/queries";
@@ -44,7 +48,7 @@ import { ChatPane } from "../teams/team-detail-page";
 // renders the memory_doc Markdown directly. Local file browser tab is
 // scaffolded — the chokidar IPC bridge is Phase B+ work.
 
-type DocTab = "files" | "memory" | "items";
+type DocTab = "files" | "memory" | "items" | "archive";
 
 export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
   const wsId = useWorkspaceId();
@@ -160,10 +164,7 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
               captain={captain}
             />
           )}
-          <Button size="sm" variant="outline" disabled>
-            <Sparkles className="size-3" />
-            整理 + 重新出发
-          </Button>
+          <CompactionButton projectId={projectId} />
         </div>
       </PageHeader>
 
@@ -253,6 +254,9 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
             <DocTabBtn active={activeTab === "items"} onClick={() => setActiveTab("items")} icon={Network}>
               Mission · Idea
             </DocTabBtn>
+            <DocTabBtn active={activeTab === "archive"} onClick={() => setActiveTab("archive")} icon={Archive}>
+              会话归档
+            </DocTabBtn>
           </div>
 
           {activeTab === "memory" && (
@@ -322,9 +326,230 @@ export function ProjectWorkspacePage({ projectId }: { projectId: string }) {
               </p>
             </div>
           )}
+
+          {activeTab === "archive" && (
+            <ArchivedSessionsTab projectId={projectId} />
+          )}
         </aside>
       </div>
     </div>
+  );
+}
+
+function ArchivedSessionsTab({ projectId }: { projectId: string }) {
+  const wsId = useWorkspaceId();
+  const { data, isLoading } = useQuery(projectArchivedSessionsOptions(wsId, projectId));
+  const sessions = data?.sessions ?? [];
+  if (isLoading) {
+    return (
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+    );
+  }
+  if (sessions.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
+        <Archive className="size-8 opacity-40" />
+        <p className="text-xs leading-relaxed max-w-xs">
+          还没有归档的主聊。
+          <br />
+          每次执行「整理 + 重新出发」时旧会话会归档到这里，可点开回看完整历史。
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 space-y-2 overflow-y-auto p-3">
+      {sessions.map((s, i) => (
+        <div key={s.id} className="rounded-md border bg-card px-3 py-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-foreground">第 {sessions.length - i} 次压缩前</span>
+            {s.last_compacted_at && (
+              <span className="text-muted-foreground">
+                {new Date(s.last_compacted_at).toLocaleString("zh-CN")}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-muted-foreground">{s.title || "项目主聊"}</div>
+          <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+            id: {s.id.slice(0, 8)}…
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompactionButton({ projectId }: { projectId: string }) {
+  const wsId = useWorkspaceId();
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<CompactionPreview | null>(null);
+  const [keyDecisions, setKeyDecisions] = useState("");
+  const [deliverables, setDeliverables] = useState("");
+  const [currentStatus, setCurrentStatus] = useState("");
+  const [carryForward, setCarryForward] = useState("");
+  const [pickedPins, setPickedPins] = useState<Set<string>>(new Set());
+  const previewMut = usePreviewProjectCompaction();
+  const confirmMut = useConfirmProjectCompaction(wsId);
+
+  const start = async () => {
+    try {
+      const data = await previewMut.mutateAsync(projectId);
+      setPreview(data);
+      setKeyDecisions((data.key_decisions ?? []).join("\n"));
+      setDeliverables((data.deliverables ?? []).join("\n"));
+      setCurrentStatus(data.current_status ?? "");
+      setCarryForward((data.carry_forward ?? []).join("\n"));
+      setPickedPins(new Set());
+      setOpen(true);
+    } catch (err) {
+      toast.error("无法预览压缩", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const confirm = async () => {
+    try {
+      await confirmMut.mutateAsync({
+        projectId,
+        data: {
+          key_decisions: keyDecisions.split("\n").map((s) => s.trim()).filter(Boolean),
+          deliverables: deliverables.split("\n").map((s) => s.trim()).filter(Boolean),
+          current_status: currentStatus.trim(),
+          carry_forward: carryForward.split("\n").map((s) => s.trim()).filter(Boolean),
+          selected_pin_ids: Array.from(pickedPins),
+        },
+      });
+      toast.success("项目记忆已更新，新主聊已开启");
+      setOpen(false);
+      setPreview(null);
+    } catch (err) {
+      toast.error("压缩失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const togglePin = (id: string) => {
+    setPickedPins((curr) => {
+      const next = new Set(curr);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={start} disabled={previewMut.isPending}>
+        <Sparkles className="size-3" />
+        整理 + 重新出发
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>整理项目主聊（压缩预览）</DialogTitle>
+          </DialogHeader>
+          {!preview ? (
+            <Skeleton className="h-32 w-full" />
+          ) : (
+            <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+              <div className="text-[11px] text-muted-foreground">
+                范围：{preview.message_count} 条消息
+                {preview.oldest_at && preview.newest_at && (
+                  <>
+                    {" "}
+                    · {new Date(preview.oldest_at).toLocaleString("zh-CN")} →{" "}
+                    {new Date(preview.newest_at).toLocaleString("zh-CN")}
+                  </>
+                )}
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium">关键决策（每行一条）</div>
+                <Textarea
+                  rows={3}
+                  value={keyDecisions}
+                  onChange={(e) => setKeyDecisions(e.target.value)}
+                  placeholder="例：决定先做最小可用版本，把 LLM 智能压缩留 v1.3"
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium">主要产出（每行一条）</div>
+                <Textarea
+                  rows={3}
+                  value={deliverables}
+                  onChange={(e) => setDeliverables(e.target.value)}
+                  placeholder="例：完成 Phase B 续 - 项目主聊真派发链路"
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium">当前状态</div>
+                <Textarea
+                  rows={2}
+                  value={currentStatus}
+                  onChange={(e) => setCurrentStatus(e.target.value)}
+                  placeholder="一句话描述项目目前推进到哪里"
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium">待跟进事项（每行一条）</div>
+                <Textarea
+                  rows={3}
+                  value={carryForward}
+                  onChange={(e) => setCarryForward(e.target.value)}
+                  placeholder="例：feat(origin): 主聊压缩接 captain LLM"
+                />
+              </div>
+              {preview.pinned_candidates.length > 0 && (
+                <div>
+                  <div className="mb-1 text-xs font-medium">候选钉住片段（点击选中）</div>
+                  <div className="space-y-1.5">
+                    {preview.pinned_candidates.map((c: PinnedQuoteCandidate) => {
+                      const on = pickedPins.has(c.message_id);
+                      return (
+                        <button
+                          key={c.message_id}
+                          type="button"
+                          onClick={() => togglePin(c.message_id)}
+                          className={cn(
+                            "block w-full rounded-md border px-3 py-2 text-left text-xs",
+                            on
+                              ? "border-primary bg-primary/5"
+                              : "border-muted bg-muted/30 hover:border-muted-foreground/50",
+                          )}
+                        >
+                          <div className="mb-0.5 font-medium">
+                            {c.speaker} · {new Date(c.created_at).toLocaleString("zh-CN")}
+                          </div>
+                          <div className="line-clamp-3 whitespace-pre-wrap text-muted-foreground">
+                            {c.content}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                确认后旧主聊会归档（可在右栏「会话归档」Tab 回看），新主聊以摘要开场。
+                完整 chat_message 不删，旧记录全保留。
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button size="sm" onClick={confirm} disabled={confirmMut.isPending || !preview}>
+              确认压缩
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

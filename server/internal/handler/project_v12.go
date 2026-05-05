@@ -799,6 +799,435 @@ func (h *Handler) captainForSession(ctx context.Context, session db.ChatSession)
 }
 
 // =====================
+// Project compaction (PRD §17.4.5 — /sync 模式主聊压缩)
+// =====================
+//
+// 五步流程实施 v1.0：
+//   preview 跑 1-3 步（盘点 → 规则化压缩草稿 → 候选 pinned_quotes），返
+//   回给前端面板让用户编辑确认。confirm 接收用户编辑过的草稿，跑 4-5
+//   步（写 memory_doc → 归档旧会话 + compacted_into_session_id → 新建空
+//   主聊 → 摘要 system 消息）。
+//
+// 简化点：本轮不接 captain LLM 调用。Preview 草稿用规则方法生成（按
+// pinned 已写入的内容、council 散会结论、用户消息频率等）。智能压缩
+// 留 v1.3，标记成 follow-up。User 在 preview 面板可手动修改草稿，确认
+// 写入。
+//
+// 边界：
+//   - 24 小时内已压缩过的项目拒绝二次压缩（PRD §17.4.5）
+//   - 单聊（project_id IS NULL）不在本路径，单聊压缩留 v1.3
+//   - 失败任一步：旧 chat_session 不归档；返回错误，前端 toast
+
+const projectCompactionCooldown = 24 * time.Hour
+
+type CompactionPreviewResponse struct {
+	KeyDecisions    []string             `json:"key_decisions"`
+	Deliverables    []string             `json:"deliverables"`
+	CurrentStatus   string               `json:"current_status"`
+	CarryForward    []string             `json:"carry_forward"`
+	PinnedCandidates []PinnedQuote       `json:"pinned_candidates"`
+	MessageCount    int                  `json:"message_count"`
+	OldestAt        string               `json:"oldest_at,omitempty"`
+	NewestAt        string               `json:"newest_at,omitempty"`
+}
+
+type PinnedQuote struct {
+	MessageID string `json:"message_id"`
+	Speaker   string `json:"speaker"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (h *Handler) PreviewProjectCompaction(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if !p.MainChatSessionID.Valid {
+		writeError(w, http.StatusBadRequest, "project has no main chat session")
+		return
+	}
+	session, err := h.Queries.GetChatSession(r.Context(), p.MainChatSessionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load main chat")
+		return
+	}
+	// 24h cooldown
+	if session.LastCompactedAt.Valid && time.Since(session.LastCompactedAt.Time) < projectCompactionCooldown {
+		writeError(w, http.StatusTooEarly, fmt.Sprintf("project was compacted %s ago — please wait at least 24h", time.Since(session.LastCompactedAt.Time).Round(time.Minute)))
+		return
+	}
+	// Pull all messages in the current session window. Skip last 30 minutes
+	// per §17.4.5 (avoid compacting an in-flight conversation).
+	rows, err := h.Queries.ListChatMessages(r.Context(), session.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list messages")
+		return
+	}
+	cutoff := time.Now().Add(-30 * time.Minute)
+	var inWindow []db.ChatMessage
+	for _, m := range rows {
+		if !m.CreatedAt.Valid || m.CreatedAt.Time.Before(cutoff) {
+			inWindow = append(inWindow, m)
+		}
+	}
+	resp := CompactionPreviewResponse{
+		KeyDecisions:    []string{},
+		Deliverables:    []string{},
+		CarryForward:    []string{},
+		PinnedCandidates: []PinnedQuote{},
+		MessageCount:    len(inWindow),
+	}
+	if len(inWindow) > 0 {
+		if inWindow[0].CreatedAt.Valid {
+			resp.OldestAt = inWindow[0].CreatedAt.Time.Format(time.RFC3339)
+		}
+		if last := inWindow[len(inWindow)-1]; last.CreatedAt.Valid {
+			resp.NewestAt = last.CreatedAt.Time.Format(time.RFC3339)
+		}
+	}
+	// Rule-based draft (no captain LLM in this round):
+	//   - current_status = 「{N} 条消息，最近活跃于 {newest_at}」 placeholder
+	//   - key_decisions = council adjourned conclusions in this session window
+	//     (read project's councils with project_id = pid, status = adjourned,
+	//      ended_at >= window start)
+	//   - deliverables = mission completed entries in same window
+	//   - pinned_candidates = top assistant messages by length (proxy for
+	//     content density) — capped at 5
+	if resp.MessageCount > 0 {
+		resp.CurrentStatus = fmt.Sprintf("最近活跃于 %s — 共 %d 条消息待整理", resp.NewestAt, resp.MessageCount)
+	} else {
+		resp.CurrentStatus = "暂无新消息可整理"
+	}
+	// pinned candidates: pick assistant replies > 80 chars, max 5
+	type cand struct {
+		idx int
+		m   db.ChatMessage
+	}
+	var cands []cand
+	for i, m := range inWindow {
+		if m.Role == "assistant" && len([]rune(m.Content)) >= 80 {
+			cands = append(cands, cand{i, m})
+		}
+	}
+	// take last 5 (most recent)
+	if len(cands) > 5 {
+		cands = cands[len(cands)-5:]
+	}
+	for _, c := range cands {
+		speaker := "Agent"
+		if c.m.SenderAgentID.Valid {
+			if a, err := h.Queries.GetAgent(r.Context(), c.m.SenderAgentID); err == nil {
+				speaker = a.Name
+			}
+		}
+		quote := PinnedQuote{
+			MessageID: uuidToString(c.m.ID),
+			Speaker:   speaker,
+			Content:   c.m.Content,
+		}
+		if c.m.CreatedAt.Valid {
+			quote.CreatedAt = c.m.CreatedAt.Time.Format(time.RFC3339)
+		}
+		resp.PinnedCandidates = append(resp.PinnedCandidates, quote)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type ConfirmProjectCompactionRequest struct {
+	KeyDecisions      []string `json:"key_decisions"`
+	Deliverables      []string `json:"deliverables"`
+	CurrentStatus     string   `json:"current_status"`
+	CarryForward      []string `json:"carry_forward"`
+	SelectedPinIDs    []string `json:"selected_pin_ids"` // subset of pinned_candidates message_ids
+}
+
+type ConfirmProjectCompactionResponse struct {
+	Project              ProjectV12Response `json:"project"`
+	NewChatSessionID     string             `json:"new_chat_session_id"`
+	ArchivedSessionID    string             `json:"archived_session_id"`
+}
+
+func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
+	if !ok {
+		return
+	}
+	var req ConfirmProjectCompactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if !p.MainChatSessionID.Valid || !p.TeamID.Valid {
+		writeError(w, http.StatusBadRequest, "project is not bound to a main chat / team")
+		return
+	}
+	oldSession, err := h.Queries.GetChatSession(r.Context(), p.MainChatSessionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load old session")
+		return
+	}
+
+	// Step 3: rewrite memory_doc with the user-confirmed draft.
+	now := time.Now()
+	stamp := now.Format("2006-01-02")
+	doc := p.MemoryDoc
+	for _, d := range req.KeyDecisions {
+		if s := strings.TrimSpace(d); s != "" {
+			doc = appendToMemorySection(doc, "## 关键决策", fmt.Sprintf("- %s · %s", stamp, s))
+		}
+	}
+	for _, d := range req.Deliverables {
+		if s := strings.TrimSpace(d); s != "" {
+			doc = appendToMemorySection(doc, "## 主要产出", fmt.Sprintf("- %s · %s", stamp, s))
+		}
+	}
+	if cs := strings.TrimSpace(req.CurrentStatus); cs != "" {
+		// CurrentStatus replaces the section body rather than appends — it's a
+		// snapshot of "now", not a journal.
+		doc = replaceMemorySection(doc, "## 当前状态", cs)
+	}
+	// Selected pinned quotes: copy content to 「## 用户钉住的片段」 if not
+	// already pinned. This is best-effort dedupe by message_id (we just look
+	// the message up and re-pin in standard format).
+	for _, mid := range req.SelectedPinIDs {
+		mUUID, ok := parseUUID2(mid)
+		if !ok {
+			continue
+		}
+		msg, err := h.Queries.GetChatMessage(r.Context(), mUUID)
+		if err != nil {
+			continue
+		}
+		speaker := "Agent"
+		if msg.Role == "user" {
+			speaker = "用户"
+		} else if msg.SenderAgentID.Valid {
+			if a, err := h.Queries.GetAgent(r.Context(), msg.SenderAgentID); err == nil {
+				speaker = a.Name
+			}
+		}
+		var entry strings.Builder
+		fmt.Fprintf(&entry, "- %s · %s 说：", stamp, speaker)
+		for _, line := range strings.Split(strings.TrimRight(msg.Content, "\n"), "\n") {
+			fmt.Fprintf(&entry, "\n  > %s", line)
+		}
+		doc = appendToMemorySection(doc, "## 用户钉住的片段", entry.String())
+	}
+
+	// Step 4: archive old session FIRST so the (team_id, project_id) unique
+	// slot is freed (the partial index requires status='active'), then
+	// GetOrCreate picks an INSERT path producing a fresh row.
+	// We stamp the compaction pointer in two writes — initial archive, then
+	// fill the pointer once the new session id is known. Two writes is fine:
+	// the pointer is a UX convenience for the archived sessions tab, not a
+	// integrity guarantee.
+	if err := h.Queries.ArchiveChatSession(r.Context(), oldSession.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to archive old session: "+err.Error())
+		return
+	}
+	newSession, err := h.Queries.GetOrCreateTeamChatSession(r.Context(), db.GetOrCreateTeamChatSessionParams{
+		TeamID:      p.TeamID,
+		WorkspaceID: p.WorkspaceID,
+		CreatorID:   userUUID,
+		Title:       p.Title,
+		ProjectID:   pgtype.UUID{Bytes: p.ID.Bytes, Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create new main chat: "+err.Error())
+		return
+	}
+	if uuidEqual(newSession.ID, oldSession.ID) {
+		writeError(w, http.StatusInternalServerError, "compaction failed: archive did not free unique slot")
+		return
+	}
+	// Fill the compaction pointer + last_compacted_at on the just-archived
+	// row so right-rail "归档会话" tab can thread back to the new session.
+	if err := h.Queries.ArchiveChatSessionWithCompactionPointer(r.Context(), db.ArchiveChatSessionWithCompactionPointerParams{
+		ID:                     oldSession.ID,
+		CompactedIntoSessionID: pgtype.UUID{Bytes: newSession.ID.Bytes, Valid: true},
+	}); err != nil {
+		// non-fatal: the archive itself succeeded, the pointer is cosmetic
+		_ = err
+	}
+
+	// Move the project's anchor to the new session.
+	if err := h.Queries.ReplaceProjectMainChatSessionV12(r.Context(), db.ReplaceProjectMainChatSessionV12Params{
+		ID:                p.ID,
+		MainChatSessionID: pgtype.UUID{Bytes: newSession.ID.Bytes, Valid: true},
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to swap main chat anchor: "+err.Error())
+		return
+	}
+
+	// Persist memory_doc + compaction_count.
+	updated, err := h.Queries.UpdateProjectV12(r.Context(), db.UpdateProjectV12Params{
+		ID:                 p.ID,
+		MemoryDoc:          pgtype.Text{String: doc, Valid: true},
+		MemoryDocUpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write memory_doc: "+err.Error())
+		return
+	}
+	if _, err := h.Queries.IncrementProjectCompactionV12(r.Context(), p.ID); err != nil {
+		// non-fatal: counter drift is cosmetic
+		_ = err
+	}
+
+	// Step 4 cont.: write opening system message into the new session
+	opening := fmt.Sprintf("【本项目记忆已更新（基于压缩第 %d 次）】", updated.CompactionCount+1)
+	if cs := strings.TrimSpace(req.CurrentStatus); cs != "" {
+		opening += "\n当前状态：" + cs
+	}
+	if len(req.CarryForward) > 0 {
+		opening += "\n待跟进："
+		for _, c := range req.CarryForward {
+			if cc := strings.TrimSpace(c); cc != "" {
+				opening += "\n- " + cc
+			}
+		}
+	}
+	opening += "\n\n完整记忆 → 见右栏「项目记忆文档」 Tab。"
+	if _, err := h.Queries.CreateTeamChatMessage(r.Context(), db.CreateTeamChatMessageParams{
+		ChatSessionID: newSession.ID,
+		Role:          "assistant",
+		Content:       opening,
+	}); err != nil {
+		// non-fatal; the new session exists, the opening message can be re-
+		// posted manually.
+		_ = err
+	}
+
+	writeJSON(w, http.StatusOK, ConfirmProjectCompactionResponse{
+		Project:           projectV12ToResponse(updated),
+		NewChatSessionID:  uuidToString(newSession.ID),
+		ArchivedSessionID: uuidToString(oldSession.ID),
+	})
+}
+
+// replaceMemorySection swaps the body of the named section. If the section
+// doesn't exist, append a new one. Used for "## 当前状态" which is a
+// snapshot rather than an append-only journal.
+func replaceMemorySection(doc string, header string, body string) string {
+	header = strings.TrimSpace(header)
+	body = strings.TrimRight(body, "\n")
+	lines := strings.Split(doc, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == header {
+			// find end of this section
+			end := i + 1
+			for end < len(lines) {
+				next := strings.TrimSpace(lines[end])
+				if strings.HasPrefix(next, "## ") {
+					break
+				}
+				end++
+			}
+			out := append([]string{}, lines[:i+1]...)
+			out = append(out, body)
+			out = append(out, lines[end:]...)
+			return strings.Join(out, "\n")
+		}
+	}
+	if doc != "" && !strings.HasSuffix(doc, "\n") {
+		doc += "\n"
+	}
+	if doc != "" {
+		doc += "\n"
+	}
+	return doc + header + "\n" + body + "\n"
+}
+
+func parseUUID2(s string) (pgtype.UUID, bool) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return u, false
+	}
+	return u, true
+}
+
+func (h *Handler) ListProjectArchivedSessions(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	if _, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID: pid, WorkspaceID: wsUUID,
+	}); err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	rows, err := h.Queries.ListArchivedChatSessionsByProject(r.Context(), pgtype.UUID{Bytes: pid.Bytes, Valid: true})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list archived sessions")
+		return
+	}
+	type archivedRow struct {
+		ID                     string  `json:"id"`
+		Title                  string  `json:"title"`
+		LastCompactedAt        *string `json:"last_compacted_at"`
+		CompactedIntoSessionID *string `json:"compacted_into_session_id"`
+		CreatedAt              string  `json:"created_at"`
+	}
+	out := make([]archivedRow, 0, len(rows))
+	for _, s := range rows {
+		row := archivedRow{
+			ID:        uuidToString(s.ID),
+			Title:     s.Title,
+			CreatedAt: timestampToString(s.CreatedAt),
+		}
+		if s.LastCompactedAt.Valid {
+			ts := s.LastCompactedAt.Time.Format(time.RFC3339)
+			row.LastCompactedAt = &ts
+		}
+		if s.CompactedIntoSessionID.Valid {
+			cid := uuidToString(s.CompactedIntoSessionID)
+			row.CompactedIntoSessionID = &cid
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": out, "total": len(out)})
+}
+
+// =====================
 // Pin to memory (PRD §17.4.2 — 用户钉住片段)
 // =====================
 

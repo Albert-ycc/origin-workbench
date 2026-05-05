@@ -135,6 +135,10 @@ import type {
   ListMailboxItemsResponse,
   ProjectV12,
   ProjectMainChat,
+  CompactionPreview,
+  ConfirmCompactionRequest,
+  ConfirmCompactionResponse,
+  ArchivedChatSession,
   ListProjectsV12Response,
   CreateProjectV12Request,
   UpdateProjectV12Request,
@@ -1718,6 +1722,28 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async previewProjectCompaction(projectId: string): Promise<CompactionPreview> {
+    return this.fetch(`/api/v12/projects/${projectId}/compact/preview`, {
+      method: "POST",
+    });
+  }
+
+  async confirmProjectCompaction(
+    projectId: string,
+    data: ConfirmCompactionRequest,
+  ): Promise<ConfirmCompactionResponse> {
+    return this.fetch(`/api/v12/projects/${projectId}/compact/confirm`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listProjectArchivedSessions(
+    projectId: string,
+  ): Promise<{ sessions: ArchivedChatSession[]; total: number }> {
+    return this.fetch(`/api/v12/projects/${projectId}/archived-sessions`);
   }
 
   // ── Project main chat (Origin §17.3) ────────────────────────────────────

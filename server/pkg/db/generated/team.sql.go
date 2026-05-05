@@ -180,7 +180,7 @@ const getOrCreateTeamChatSession = `-- name: GetOrCreateTeamChatSession :one
 
 INSERT INTO chat_session (workspace_id, team_id, project_id, agent_id, creator_id, title)
 VALUES ($2, $1, $5, NULL, $3, $4)
-ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL DO UPDATE
+ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL AND status = 'active' DO UPDATE
     SET updated_at = chat_session.updated_at
 RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id
 `
@@ -196,10 +196,11 @@ type GetOrCreateTeamChatSessionParams struct {
 // =====================
 // Team Chat (group session)
 // =====================
-// A (team, project) pair has at most one chat_session. v1.1 enforced this on
-// (team_id) alone; v1.2 widens the key to (team_id, project_id) so a single
-// team can host multiple project main chats. NULL project_id keeps the
-// legacy "team-level group chat" form usable when no project is bound.
+// A (team, project) pair has at most one *active* chat_session. v1.1
+// enforced this on (team_id) alone; v1.2 widens the key to
+// (team_id, project_id). The partial index also requires status = 'active'
+// so §17.4.5 compaction can archive the old row and re-INSERT a fresh
+// main chat without an ON CONFLICT collision.
 func (q *Queries) GetOrCreateTeamChatSession(ctx context.Context, arg GetOrCreateTeamChatSessionParams) (ChatSession, error) {
 	row := q.db.QueryRow(ctx, getOrCreateTeamChatSession,
 		arg.TeamID,

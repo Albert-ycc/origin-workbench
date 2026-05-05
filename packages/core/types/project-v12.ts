@@ -68,3 +68,45 @@ export interface AgentProjectMemory {
   created_at: string;
   updated_at: string;
 }
+
+// PRD §17.4.5 — main chat compaction preview/confirm contract.
+
+export interface PinnedQuoteCandidate {
+  message_id: string;
+  speaker: string;
+  content: string;
+  created_at: string;
+}
+
+export interface CompactionPreview {
+  key_decisions: string[];
+  deliverables: string[];
+  current_status: string;
+  carry_forward: string[];
+  pinned_candidates: PinnedQuoteCandidate[];
+  message_count: number;
+  oldest_at?: string;
+  newest_at?: string;
+}
+
+export interface ConfirmCompactionRequest {
+  key_decisions: string[];
+  deliverables: string[];
+  current_status: string;
+  carry_forward: string[];
+  selected_pin_ids: string[];
+}
+
+export interface ConfirmCompactionResponse {
+  project: Project;
+  new_chat_session_id: string;
+  archived_session_id: string;
+}
+
+export interface ArchivedChatSession {
+  id: string;
+  title: string;
+  last_compacted_at: string | null;
+  compacted_into_session_id: string | null;
+  created_at: string;
+}

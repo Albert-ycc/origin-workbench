@@ -51,6 +51,25 @@ WHERE id = sqlc.arg('id');
 UPDATE chat_session SET status = 'archived', updated_at = now()
 WHERE id = $1;
 
+-- name: ArchiveChatSessionWithCompactionPointer :exec
+-- Used by §17.4.5 compaction: archives the old main chat and stamps the
+-- compacted_into_session_id pointer so the right-rail "归档会话" tab can
+-- thread back to the new session.
+UPDATE chat_session
+SET status = 'archived',
+    compacted_into_session_id = $2,
+    last_compacted_at = now(),
+    updated_at = now()
+WHERE id = $1;
+
+-- name: ListArchivedChatSessionsByProject :many
+-- Right-rail "归档会话" Tab — chronological list of all archived main chat
+-- sessions for a project, plus the compaction pointer so the UI can group
+-- "snapshot N → snapshot N+1".
+SELECT * FROM chat_session
+WHERE project_id = $1 AND status = 'archived'
+ORDER BY last_compacted_at DESC NULLS LAST, created_at DESC;
+
 -- name: TouchChatSession :exec
 UPDATE chat_session SET updated_at = now()
 WHERE id = $1;

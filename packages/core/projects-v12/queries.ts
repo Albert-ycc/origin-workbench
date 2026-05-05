@@ -14,6 +14,8 @@ export const projectV12Keys = {
     [...projectV12Keys.all(wsId), "main-chat", projectId] as const,
   mainChatMessages: (wsId: string, projectId: string) =>
     [...projectV12Keys.all(wsId), "main-chat-messages", projectId] as const,
+  archivedSessions: (wsId: string, projectId: string) =>
+    [...projectV12Keys.all(wsId), "archived-sessions", projectId] as const,
 };
 
 export function projectV12ListOptions(wsId: string) {
@@ -53,6 +55,14 @@ export function projectMainChatMessagesOptions(wsId: string, projectId: string) 
   return queryOptions({
     queryKey: projectV12Keys.mainChatMessages(wsId, projectId),
     queryFn: () => api.listProjectMainChatMessages(projectId),
+    enabled: !!projectId,
+  });
+}
+
+export function projectArchivedSessionsOptions(wsId: string, projectId: string) {
+  return queryOptions({
+    queryKey: projectV12Keys.archivedSessions(wsId, projectId),
+    queryFn: () => api.listProjectArchivedSessions(projectId),
     enabled: !!projectId,
   });
 }
