@@ -1,5 +1,6 @@
 import type {
   Issue,
+  DelegationTaskCard,
   CreateIssueRequest,
   UpdateIssueRequest,
   ListIssuesResponse,
@@ -1803,5 +1804,9 @@ export class ApiClient {
 
   async listIssuesByTeamMessage(messageId: string): Promise<{ issues: Issue[]; total: number }> {
     return this.fetch(`/api/issues/by-team-message/${messageId}`);
+  }
+
+  async listDelegationTaskCards(messageId: string): Promise<{ cards: DelegationTaskCard[]; total: number }> {
+    return this.fetch(`/api/issues/by-team-message/${messageId}/cards`);
   }
 }

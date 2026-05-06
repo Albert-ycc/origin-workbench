@@ -3,6 +3,7 @@ export {
   teamListOptions,
   teamDetailOptions,
   teamMessagesOptions,
+  delegationTaskCardsOptions,
 } from "./queries";
 
 export {

@@ -9,6 +9,10 @@ export const teamKeys = {
     [...teamKeys.all(wsId), "detail", id] as const,
   messages: (wsId: string, id: string) =>
     [...teamKeys.all(wsId), "messages", id] as const,
+  delegationCards: (wsId: string, messageId: string) =>
+    [...teamKeys.all(wsId), "delegation-cards", messageId] as const,
+  delegationCardsAll: (wsId: string) =>
+    [...teamKeys.all(wsId), "delegation-cards"] as const,
 };
 
 export function teamListOptions(wsId: string, status: "active" | "archived" = "active") {
@@ -30,5 +34,24 @@ export function teamMessagesOptions(wsId: string, id: string) {
   return queryOptions({
     queryKey: teamKeys.messages(wsId, id),
     queryFn: () => api.listTeamMessages(id),
+  });
+}
+
+export function delegationTaskCardsOptions(wsId: string, messageId: string) {
+  return queryOptions({
+    queryKey: teamKeys.delegationCards(wsId, messageId),
+    queryFn: () => api.listDelegationTaskCards(messageId),
+    select: (data) => data.cards,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const cards = query.state.data?.cards;
+      if (!cards || cards.length === 0) return 4000;
+      const allDone = cards.every((card) =>
+        card.status === "done" ||
+        card.status === "in_review" ||
+        card.status === "cancelled"
+      );
+      return allDone ? false : 4000;
+    },
   });
 }

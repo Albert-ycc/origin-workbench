@@ -49,3 +49,24 @@ export interface Issue {
   source_team_message_id?: string | null;
   source_team_session_id?: string | null;
 }
+
+export type DelegationTaskCardStatus = IssueStatus;
+
+export interface DelegationTaskCard {
+  issue_id: string;
+  issue_key: string;
+  workspace_id: string;
+  number: number;
+  title: string;
+  status: DelegationTaskCardStatus;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  assignee_avatar_url: string | null;
+  source_team_message_id: string | null;
+  source_team_session_id: string | null;
+  project_id: string | null;
+  latest_result_preview: string | null;
+  latest_result_comment_id: string | null;
+  comment_count: number;
+  updated_at: string;
+}
