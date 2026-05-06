@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/events"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -480,12 +481,13 @@ func TestTeamDelegatedIssueCompletionDoesNotCreateMainChatMessage(t *testing.T) 
 
 	var issueID string
 	var sessionID string
+	var sourceMessageID string
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT i.id::text, i.source_team_session_id::text
+		SELECT i.id::text, i.source_team_session_id::text, i.source_team_message_id::text
 		FROM issue i
 		WHERE i.assignee_id = $1 AND i.source_team_message_id IS NOT NULL
 		ORDER BY i.created_at DESC LIMIT 1
-	`, memberID).Scan(&issueID, &sessionID); err != nil {
+	`, memberID).Scan(&issueID, &sessionID, &sourceMessageID); err != nil {
 		t.Fatalf("load delegated issue: %v", err)
 	}
 
@@ -507,7 +509,60 @@ func TestTeamDelegatedIssueCompletionDoesNotCreateMainChatMessage(t *testing.T) 
 	if err != nil {
 		t.Fatalf("update issue status: %v", err)
 	}
+
+	gotEvent := make(chan events.Event, 1)
+	testHandler.Bus.Subscribe(protocol.EventTeamMessageCreated, func(e events.Event) {
+		payload, ok := e.Payload.(map[string]any)
+		if !ok || payload["event"] != "team_task_completed" {
+			return
+		}
+		select {
+		case gotEvent <- e:
+		default:
+		}
+	})
 	testHandler.TaskService.MirrorIssueCompletionToTeamSession(context.Background(), issue)
+
+	var event events.Event
+	select {
+	case event = <-gotEvent:
+	default:
+		t.Fatal("expected team_task_completed event")
+	}
+	if event.Type != protocol.EventTeamMessageCreated {
+		t.Fatalf("event type = %q, want %q", event.Type, protocol.EventTeamMessageCreated)
+	}
+	if event.ActorType != "agent" {
+		t.Fatalf("event actor type = %q, want agent", event.ActorType)
+	}
+	if event.ActorID != memberID {
+		t.Fatalf("event actor id = %q, want %q", event.ActorID, memberID)
+	}
+	eventPayload, ok := event.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("event payload type = %T, want map[string]any", event.Payload)
+	}
+	if eventPayload["event"] != "team_task_completed" {
+		t.Fatalf("event payload event = %q, want team_task_completed", eventPayload["event"])
+	}
+	if eventPayload["issue_id"] != issueID {
+		t.Fatalf("event payload issue_id = %q, want %q", eventPayload["issue_id"], issueID)
+	}
+	if eventPayload["source_team_session_id"] != sessionID {
+		t.Fatalf("event payload source_team_session_id = %q, want %q", eventPayload["source_team_session_id"], sessionID)
+	}
+	if eventPayload["chat_session_id"] != sessionID {
+		t.Fatalf("event payload chat_session_id = %q, want %q", eventPayload["chat_session_id"], sessionID)
+	}
+	if eventPayload["team_id"] != team.ID {
+		t.Fatalf("event payload team_id = %q, want %q", eventPayload["team_id"], team.ID)
+	}
+	if sourceMessageID == "" {
+		t.Fatal("expected delegated issue source_team_message_id to be non-empty")
+	}
+	if eventPayload["source_team_message_id"] != sourceMessageID {
+		t.Fatalf("event payload source_team_message_id = %q, want %q", eventPayload["source_team_message_id"], sourceMessageID)
+	}
 
 	var mirroredCount int
 	if err := testPool.QueryRow(context.Background(), `

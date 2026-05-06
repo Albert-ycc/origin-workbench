@@ -1553,10 +1553,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 	}
 
-	// Team chat issue 完成回流（D 方案 §17 团队群聊任务卡片）：
-	// 来自团队群聊 captain 派活的 issue 在切到 in_review/done 时，把
-	// agent 写的最终 comment mirror 成一条 assistant 消息写到原群聊，让
-	// 群聊里能看到「@xxx 完成了 → 回报内容」事件，保持派活闭环。
+	// Team chat delegated issue completion emits a compact team_task_completed
+	// team:message_created update so the delegation board refreshes. Detailed
+	// agent output stays in issue comments / the task card instead of being
+	// mirrored into the main team chat.
 	if statusChanged && issue.SourceTeamSessionID.Valid &&
 		(issue.Status == "in_review" || issue.Status == "done") {
 		h.TaskService.MirrorIssueCompletionToTeamSession(r.Context(), issue)
