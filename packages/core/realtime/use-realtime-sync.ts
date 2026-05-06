@@ -36,6 +36,11 @@ import { inboxKeys } from "../inbox/queries";
 import { workspaceKeys, workspaceListOptions } from "../workspace/queries";
 import { chatKeys } from "../chat/queries";
 import { resolvePostAuthDestination, useHasOnboarded } from "../paths";
+import {
+  invalidateDelegationCardsForIssue,
+  invalidateDelegationCardsForIssueId,
+  syncDelegationCardsForTeamMessageCreated,
+} from "./delegation-card-invalidation";
 import type {
   MemberAddedPayload,
   WorkspaceDeletedPayload,
@@ -255,6 +260,7 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         onIssueUpdated(qc, wsId, issue);
+        invalidateDelegationCardsForIssue(qc, wsId, issue);
         if (issue.status) {
           onInboxIssueStatusChanged(qc, wsId, issue.id, issue.status);
         }
@@ -336,57 +342,91 @@ export function useRealtimeSync(
     const invalidateTimeline = (issueId: string) => {
       qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
     };
+    const invalidateDelegationCardsByIssueId = (issueId: string) => {
+      const wsId = getCurrentWsId();
+      if (wsId) invalidateDelegationCardsForIssueId(qc, wsId, issueId);
+    };
 
     const unsubCommentCreated = ws.on("comment:created", (p) => {
       const { comment } = p as CommentCreatedPayload;
-      if (comment?.issue_id) invalidateTimeline(comment.issue_id);
+      if (comment?.issue_id) {
+        invalidateTimeline(comment.issue_id);
+        invalidateDelegationCardsByIssueId(comment.issue_id);
+      }
     });
 
     const unsubCommentUpdated = ws.on("comment:updated", (p) => {
       const { comment } = p as CommentUpdatedPayload;
-      if (comment?.issue_id) invalidateTimeline(comment.issue_id);
+      if (comment?.issue_id) {
+        invalidateTimeline(comment.issue_id);
+        invalidateDelegationCardsByIssueId(comment.issue_id);
+      }
     });
 
     const unsubCommentDeleted = ws.on("comment:deleted", (p) => {
       const { issue_id } = p as CommentDeletedPayload;
-      if (issue_id) invalidateTimeline(issue_id);
+      if (issue_id) {
+        invalidateTimeline(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     const unsubActivityCreated = ws.on("activity:created", (p) => {
       const { issue_id } = p as ActivityCreatedPayload;
-      if (issue_id) invalidateTimeline(issue_id);
+      if (issue_id) {
+        invalidateTimeline(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     const unsubReactionAdded = ws.on("reaction:added", (p) => {
       const { issue_id } = p as ReactionAddedPayload;
-      if (issue_id) invalidateTimeline(issue_id);
+      if (issue_id) {
+        invalidateTimeline(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     const unsubReactionRemoved = ws.on("reaction:removed", (p) => {
       const { issue_id } = p as ReactionRemovedPayload;
-      if (issue_id) invalidateTimeline(issue_id);
+      if (issue_id) {
+        invalidateTimeline(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     // --- Issue-level reactions & subscribers (global fallback) ---
 
     const unsubIssueReactionAdded = ws.on("issue_reaction:added", (p) => {
       const { issue_id } = p as IssueReactionAddedPayload;
-      if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.reactions(issue_id) });
+      if (issue_id) {
+        qc.invalidateQueries({ queryKey: issueKeys.reactions(issue_id) });
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     const unsubIssueReactionRemoved = ws.on("issue_reaction:removed", (p) => {
       const { issue_id } = p as IssueReactionRemovedPayload;
-      if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.reactions(issue_id) });
+      if (issue_id) {
+        qc.invalidateQueries({ queryKey: issueKeys.reactions(issue_id) });
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     const unsubSubscriberAdded = ws.on("subscriber:added", (p) => {
       const { issue_id } = p as SubscriberAddedPayload;
-      if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue_id) });
+      if (issue_id) {
+        qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue_id) });
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     const unsubSubscriberRemoved = ws.on("subscriber:removed", (p) => {
       const { issue_id } = p as SubscriberRemovedPayload;
-      if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue_id) });
+      if (issue_id) {
+        qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue_id) });
+        invalidateDelegationCardsByIssueId(issue_id);
+      }
     });
 
     // --- Side-effect handlers (toast, navigation) ---
@@ -647,6 +687,12 @@ export function useRealtimeSync(
       const payload = p as TeamMessageCreatedPayload;
       const wsId = getCurrentWsId();
       if (!wsId || !payload.team_id) return;
+      const delegationRefresh = syncDelegationCardsForTeamMessageCreated(
+        qc,
+        wsId,
+        payload,
+      );
+      if (delegationRefresh.skipTeamMessageRefresh) return;
       if (payload.message) {
         qc.setQueryData<{ messages: typeof payload.message[]; next_cursor?: string | null }>(
           teamKeys.messages(wsId, payload.team_id),

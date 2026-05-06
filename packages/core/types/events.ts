@@ -350,5 +350,10 @@ export interface TeamMessageCreatedPayload {
   // (chat_session has both team_id and project_id). Used by realtime sync
   // to invalidate the project workspace's chat cache without polling.
   project_id?: string;
+  event?: string | null;
+  chat_session_id?: string | null;
+  source_team_message_id?: string | null;
+  source_team_session_id?: string | null;
+  issue_id?: string | null;
   message?: TeamMessage;
 }
