@@ -1631,27 +1631,38 @@ func (s *TaskService) broadcastTeamMessageIfTeamSession(ctx context.Context, tas
 			"team_id", util.UUIDToString(session.TeamID),
 			"error", err)
 	}
-	payload := map[string]any{
-		"team_id": util.UUIDToString(session.TeamID),
-	}
+	var messagePtr *db.ChatMessage
 	if err == nil {
-		payload["message"] = map[string]any{
-			"id":              util.UUIDToString(message.ID),
-			"chat_session_id": util.UUIDToString(message.ChatSessionID),
-			"team_id":         util.UUIDToString(session.TeamID),
-			"role":            message.Role,
-			"content":         message.Content,
-			"sender_agent_id": util.UUIDToPtr(message.SenderAgentID),
-			"created_at":      util.TimestampToString(message.CreatedAt),
-		}
+		messagePtr = &message
 	}
 	s.Bus.Publish(events.Event{
 		Type:        protocol.EventTeamMessageCreated,
 		WorkspaceID: util.UUIDToString(session.WorkspaceID),
 		ActorType:   "agent",
 		ActorID:     util.UUIDToString(task.AgentID),
-		Payload:     payload,
+		Payload:     teamMessageEventPayloadForSession(session, session.TeamID, messagePtr),
 	})
+}
+
+func teamMessageEventPayloadForSession(session db.ChatSession, teamID pgtype.UUID, message *db.ChatMessage) map[string]any {
+	payload := map[string]any{
+		"team_id": util.UUIDToString(teamID),
+	}
+	if session.ProjectID.Valid {
+		payload["project_id"] = util.UUIDToString(session.ProjectID)
+	}
+	if message != nil {
+		payload["message"] = map[string]any{
+			"id":              util.UUIDToString(message.ID),
+			"chat_session_id": util.UUIDToString(message.ChatSessionID),
+			"team_id":         util.UUIDToString(teamID),
+			"role":            message.Role,
+			"content":         message.Content,
+			"sender_agent_id": util.UUIDToPtr(message.SenderAgentID),
+			"created_at":      util.TimestampToString(message.CreatedAt),
+		}
+	}
+	return payload
 }
 
 type teamRosterAgent struct {
@@ -1956,12 +1967,13 @@ func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, is
 	header := fmt.Sprintf("✅ @%s %s [%s]\n\n", agentName, statusLabel, issue.Title)
 	body := header + finalContent
 
-	if _, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
+	message, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
 		ChatSessionID: session.ID,
 		Role:          "assistant",
 		Content:       body,
 		SenderAgentID: issue.AssigneeID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Warn("mirror issue completion to team session failed",
 			"issue_id", util.UUIDToString(issue.ID),
 			"team_session_id", util.UUIDToString(session.ID),
@@ -1971,17 +1983,16 @@ func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, is
 
 	// 广播 team:message_created 让前端实时刷新群聊
 	if session.TeamID.Valid {
+		payload := teamMessageEventPayloadForSession(session, session.TeamID, &message)
+		payload["chat_session_id"] = util.UUIDToString(session.ID)
+		payload["issue_id"] = util.UUIDToString(issue.ID)
+		payload["event"] = "team_task_completed"
 		s.Bus.Publish(events.Event{
 			Type:        protocol.EventTeamMessageCreated,
 			WorkspaceID: util.UUIDToString(session.WorkspaceID),
 			ActorType:   "agent",
 			ActorID:     util.UUIDToString(issue.AssigneeID),
-			Payload: map[string]any{
-				"team_id":         util.UUIDToString(session.TeamID),
-				"chat_session_id": util.UUIDToString(session.ID),
-				"issue_id":        util.UUIDToString(issue.ID),
-				"event":           "team_task_completed",
-			},
+			Payload:     payload,
 		})
 	}
 }
@@ -2115,18 +2126,7 @@ func (s *TaskService) createTeamSystemMessage(ctx context.Context, session db.Ch
 		WorkspaceID: util.UUIDToString(session.WorkspaceID),
 		ActorType:   "system",
 		ActorID:     "",
-		Payload: map[string]any{
-			"team_id": util.UUIDToString(teamID),
-			"message": map[string]any{
-				"id":              util.UUIDToString(message.ID),
-				"chat_session_id": util.UUIDToString(message.ChatSessionID),
-				"team_id":         util.UUIDToString(teamID),
-				"role":            message.Role,
-				"content":         message.Content,
-				"sender_agent_id": util.UUIDToPtr(message.SenderAgentID),
-				"created_at":      util.TimestampToString(message.CreatedAt),
-			},
-		},
+		Payload:     teamMessageEventPayloadForSession(session, teamID, &message),
 	})
 }
 
