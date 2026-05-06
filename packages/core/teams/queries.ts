@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 
 const EMPTY_DELEGATION_CARD_POLL_MS = 12_000;
+const emptyDelegationCardPollStartedAt = new Map<string, number>();
 
 export const teamKeys = {
   all: (wsId: string) => ["teams", wsId] as const,
@@ -40,6 +41,8 @@ export function teamMessagesOptions(wsId: string, id: string) {
 }
 
 export function delegationTaskCardsOptions(wsId: string, messageId: string) {
+  const emptyPollKey = `${wsId}:${messageId}`;
+
   return queryOptions({
     queryKey: teamKeys.delegationCards(wsId, messageId),
     queryFn: () => api.listDelegationTaskCards(messageId),
@@ -49,10 +52,11 @@ export function delegationTaskCardsOptions(wsId: string, messageId: string) {
       const cards = query.state.data?.cards;
       if (!cards) return 4000;
       if (cards.length === 0) {
-        const firstEmptyAt = query.state.dataUpdatedAt;
-        if (!firstEmptyAt) return 4000;
-        return Date.now() - firstEmptyAt < EMPTY_DELEGATION_CARD_POLL_MS ? 4000 : false;
+        const startedAt = emptyDelegationCardPollStartedAt.get(emptyPollKey) ?? Date.now();
+        emptyDelegationCardPollStartedAt.set(emptyPollKey, startedAt);
+        return Date.now() - startedAt < EMPTY_DELEGATION_CARD_POLL_MS ? 4000 : false;
       }
+      emptyDelegationCardPollStartedAt.delete(emptyPollKey);
       const allDone = cards.every((card) =>
         card.status === "done" ||
         card.status === "in_review" ||
