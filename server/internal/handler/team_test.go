@@ -42,6 +42,30 @@ func createTeamViaHandler(t *testing.T, captainID string, memberIDs []string) Te
 	return team
 }
 
+func createTeamTestProject(t *testing.T, title string) ProjectResponse {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+		"title":    title,
+		"status":   "active",
+		"priority": "medium",
+	})
+	testHandler.CreateProject(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateProject: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+	t.Cleanup(func() {
+		req := newRequest(http.MethodDelete, "/api/projects/"+project.ID, nil)
+		req = withURLParam(req, "id", project.ID)
+		testHandler.DeleteProject(httptest.NewRecorder(), req)
+	})
+	return project
+}
+
 func TestCreateTeamCreatesCaptainAndMembers(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -248,24 +272,9 @@ func TestListTeamMessagesPaginatesOlderMessages(t *testing.T) {
 	}
 }
 
-func TestCompleteTeamCaptainMessageDelegatesMentionedMember(t *testing.T) {
-	if testHandler == nil {
-		t.Skip("database not available")
-	}
-	captainID := createTeamTestAgent(t, "Delegating Captain")
-	memberID := createTeamTestAgent(t, "Frontend Delegate")
-	team := createTeamViaHandler(t, captainID, []string{memberID})
-
-	w := httptest.NewRecorder()
-	req := newRequest(http.MethodPost, "/api/teams/"+team.ID+"/messages", map[string]any{
-		"content": "请负责人拆一下：@Frontend Delegate 做页面验证",
-	})
-	req = withURLParam(req, "id", team.ID)
-	testHandler.PostTeamMessage(w, req)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("PostTeamMessage: expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-
+func completeCaptainDelegationForTest(t *testing.T, teamID string, captainID string, output string) string {
+	t.Helper()
+	_ = teamID
 	var captainTaskID string
 	if err := testPool.QueryRow(context.Background(), `
 		SELECT id FROM agent_task_queue
@@ -286,11 +295,38 @@ func TestCompleteTeamCaptainMessageDelegatesMentionedMember(t *testing.T) {
 	}
 	result, _ := json.Marshal(protocol.TaskCompletedPayload{
 		TaskID: captainTaskID,
-		Output: "@Frontend Delegate 请你负责实现前端交互验证，并把结论回到群里。",
+		Output: output,
 	})
 	if _, err := testHandler.TaskService.CompleteTask(context.Background(), parseUUID(captainTaskID), result, "session-delegate", ""); err != nil {
 		t.Fatalf("complete captain task: %v", err)
 	}
+	return captainTaskID
+}
+
+func TestCompleteTeamCaptainMessageDelegatesMentionedMember(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	captainID := createTeamTestAgent(t, "Delegating Captain")
+	memberID := createTeamTestAgent(t, "Frontend Delegate")
+	team := createTeamViaHandler(t, captainID, []string{memberID})
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/teams/"+team.ID+"/messages", map[string]any{
+		"content": "请负责人拆一下：@Frontend Delegate 做页面验证",
+	})
+	req = withURLParam(req, "id", team.ID)
+	testHandler.PostTeamMessage(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PostTeamMessage: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	captainTaskID := completeCaptainDelegationForTest(
+		t,
+		team.ID,
+		captainID,
+		"@Frontend Delegate 请你负责实现前端交互验证，并把结论回到群里。",
+	)
 
 	// D 方案 (commit c996f62f): captain @ 派活落地为 issue 卡片，不再起独立
 	// chat task。member 拿到的是 issue assignment 自动 enqueue 的 task（带
@@ -347,6 +383,153 @@ func TestCompleteTeamCaptainMessageDelegatesMentionedMember(t *testing.T) {
 	}
 	if memberTaskCount != 1 {
 		t.Fatalf("expected one queued task for delegated issue, got %d", memberTaskCount)
+	}
+}
+
+func TestTeamDelegatedIssueCopiesProjectIDFromSession(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	captainID := createTeamTestAgent(t, "Project Captain")
+	memberID := createTeamTestAgent(t, "Project Reviewer")
+	team := createTeamViaHandler(t, captainID, []string{memberID})
+	project := createTeamTestProject(t, "Project scoped delegation")
+
+	session, err := testHandler.Queries.GetOrCreateTeamChatSession(
+		newRequest(http.MethodGet, "/", nil).Context(),
+		db.GetOrCreateTeamChatSessionParams{
+			TeamID:      parseUUID(team.ID),
+			WorkspaceID: parseUUID(testWorkspaceID),
+			CreatorID:   parseUUID(testUserID),
+			Title:       team.Name,
+			ProjectID:   parseUUID(project.ID),
+		},
+	)
+	if err != nil {
+		t.Fatalf("create project team session: %v", err)
+	}
+	if _, err := testHandler.Queries.CreateTeamChatMessage(
+		context.Background(),
+		db.CreateTeamChatMessageParams{
+			ChatSessionID: session.ID,
+			Role:          "user",
+			Content:       "@Project Captain 请拆给项目成员评审",
+		},
+	); err != nil {
+		t.Fatalf("create user team message: %v", err)
+	}
+	task, err := testHandler.TaskService.EnqueueChatTaskForAgent(context.Background(), session, parseUUID(captainID))
+	if err != nil {
+		t.Fatalf("enqueue captain task: %v", err)
+	}
+	claimed, err := testHandler.TaskService.ClaimTask(context.Background(), parseUUID(captainID))
+	if err != nil {
+		t.Fatalf("claim captain task: %v", err)
+	}
+	if claimed == nil || uuidToString(claimed.ID) != uuidToString(task.ID) {
+		t.Fatalf("claimed captain task mismatch: got %+v want %s", claimed, uuidToString(task.ID))
+	}
+	if _, err := testHandler.TaskService.StartTask(context.Background(), claimed.ID); err != nil {
+		t.Fatalf("start captain task: %v", err)
+	}
+	payload, _ := json.Marshal(protocol.TaskCompletedPayload{
+		TaskID: uuidToString(task.ID),
+		Output: "@Project Reviewer 请从项目视角评审这份需求。",
+	})
+	if _, err := testHandler.TaskService.CompleteTask(context.Background(), task.ID, payload, "session-project-delegate", ""); err != nil {
+		t.Fatalf("complete captain task: %v", err)
+	}
+
+	var issueProjectID string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT project_id::text FROM issue
+		WHERE assignee_id = $1 AND source_team_message_id IS NOT NULL
+		ORDER BY created_at DESC LIMIT 1
+	`, memberID).Scan(&issueProjectID); err != nil {
+		t.Fatalf("load delegated issue project id: %v", err)
+	}
+	if issueProjectID != project.ID {
+		t.Fatalf("delegated issue project_id = %q, want %q", issueProjectID, project.ID)
+	}
+}
+
+func TestTeamDelegatedIssueCompletionDoesNotCreateMainChatMessage(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	captainID := createTeamTestAgent(t, "No Mirror Captain")
+	memberID := createTeamTestAgent(t, "No Mirror Reviewer")
+	team := createTeamViaHandler(t, captainID, []string{memberID})
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/teams/"+team.ID+"/messages", map[string]any{
+		"content": "@No Mirror Captain 请分派评审任务",
+	})
+	req = withURLParam(req, "id", team.ID)
+	testHandler.PostTeamMessage(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PostTeamMessage: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	captainTaskID := completeCaptainDelegationForTest(
+		t,
+		team.ID,
+		captainID,
+		"@No Mirror Reviewer 请评审需求并在任务卡里回报。",
+	)
+
+	var issueID string
+	var sessionID string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT i.id::text, i.source_team_session_id::text
+		FROM issue i
+		WHERE i.assignee_id = $1 AND i.source_team_message_id IS NOT NULL
+		ORDER BY i.created_at DESC LIMIT 1
+	`, memberID).Scan(&issueID, &sessionID); err != nil {
+		t.Fatalf("load delegated issue: %v", err)
+	}
+
+	if _, err := testHandler.Queries.CreateComment(context.Background(), db.CreateCommentParams{
+		IssueID:     parseUUID(issueID),
+		WorkspaceID: parseUUID(testWorkspaceID),
+		AuthorType:  "agent",
+		AuthorID:    parseUUID(memberID),
+		Content:     "这是很长的成员评审正文，应该留在任务卡详情里。",
+		Type:        "comment",
+	}); err != nil {
+		t.Fatalf("create member result comment: %v", err)
+	}
+
+	issue, err := testHandler.Queries.UpdateIssueStatus(context.Background(), db.UpdateIssueStatusParams{
+		ID:     parseUUID(issueID),
+		Status: "in_review",
+	})
+	if err != nil {
+		t.Fatalf("update issue status: %v", err)
+	}
+	testHandler.TaskService.MirrorIssueCompletionToTeamSession(context.Background(), issue)
+
+	var mirroredCount int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*) FROM chat_message
+		WHERE chat_session_id = $1
+		  AND sender_agent_id = $2
+		  AND content LIKE '%这是很长的成员评审正文%'
+	`, sessionID, memberID).Scan(&mirroredCount); err != nil {
+		t.Fatalf("count mirrored messages: %v", err)
+	}
+	if mirroredCount != 0 {
+		t.Fatalf("expected no mirrored completion chat message, got %d", mirroredCount)
+	}
+
+	var captainSessionID string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT chat_session_id::text FROM agent_task_queue WHERE id = $1
+	`, captainTaskID).Scan(&captainSessionID); err != nil {
+		t.Fatalf("load captain session id: %v", err)
+	}
+	if captainSessionID != sessionID {
+		t.Fatalf("completion session = %s, want captain session %s", sessionID, captainSessionID)
 	}
 }
 

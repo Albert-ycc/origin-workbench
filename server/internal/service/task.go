@@ -1907,7 +1907,7 @@ func (s *TaskService) createTeamMentionIssue(ctx context.Context, session db.Cha
 		Position:            0,
 		DueDate:             pgtype.Timestamptz{},
 		Number:              number,
-		ProjectID:           pgtype.UUID{},
+		ProjectID:           session.ProjectID,
 		SourceTeamMessageID: pgtype.UUID{Bytes: sourceMessage.ID.Bytes, Valid: true},
 		SourceTeamSessionID: pgtype.UUID{Bytes: session.ID.Bytes, Valid: true},
 	})
@@ -1917,12 +1917,8 @@ func (s *TaskService) createTeamMentionIssue(ctx context.Context, session db.Cha
 	return issue, nil
 }
 
-// MirrorIssueCompletionToTeamSession 把团队 captain 派的 issue 完成事件
-// 同步成一条 assistant chat_message 写到原群聊里。这样 captain 在群聊看
-// 到的是任务派出去 → 任务卡片状态变 in_review → assistant 完成回报，
-// 整条闭环都在主聊时间线上。
-//
-// Caller 应该已经验证 issue.SourceTeamSessionID.Valid。这里防御性再次检查。
+// MirrorIssueCompletionToTeamSession publishes a compact update for delegated
+// issue completions. The detailed result stays in the issue comment timeline.
 func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, issue db.Issue) {
 	if !issue.SourceTeamSessionID.Valid {
 		return
@@ -1931,70 +1927,31 @@ func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, is
 	if err != nil {
 		return
 	}
-	// 拉 agent 在这个 issue 写的最新 comment（agent 干完一般会调
-	// multica issue comment add 写一条 final result）。如果没找到 comment
-	// 也照样发一条简短回报，让群聊知道任务已完成。
-	comments, err := s.Queries.ListComments(ctx, db.ListCommentsParams{
-		IssueID:     issue.ID,
-		WorkspaceID: issue.WorkspaceID,
-	})
-	finalContent := ""
-	if err == nil {
-		// 取 assignee 写的最新一条 comment
-		for i := len(comments) - 1; i >= 0; i-- {
-			c := comments[i]
-			if c.AuthorType == "agent" && uuidEqual(c.AuthorID, issue.AssigneeID) {
-				finalContent = c.Content
-				break
-			}
-		}
-	}
-	if finalContent == "" {
-		finalContent = "（已完成，无文字回报）"
-	}
-
-	// 拉 assignee agent 名字 + issue prefix 拼完成 header
-	agentName := ""
-	if issue.AssigneeID.Valid {
-		if agent, err := s.Queries.GetAgent(ctx, issue.AssigneeID); err == nil {
-			agentName = agent.Name
-		}
-	}
-	statusLabel := "待评审"
-	if issue.Status == "done" {
-		statusLabel = "已完成"
-	}
-	header := fmt.Sprintf("✅ @%s %s [%s]\n\n", agentName, statusLabel, issue.Title)
-	body := header + finalContent
-
-	message, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
-		ChatSessionID: session.ID,
-		Role:          "assistant",
-		Content:       body,
-		SenderAgentID: issue.AssigneeID,
-	})
-	if err != nil {
-		slog.Warn("mirror issue completion to team session failed",
-			"issue_id", util.UUIDToString(issue.ID),
-			"team_session_id", util.UUIDToString(session.ID),
-			"error", err)
+	if !session.TeamID.Valid {
 		return
 	}
 
-	// 广播 team:message_created 让前端实时刷新群聊
-	if session.TeamID.Valid {
-		payload := teamMessageEventPayloadForSession(session, session.TeamID, &message)
-		payload["chat_session_id"] = util.UUIDToString(session.ID)
-		payload["issue_id"] = util.UUIDToString(issue.ID)
-		payload["event"] = "team_task_completed"
-		s.Bus.Publish(events.Event{
-			Type:        protocol.EventTeamMessageCreated,
-			WorkspaceID: util.UUIDToString(session.WorkspaceID),
-			ActorType:   "agent",
-			ActorID:     util.UUIDToString(issue.AssigneeID),
-			Payload:     payload,
-		})
+	payload := map[string]any{
+		"team_id":                util.UUIDToString(session.TeamID),
+		"chat_session_id":        util.UUIDToString(session.ID),
+		"issue_id":               util.UUIDToString(issue.ID),
+		"source_team_session_id": util.UUIDToString(issue.SourceTeamSessionID),
+		"event":                  "team_task_completed",
 	}
+	if issue.SourceTeamMessageID.Valid {
+		payload["source_team_message_id"] = util.UUIDToString(issue.SourceTeamMessageID)
+	}
+	if session.ProjectID.Valid {
+		payload["project_id"] = util.UUIDToString(session.ProjectID)
+	}
+
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventTeamMessageCreated,
+		WorkspaceID: util.UUIDToString(session.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     util.UUIDToString(issue.AssigneeID),
+		Payload:     payload,
+	})
 }
 
 // teamMentionTaskTitle 从派活文本里抽一行作为 issue 标题。优先第一行，
