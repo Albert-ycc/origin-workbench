@@ -11,9 +11,11 @@ import { Markdown } from "../../common/markdown";
 export function DelegationTaskComments({
   issueId,
   userId,
+  onCommentSubmitted,
 }: {
   issueId: string;
   userId?: string | null;
+  onCommentSubmitted?: () => void;
 }) {
   const { timeline, loading, submitting, submitComment } = useIssueTimeline(
     issueId,
@@ -25,6 +27,7 @@ export function DelegationTaskComments({
     const content = draft.trim();
     if (!content) return;
     await submitComment(content);
+    onCommentSubmitted?.();
     setDraft("");
   };
 

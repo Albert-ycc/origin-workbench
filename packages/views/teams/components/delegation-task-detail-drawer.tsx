@@ -20,11 +20,13 @@ export function DelegationTaskDetailDrawer({
   open,
   onOpenChange,
   userId,
+  onCommentSubmitted,
 }: {
   card: DelegationTaskCard | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   userId?: string | null;
+  onCommentSubmitted?: () => void;
 }) {
   const wsId = useWorkspaceId();
   const issueId = card?.issue_id ?? "";
@@ -80,6 +82,7 @@ export function DelegationTaskDetailDrawer({
                 <DelegationTaskComments
                   issueId={card.issue_id}
                   userId={userId}
+                  onCommentSubmitted={onCommentSubmitted}
                 />
               </section>
             </div>

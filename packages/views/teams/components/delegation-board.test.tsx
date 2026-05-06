@@ -204,4 +204,33 @@ describe("DelegationBoard", () => {
 
     expect(screen.queryByText(/派出的任务/)).not.toBeInTheDocument();
   });
+
+  it("refreshes delegation cards after submitting a drawer comment", async () => {
+    renderDelegationBoard();
+
+    await waitFor(() => {
+      expect(screen.getByText("派出的任务 · 1 张")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /FAI-12/ }));
+    await screen.findByTestId("sheet");
+
+    fireEvent.change(screen.getByPlaceholderText("补充评论…"), {
+      target: { value: "Follow up on the report" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送评论" }));
+
+    await waitFor(() => {
+      expect(mockApiObj.createComment).toHaveBeenCalledWith(
+        "issue-1",
+        "Follow up on the report",
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
+    await waitFor(() => {
+      expect(mockApiObj.listDelegationTaskCards).toHaveBeenCalledTimes(2);
+    });
+  });
 });

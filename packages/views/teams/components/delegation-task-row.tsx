@@ -27,7 +27,7 @@ export function DelegationTaskRow({
       onClick={onOpen}
       aria-label={`${card.issue_key} ${card.title}`}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
+        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         selected ? "bg-muted" : "hover:bg-muted/60",
       )}
     >

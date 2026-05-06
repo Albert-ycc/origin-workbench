@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { delegationTaskCardsOptions } from "@multica/core/teams";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { delegationTaskCardsOptions, teamKeys } from "@multica/core/teams";
 import { useWorkspaceId } from "@multica/core/hooks";
 import type { DelegationTaskCard } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
@@ -29,6 +29,7 @@ export function DelegationBoard({
   userId?: string | null;
 }) {
   const wsId = useWorkspaceId();
+  const queryClient = useQueryClient();
   const { data: cards = [], isLoading } = useQuery(
     delegationTaskCardsOptions(wsId, messageId),
   );
@@ -65,6 +66,11 @@ export function DelegationBoard({
     setSelectedIssueId(card.issue_id);
     setDrawerOpen(true);
   };
+  const refreshDelegationCards = () => {
+    queryClient.invalidateQueries({
+      queryKey: teamKeys.delegationCards(wsId, messageId),
+    });
+  };
 
   return (
     <div className="mt-2 flex flex-col gap-1.5 rounded-md border bg-background/60 p-2">
@@ -92,6 +98,7 @@ export function DelegationBoard({
               "h-6 rounded-md px-2 text-[11px]",
               filter === item.value && "bg-muted text-foreground",
             )}
+            aria-pressed={filter === item.value}
             onClick={() => setFilter(item.value)}
           >
             {item.label}
@@ -121,6 +128,7 @@ export function DelegationBoard({
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         userId={userId}
+        onCommentSubmitted={refreshDelegationCards}
       />
     </div>
   );
