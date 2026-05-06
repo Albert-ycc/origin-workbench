@@ -4,6 +4,7 @@ import { teamKeys } from "../teams/queries";
 import type {
   DelegationTaskCard,
   Issue,
+  TeamMessage,
   TeamMessageCreatedPayload,
 } from "../types";
 
@@ -15,6 +16,10 @@ type DelegationCardsCache =
   | { cards?: DelegationTaskCard[] | null }
   | DelegationTaskCard[]
   | undefined;
+type TeamMessagesCache = {
+  messages: TeamMessage[];
+  next_cursor?: string | null;
+};
 
 function isDelegationTaskCard(value: unknown): value is DelegationTaskCard {
   return (
@@ -115,6 +120,57 @@ export function syncDelegationCardsForTeamMessageCreated(
     skipTeamMessageRefresh:
       payload.event === "team_task_completed" && !payload.message,
   };
+}
+
+function appendTeamMessage(
+  old: TeamMessagesCache | undefined,
+  message: TeamMessage,
+): TeamMessagesCache {
+  const current = old ?? { messages: [], next_cursor: null };
+  if (current.messages.some((m) => m.id === message.id)) {
+    return current;
+  }
+  return {
+    ...current,
+    messages: [...current.messages, message].sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    ),
+  };
+}
+
+export function syncTeamMessageCreated(
+  qc: QueryClient,
+  wsId: string,
+  payload: TeamMessageCreatedPayload,
+) {
+  const delegationRefresh = syncDelegationCardsForTeamMessageCreated(
+    qc,
+    wsId,
+    payload,
+  );
+  if (delegationRefresh.skipTeamMessageRefresh) return;
+
+  if (payload.message) {
+    qc.setQueryData<TeamMessagesCache>(
+      teamKeys.messages(wsId, payload.team_id),
+      (old) => appendTeamMessage(old, payload.message!),
+    );
+    if (payload.project_id) {
+      qc.setQueryData<TeamMessagesCache>(
+        ["projects-v12", wsId, "main-chat-messages", payload.project_id],
+        (old) => appendTeamMessage(old, payload.message!),
+      );
+    }
+    return;
+  }
+
+  qc.invalidateQueries({ queryKey: teamKeys.messages(wsId, payload.team_id) });
+  if (payload.project_id) {
+    qc.invalidateQueries({
+      queryKey: ["projects-v12", wsId, "main-chat-messages", payload.project_id],
+    });
+  }
 }
 
 export function invalidateDelegationCardsForIssue(

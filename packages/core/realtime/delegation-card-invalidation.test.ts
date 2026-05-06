@@ -11,6 +11,7 @@ import {
   invalidateDelegationCardsForIssue,
   invalidateDelegationCardsForIssueId,
   syncDelegationCardsForTeamMessageCreated,
+  syncTeamMessageCreated,
 } from "./delegation-card-invalidation";
 
 const wsId = "ws-1";
@@ -76,6 +77,25 @@ function makeCard(overrides: Partial<DelegationTaskCard> = {}): DelegationTaskCa
 }
 
 describe("delegation card realtime invalidation", () => {
+  it("syncs lightweight team completion events without refetching team messages", () => {
+    const qc = createQueryClient();
+    const invalidatedKeys = spyOnInvalidations(qc);
+    const payload: TeamMessageCreatedPayload = {
+      team_id: "team-1",
+      event: "team_task_completed",
+      chat_session_id: "chat-session-1",
+      issue_id: "issue-1",
+      source_team_message_id: "message-1",
+      source_team_session_id: "team-session-1",
+    };
+
+    syncTeamMessageCreated(qc, wsId, payload);
+
+    expect(invalidatedKeys()).toEqual([
+      teamKeys.delegationCards(wsId, "message-1"),
+    ]);
+  });
+
   it("invalidates only the source delegation cards for lightweight team completion events", () => {
     const qc = createQueryClient();
     const invalidatedKeys = spyOnInvalidations(qc);
