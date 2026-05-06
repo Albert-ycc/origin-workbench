@@ -17,7 +17,9 @@ export function DelegationTaskRow({
   const meta = delegationStatusMeta[card.status];
   const Icon = meta.icon;
   const isRunning = card.status === "in_progress";
-  const preview = card.latest_result_preview?.trim() || card.title;
+  const preview = card.latest_result_preview?.trim();
+  const updatedAt = formatUpdatedAt(card.updated_at);
+  const commentLabel = `${card.comment_count} 条评论`;
 
   return (
     <button
@@ -48,8 +50,15 @@ export function DelegationTaskRow({
             {card.issue_key}
           </span>
         </div>
+        <div className="truncate text-[12px] font-medium text-foreground">
+          {card.title}
+        </div>
         <div className="truncate text-[11px] text-muted-foreground">
-          {preview}
+          {preview || "暂无回报"}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10.5px] text-muted-foreground">
+          <span>{updatedAt}</span>
+          <span>{commentLabel}</span>
         </div>
       </div>
       <span
@@ -63,4 +72,9 @@ export function DelegationTaskRow({
       </span>
     </button>
   );
+}
+
+function formatUpdatedAt(value: string) {
+  if (!value) return "未知时间";
+  return value.slice(0, 16).replace("T", " ");
 }

@@ -163,9 +163,12 @@ describe("DelegationBoard", () => {
 
     expect(screen.getByText("Codex Local")).toBeInTheDocument();
     expect(screen.getByText("FAI-12")).toBeInTheDocument();
+    expect(screen.getByText("Summarize onboarding blockers")).toBeInTheDocument();
     expect(
       screen.getByText("Long execution result is ready for review"),
     ).toBeInTheDocument();
+    expect(screen.getByText("2026-05-06 00:00")).toBeInTheDocument();
+    expect(screen.getByText("2 条评论")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /FAI-12/ }));
 
@@ -183,5 +186,22 @@ describe("DelegationBoard", () => {
         "Detailed execution result with enough context for the drawer.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("does not render when delegation cards are empty", async () => {
+    mockApiObj.listDelegationTaskCards.mockResolvedValue({
+      cards: [],
+      total: 0,
+    });
+
+    renderDelegationBoard();
+
+    await waitFor(() => {
+      expect(mockApiObj.listDelegationTaskCards).toHaveBeenCalledWith(
+        "message-1",
+      );
+    });
+
+    expect(screen.queryByText(/派出的任务/)).not.toBeInTheDocument();
   });
 });
