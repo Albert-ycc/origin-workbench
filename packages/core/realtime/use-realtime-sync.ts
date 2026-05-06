@@ -279,6 +279,7 @@ export function useRealtimeSync(
       if (!issue_id) return;
       const wsId = getCurrentWsId();
       if (wsId) {
+        invalidateDelegationCardsForIssueId(qc, wsId, issue_id);
         onIssueDeleted(qc, wsId, issue_id);
         onInboxIssueDeleted(qc, wsId, issue_id);
       }

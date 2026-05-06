@@ -164,6 +164,22 @@ describe("delegation card realtime invalidation", () => {
     );
   });
 
+  it("invalidates deleted issue cards before issue detail cache removal", () => {
+    const qc = createQueryClient();
+    const invalidatedKeys = spyOnInvalidations(qc);
+    qc.setQueryData(
+      issueKeys.detail(wsId, "issue-1"),
+      makeIssue({ source_team_message_id: "message-1" }),
+    );
+
+    invalidateDelegationCardsForIssueId(qc, wsId, "issue-1");
+    qc.removeQueries({ queryKey: issueKeys.detail(wsId, "issue-1") });
+
+    expect(invalidatedKeys()).toEqual([
+      teamKeys.delegationCards(wsId, "message-1"),
+    ]);
+  });
+
   it("does not fall back to broad team invalidation when issue source cannot be resolved", () => {
     const qc = createQueryClient();
     const invalidatedKeys = spyOnInvalidations(qc);
