@@ -1,6 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 
+const EMPTY_DELEGATION_CARD_POLL_MS = 12_000;
+
 export const teamKeys = {
   all: (wsId: string) => ["teams", wsId] as const,
   list: (wsId: string, status: "active" | "archived" = "active") =>
@@ -45,7 +47,12 @@ export function delegationTaskCardsOptions(wsId: string, messageId: string) {
     refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       const cards = query.state.data?.cards;
-      if (!cards || cards.length === 0) return 4000;
+      if (!cards) return 4000;
+      if (cards.length === 0) {
+        const firstEmptyAt = query.state.dataUpdatedAt;
+        if (!firstEmptyAt) return 4000;
+        return Date.now() - firstEmptyAt < EMPTY_DELEGATION_CARD_POLL_MS ? 4000 : false;
+      }
       const allDone = cards.every((card) =>
         card.status === "done" ||
         card.status === "in_review" ||
