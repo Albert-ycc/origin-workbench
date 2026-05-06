@@ -26,38 +26,57 @@ import (
 
 // IssueResponse is the JSON response for an issue.
 type IssueResponse struct {
-	ID                 string                  `json:"id"`
-	WorkspaceID        string                  `json:"workspace_id"`
-	Number             int32                   `json:"number"`
-	Identifier         string                  `json:"identifier"`
-	Title              string                  `json:"title"`
-	Description        *string                 `json:"description"`
-	Status             string                  `json:"status"`
-	Priority           string                  `json:"priority"`
-	AssigneeType       *string                 `json:"assignee_type"`
-	AssigneeID         *string                 `json:"assignee_id"`
-	CreatorType        string                  `json:"creator_type"`
-	CreatorID          string                  `json:"creator_id"`
-	ParentIssueID      *string                 `json:"parent_issue_id"`
-	ProjectID          *string                 `json:"project_id"`
-	Position           float64                 `json:"position"`
-	DueDate            *string                 `json:"due_date"`
-	CreatedAt          string                  `json:"created_at"`
-	UpdatedAt          string                  `json:"updated_at"`
-	Reactions          []IssueReactionResponse `json:"reactions,omitempty"`
-	Attachments        []AttachmentResponse    `json:"attachments,omitempty"`
+	ID            string                  `json:"id"`
+	WorkspaceID   string                  `json:"workspace_id"`
+	Number        int32                   `json:"number"`
+	Identifier    string                  `json:"identifier"`
+	Title         string                  `json:"title"`
+	Description   *string                 `json:"description"`
+	Status        string                  `json:"status"`
+	Priority      string                  `json:"priority"`
+	AssigneeType  *string                 `json:"assignee_type"`
+	AssigneeID    *string                 `json:"assignee_id"`
+	CreatorType   string                  `json:"creator_type"`
+	CreatorID     string                  `json:"creator_id"`
+	ParentIssueID *string                 `json:"parent_issue_id"`
+	ProjectID     *string                 `json:"project_id"`
+	Position      float64                 `json:"position"`
+	DueDate       *string                 `json:"due_date"`
+	CreatedAt     string                  `json:"created_at"`
+	UpdatedAt     string                  `json:"updated_at"`
+	Reactions     []IssueReactionResponse `json:"reactions,omitempty"`
+	Attachments   []AttachmentResponse    `json:"attachments,omitempty"`
 	// Labels are bulk-attached by list/detail endpoints so the client can render
 	// chips without an N+1 round-trip per row. Pointer + omitempty so paths that
 	// don't load labels (e.g. UpdateIssue, batch UpdateIssues, the issue:updated
 	// WS broadcast) emit no `labels` field at all — the client merge then
 	// preserves whatever labels are already in cache. nil pointer = "field
 	// absent, do not touch"; non-nil (incl. empty slice) = authoritative list.
-	Labels             *[]LabelResponse        `json:"labels,omitempty"`
+	Labels *[]LabelResponse `json:"labels,omitempty"`
 	// 团队群聊派活回链（Origin §17 D 方案）。captain 在群聊里 @ 派的 issue
 	// 这两列指回它来自哪条 captain message + 哪个群聊 session，前端据此把
 	// 任务卡片挂到 captain 的 reply 下。普通 issue 这两个字段都是 null。
 	SourceTeamMessageID *string `json:"source_team_message_id,omitempty"`
 	SourceTeamSessionID *string `json:"source_team_session_id,omitempty"`
+}
+
+type DelegationTaskCardResponse struct {
+	IssueID               string  `json:"issue_id"`
+	IssueKey              string  `json:"issue_key"`
+	WorkspaceID           string  `json:"workspace_id"`
+	Number                int32   `json:"number"`
+	Title                 string  `json:"title"`
+	Status                string  `json:"status"`
+	AssigneeID            *string `json:"assignee_id"`
+	AssigneeName          *string `json:"assignee_name"`
+	AssigneeAvatarURL     *string `json:"assignee_avatar_url"`
+	SourceTeamMessageID   *string `json:"source_team_message_id"`
+	SourceTeamSessionID   *string `json:"source_team_session_id"`
+	ProjectID             *string `json:"project_id"`
+	LatestResultPreview   *string `json:"latest_result_preview"`
+	LatestResultCommentID *string `json:"latest_result_comment_id"`
+	CommentCount          int64   `json:"comment_count"`
+	UpdatedAt             string  `json:"updated_at"`
 }
 
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
@@ -83,6 +102,54 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		UpdatedAt:           timestampToString(i.UpdatedAt),
 		SourceTeamMessageID: uuidToPtr(i.SourceTeamMessageID),
 		SourceTeamSessionID: uuidToPtr(i.SourceTeamSessionID),
+	}
+}
+
+func trimDelegationPreview(content string) *string {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return nil
+	}
+	rs := []rune(text)
+	if len(rs) > 120 {
+		text = string(rs[:120]) + "..."
+	}
+	return &text
+}
+
+func delegationTaskCardToResponse(row db.ListDelegationTaskCardsByTeamMessageRow, prefix string) DelegationTaskCardResponse {
+	assigneeID := uuidToPtr(row.AssigneeID)
+	var assigneeName *string
+	if row.AssigneeName.Valid {
+		assigneeName = &row.AssigneeName.String
+	}
+	var assigneeAvatarURL *string
+	if row.AssigneeAvatarUrl.Valid {
+		assigneeAvatarURL = &row.AssigneeAvatarUrl.String
+	}
+	var latestCommentID *string
+	if row.LatestResultCommentID.Valid {
+		v := uuidToString(row.LatestResultCommentID)
+		latestCommentID = &v
+	}
+	latestPreview := trimDelegationPreview(row.LatestResultContent)
+	return DelegationTaskCardResponse{
+		IssueID:               uuidToString(row.IssueID),
+		IssueKey:              fmt.Sprintf("%s-%d", prefix, row.Number),
+		WorkspaceID:           uuidToString(row.WorkspaceID),
+		Number:                row.Number,
+		Title:                 row.Title,
+		Status:                row.Status,
+		AssigneeID:            assigneeID,
+		AssigneeName:          assigneeName,
+		AssigneeAvatarURL:     assigneeAvatarURL,
+		SourceTeamMessageID:   uuidToPtr(row.SourceTeamMessageID),
+		SourceTeamSessionID:   uuidToPtr(row.SourceTeamSessionID),
+		ProjectID:             uuidToPtr(row.ProjectID),
+		LatestResultPreview:   latestPreview,
+		LatestResultCommentID: latestCommentID,
+		CommentCount:          row.CommentCount,
+		UpdatedAt:             timestampToString(row.UpdatedAt),
 	}
 }
 
@@ -293,7 +360,7 @@ func buildSearchQuery(phrase string, terms []string, queryNum int, hasNum bool, 
 	}
 
 	escapedPhrase := escapeLike(phrase)
-	phraseParam := nextArg(escapedPhrase)               // $1
+	phraseParam := nextArg(escapedPhrase) // $1
 	phraseContains := "'%' || " + phraseParam + " || '%'"
 	phraseStartsWith := phraseParam + " || '%'"
 
@@ -800,6 +867,32 @@ func (h *Handler) ListIssuesByTeamMessage(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"issues": resp, "total": len(resp)})
 }
 
+func (h *Handler) ListDelegationTaskCardsByTeamMessage(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	mid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "messageId"), "message id")
+	if !ok {
+		return
+	}
+	rows, err := h.Queries.ListDelegationTaskCardsByTeamMessage(r.Context(), pgtype.UUID{Bytes: mid.Bytes, Valid: true})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list delegation task cards")
+		return
+	}
+	prefix := h.getIssuePrefix(r.Context(), wsUUID)
+	cards := make([]DelegationTaskCardResponse, 0, len(rows))
+	for _, row := range rows {
+		if !uuidEqual(row.WorkspaceID, wsUUID) {
+			continue
+		}
+		cards = append(cards, delegationTaskCardToResponse(row, prefix))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"cards": cards, "total": len(cards)})
+}
+
 func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	issue, ok := h.loadIssueForUser(w, r, id)
@@ -1081,16 +1174,16 @@ func readRuntimeCLIVersion(metadata []byte) string {
 }
 
 type CreateIssueRequest struct {
-	Title              string   `json:"title"`
-	Description        *string  `json:"description"`
-	Status             string   `json:"status"`
-	Priority           string   `json:"priority"`
-	AssigneeType       *string  `json:"assignee_type"`
-	AssigneeID         *string  `json:"assignee_id"`
-	ParentIssueID      *string  `json:"parent_issue_id"`
-	ProjectID          *string  `json:"project_id"`
-	DueDate            *string  `json:"due_date"`
-	AttachmentIDs      []string `json:"attachment_ids,omitempty"`
+	Title         string   `json:"title"`
+	Description   *string  `json:"description"`
+	Status        string   `json:"status"`
+	Priority      string   `json:"priority"`
+	AssigneeType  *string  `json:"assignee_type"`
+	AssigneeID    *string  `json:"assignee_id"`
+	ParentIssueID *string  `json:"parent_issue_id"`
+	ProjectID     *string  `json:"project_id"`
+	DueDate       *string  `json:"due_date"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 	// OriginType / OriginID stamp the new issue with its provenance so
 	// platform-internal flows can deterministically locate it later. Only
 	// trusted callers should set these — currently the daemon CLI passes
@@ -1326,16 +1419,16 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateIssueRequest struct {
-	Title              *string  `json:"title"`
-	Description        *string  `json:"description"`
-	Status             *string  `json:"status"`
-	Priority           *string  `json:"priority"`
-	AssigneeType       *string  `json:"assignee_type"`
-	AssigneeID         *string  `json:"assignee_id"`
-	Position           *float64 `json:"position"`
-	DueDate            *string  `json:"due_date"`
-	ParentIssueID      *string  `json:"parent_issue_id"`
-	ProjectID          *string  `json:"project_id"`
+	Title         *string  `json:"title"`
+	Description   *string  `json:"description"`
+	Status        *string  `json:"status"`
+	Priority      *string  `json:"priority"`
+	AssigneeType  *string  `json:"assignee_type"`
+	AssigneeID    *string  `json:"assignee_id"`
+	Position      *float64 `json:"position"`
+	DueDate       *string  `json:"due_date"`
+	ParentIssueID *string  `json:"parent_issue_id"`
+	ProjectID     *string  `json:"project_id"`
 }
 
 func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {

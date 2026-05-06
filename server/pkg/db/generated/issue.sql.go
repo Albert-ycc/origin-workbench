@@ -598,6 +598,100 @@ func (q *Queries) ListChildIssues(ctx context.Context, parentIssueID pgtype.UUID
 	return items, nil
 }
 
+const listDelegationTaskCardsByTeamMessage = `-- name: ListDelegationTaskCardsByTeamMessage :many
+SELECT
+    i.id AS issue_id,
+    i.workspace_id,
+    i.number,
+    i.title,
+    i.status,
+    i.assignee_id,
+    i.source_team_message_id,
+    i.source_team_session_id,
+    i.project_id,
+    i.updated_at,
+    a.name AS assignee_name,
+    a.avatar_url AS assignee_avatar_url,
+    lc.id AS latest_result_comment_id,
+    lc.content AS latest_result_content,
+    COALESCE(cc.comment_count, 0)::bigint AS comment_count
+FROM issue i
+LEFT JOIN agent a
+    ON a.id = i.assignee_id
+LEFT JOIN LATERAL (
+    SELECT c.id, c.content
+    FROM comment c
+    WHERE c.issue_id = i.id
+      AND c.workspace_id = i.workspace_id
+      AND c.author_type = 'agent'
+      AND c.author_id = i.assignee_id
+    ORDER BY c.created_at DESC
+    LIMIT 1
+) lc ON true
+LEFT JOIN LATERAL (
+    SELECT count(*) AS comment_count
+    FROM comment c
+    WHERE c.issue_id = i.id
+      AND c.workspace_id = i.workspace_id
+) cc ON true
+WHERE i.source_team_message_id = $1
+ORDER BY i.created_at ASC
+`
+
+type ListDelegationTaskCardsByTeamMessageRow struct {
+	IssueID               pgtype.UUID        `json:"issue_id"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	Number                int32              `json:"number"`
+	Title                 string             `json:"title"`
+	Status                string             `json:"status"`
+	AssigneeID            pgtype.UUID        `json:"assignee_id"`
+	SourceTeamMessageID   pgtype.UUID        `json:"source_team_message_id"`
+	SourceTeamSessionID   pgtype.UUID        `json:"source_team_session_id"`
+	ProjectID             pgtype.UUID        `json:"project_id"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	AssigneeName          pgtype.Text        `json:"assignee_name"`
+	AssigneeAvatarUrl     pgtype.Text        `json:"assignee_avatar_url"`
+	LatestResultCommentID pgtype.UUID        `json:"latest_result_comment_id"`
+	LatestResultContent   string             `json:"latest_result_content"`
+	CommentCount          int64              `json:"comment_count"`
+}
+
+func (q *Queries) ListDelegationTaskCardsByTeamMessage(ctx context.Context, sourceTeamMessageID pgtype.UUID) ([]ListDelegationTaskCardsByTeamMessageRow, error) {
+	rows, err := q.db.Query(ctx, listDelegationTaskCardsByTeamMessage, sourceTeamMessageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDelegationTaskCardsByTeamMessageRow{}
+	for rows.Next() {
+		var i ListDelegationTaskCardsByTeamMessageRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.WorkspaceID,
+			&i.Number,
+			&i.Title,
+			&i.Status,
+			&i.AssigneeID,
+			&i.SourceTeamMessageID,
+			&i.SourceTeamSessionID,
+			&i.ProjectID,
+			&i.UpdatedAt,
+			&i.AssigneeName,
+			&i.AssigneeAvatarUrl,
+			&i.LatestResultCommentID,
+			&i.LatestResultContent,
+			&i.CommentCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIssues = `-- name: ListIssues :many
 SELECT id, workspace_id, title, description, status, priority,
        assignee_type, assignee_id, creator_type, creator_id,

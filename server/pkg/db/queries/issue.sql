@@ -55,6 +55,45 @@ SELECT * FROM issue
 WHERE source_team_message_id = $1
 ORDER BY created_at ASC;
 
+-- name: ListDelegationTaskCardsByTeamMessage :many
+SELECT
+    i.id AS issue_id,
+    i.workspace_id,
+    i.number,
+    i.title,
+    i.status,
+    i.assignee_id,
+    i.source_team_message_id,
+    i.source_team_session_id,
+    i.project_id,
+    i.updated_at,
+    a.name AS assignee_name,
+    a.avatar_url AS assignee_avatar_url,
+    lc.id AS latest_result_comment_id,
+    lc.content AS latest_result_content,
+    COALESCE(cc.comment_count, 0)::bigint AS comment_count
+FROM issue i
+LEFT JOIN agent a
+    ON a.id = i.assignee_id
+LEFT JOIN LATERAL (
+    SELECT c.id, c.content
+    FROM comment c
+    WHERE c.issue_id = i.id
+      AND c.workspace_id = i.workspace_id
+      AND c.author_type = 'agent'
+      AND c.author_id = i.assignee_id
+    ORDER BY c.created_at DESC
+    LIMIT 1
+) lc ON true
+LEFT JOIN LATERAL (
+    SELECT count(*) AS comment_count
+    FROM comment c
+    WHERE c.issue_id = i.id
+      AND c.workspace_id = i.workspace_id
+) cc ON true
+WHERE i.source_team_message_id = $1
+ORDER BY i.created_at ASC;
+
 -- name: ListIssuesByTeamSession :many
 -- 反查某个团队 chat session 的所有派出 issue（团队详情页可用，未来对账）。
 SELECT * FROM issue
