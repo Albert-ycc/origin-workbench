@@ -3,13 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Circle,
-  Clock3,
   Crown,
-  Loader2,
   MoreHorizontal,
   Send,
   Users,
@@ -30,7 +26,7 @@ import {
   useDeleteTeam,
   usePostTeamMessage,
 } from "@multica/core/teams";
-import type { Agent, Issue, Skill, TeamMessage } from "@multica/core/types";
+import type { Agent, Skill, TeamMessage } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
@@ -49,6 +45,7 @@ import {
   SelectedSkillChips,
   SkillSlashMenu,
 } from "../chat/components/skill-slash-menu";
+import { DelegationBoard } from "./components/delegation-board";
 
 interface TeamDetailPageProps {
   teamId: string;
@@ -514,7 +511,7 @@ export function ChatPane({
                   m.role === "assistant" &&
                   m.sender_agent_id === captain?.id
                 }
-                agentById={agentById}
+                currentUserId={currentUserId}
                 onPin={onPin}
               />
             ))}
@@ -772,14 +769,14 @@ function Message({
   isMe,
   agent,
   isCaptain,
-  agentById,
+  currentUserId,
   onPin,
 }: {
   message: TeamMessage;
   isMe: boolean;
   agent: Agent | undefined;
   isCaptain: boolean;
-  agentById?: Map<string, Agent>;
+  currentUserId: string | null;
   onPin?: (m: TeamMessage) => void;
 }) {
   if (message.role === "assistant" && !message.sender_agent_id) {
@@ -848,122 +845,10 @@ function Message({
             <Markdown>{message.content}</Markdown>
           )}
         </div>
-        {/* D 方案: captain 派活的任务卡片挂在 captain reply 下面 */}
-        {isCaptain && agentById && (
-          <TeamTaskCardList messageId={message.id} agentById={agentById} />
+        {isCaptain && (
+          <DelegationBoard messageId={message.id} userId={currentUserId} />
         )}
       </div>
-    </div>
-  );
-}
-
-// 群聊任务卡片清单 — 反查 captain 这条 message 派出了哪些 issue（v1.2 D
-// 方案）。每张卡片显示 assignee + 任务标题 + 状态 chip。
-function TeamTaskCardList({
-  messageId,
-  agentById,
-}: {
-  messageId: string;
-  agentById: Map<string, Agent>;
-}) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["issues", "by-team-message", messageId],
-    queryFn: () => api.listIssuesByTeamMessage(messageId),
-    select: (r) => r.issues,
-    // captain reply 一发完，后端 hook 几秒内创建 issue。聚焦窗口时刷一下，
-    // 避免用户在前台等了 30s 还看不到任务卡片。
-    refetchOnWindowFocus: true,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      const issues = data?.issues;
-      if (!issues || issues.length === 0) return 4000;
-      // 还有任何任务没到终态就继续轮询
-      const allDone = issues.every(
-        (i: Issue) =>
-          i.status === "done" ||
-          i.status === "in_review" ||
-          i.status === "cancelled",
-      );
-      return allDone ? false : 4000;
-    },
-  });
-  if (isLoading || !data || data.length === 0) {
-    return null;
-  }
-  return (
-    <div className="mt-2 flex flex-col gap-1.5">
-      <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
-        派出的任务 · {data.length} 张
-      </div>
-      <div className="flex flex-col gap-1">
-        {data.map((issue) => (
-          <TeamTaskCard
-            key={issue.id}
-            issue={issue}
-            assignee={
-              issue.assignee_id ? agentById.get(issue.assignee_id) : undefined
-            }
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const taskStatusMeta: Record<
-  string,
-  { label: string; tone: string; icon: typeof Circle }
-> = {
-  todo: { label: "等待中", tone: "text-muted-foreground bg-muted/60", icon: Circle },
-  in_progress: { label: "处理中", tone: "text-amber-500 bg-amber-500/10", icon: Loader2 },
-  in_review: { label: "已回报", tone: "text-emerald-500 bg-emerald-500/10", icon: CheckCircle2 },
-  done: { label: "已完成", tone: "text-emerald-500 bg-emerald-500/10", icon: CheckCircle2 },
-  blocked: { label: "卡点", tone: "text-destructive bg-destructive/10", icon: Clock3 },
-  cancelled: { label: "已取消", tone: "text-muted-foreground bg-muted/60", icon: Circle },
-  backlog: { label: "待办", tone: "text-muted-foreground bg-muted/60", icon: Circle },
-};
-
-function TeamTaskCard({
-  issue,
-  assignee,
-}: {
-  issue: Issue;
-  assignee: Agent | undefined;
-}) {
-  const meta = taskStatusMeta[issue.status] ?? taskStatusMeta.todo!;
-  const Icon = meta.icon;
-  const isRunning = issue.status === "in_progress";
-  return (
-    <div className="flex items-center gap-2 rounded-lg border bg-background/60 px-2.5 py-1.5">
-      {assignee ? (
-        <ActorAvatar
-          actorType="agent"
-          actorId={assignee.id}
-          size={20}
-          className="shrink-0 rounded-full"
-        />
-      ) : (
-        <div className="size-5 shrink-0 rounded-full bg-muted" />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-[12px] font-medium">
-            {assignee?.name ?? "未指派"}
-          </span>
-        </div>
-        <div className="truncate text-[11px] text-muted-foreground">
-          {issue.title}
-        </div>
-      </div>
-      <span
-        className={cn(
-          "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
-          meta.tone,
-        )}
-      >
-        <Icon className={cn("size-3", isRunning && "animate-spin")} />
-        {meta.label}
-      </span>
     </div>
   );
 }
