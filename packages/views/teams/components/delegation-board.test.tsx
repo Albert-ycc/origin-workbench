@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { teamKeys } from "@multica/core/teams";
 import type {
   DelegationTaskCard,
   Issue,
@@ -125,11 +126,12 @@ function createTestQueryClient() {
 
 function renderDelegationBoard() {
   const queryClient = createTestQueryClient();
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <DelegationBoard messageId="message-1" userId="user-1" />
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
 }
 
 describe("DelegationBoard", () => {
@@ -206,7 +208,8 @@ describe("DelegationBoard", () => {
   });
 
   it("refreshes delegation cards after submitting a drawer comment", async () => {
-    renderDelegationBoard();
+    const { queryClient } = renderDelegationBoard();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await waitFor(() => {
       expect(screen.getByText("派出的任务 · 1 张")).toBeInTheDocument();
@@ -230,7 +233,43 @@ describe("DelegationBoard", () => {
       );
     });
     await waitFor(() => {
-      expect(mockApiObj.listDelegationTaskCards).toHaveBeenCalledTimes(2);
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: teamKeys.delegationCards("ws-1", "message-1"),
+      });
+    });
+  });
+
+  it("keeps the draft and does not refresh delegation cards when comment submit fails", async () => {
+    mockApiObj.createComment.mockRejectedValueOnce(new Error("submit failed"));
+    const { queryClient } = renderDelegationBoard();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() => {
+      expect(screen.getByText("派出的任务 · 1 张")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /FAI-12/ }));
+    await screen.findByTestId("sheet");
+
+    const input = screen.getByPlaceholderText("补充评论…");
+    fireEvent.change(input, {
+      target: { value: "Keep this draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送评论" }));
+
+    await waitFor(() => {
+      expect(mockApiObj.createComment).toHaveBeenCalledWith(
+        "issue-1",
+        "Keep this draft",
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
+
+    expect(input).toHaveValue("Keep this draft");
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: teamKeys.delegationCards("ws-1", "message-1"),
     });
   });
 });

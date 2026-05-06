@@ -26,9 +26,11 @@ export function DelegationTaskComments({
   const onSubmit = async () => {
     const content = draft.trim();
     if (!content) return;
-    await submitComment(content);
-    onCommentSubmitted?.();
-    setDraft("");
+    const submitted = await submitComment(content);
+    if (submitted) {
+      onCommentSubmitted?.();
+      setDraft("");
+    }
   };
 
   return (

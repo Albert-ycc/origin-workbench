@@ -210,21 +210,26 @@ export function useIssueTimeline(issueId: string, userId?: string) {
 
   const submitComment = useCallback(
     async (content: string, attachmentIds?: string[]) => {
-      if (!content.trim() || submitting || !userId) return;
+      if (!content.trim() || submitting || !userId) return false;
       setSubmitting(true);
       try {
         await createCommentMutation.mutateAsync({
           content,
           attachmentIds,
         });
+        return true;
       } catch {
         toast.error("发送评论失败");
+        return false;
       } finally {
         setSubmitting(false);
       }
     },
     [userId, submitting, createCommentMutation],
-  );
+  ) as {
+    (content: string, attachmentIds?: string[]): Promise<boolean>;
+    (content: string, attachmentIds?: string[]): Promise<void>;
+  };
 
   const submitReply = useCallback(
     async (parentId: string, content: string, attachmentIds?: string[]) => {
