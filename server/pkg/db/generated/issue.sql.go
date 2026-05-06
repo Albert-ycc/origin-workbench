@@ -635,8 +635,14 @@ LEFT JOIN LATERAL (
       AND c.workspace_id = i.workspace_id
 ) cc ON true
 WHERE i.source_team_message_id = $1
+  AND i.workspace_id = $2
 ORDER BY i.created_at ASC
 `
+
+type ListDelegationTaskCardsByTeamMessageParams struct {
+	SourceTeamMessageID pgtype.UUID `json:"source_team_message_id"`
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+}
 
 type ListDelegationTaskCardsByTeamMessageRow struct {
 	IssueID               pgtype.UUID        `json:"issue_id"`
@@ -656,8 +662,8 @@ type ListDelegationTaskCardsByTeamMessageRow struct {
 	CommentCount          int64              `json:"comment_count"`
 }
 
-func (q *Queries) ListDelegationTaskCardsByTeamMessage(ctx context.Context, sourceTeamMessageID pgtype.UUID) ([]ListDelegationTaskCardsByTeamMessageRow, error) {
-	rows, err := q.db.Query(ctx, listDelegationTaskCardsByTeamMessage, sourceTeamMessageID)
+func (q *Queries) ListDelegationTaskCardsByTeamMessage(ctx context.Context, arg ListDelegationTaskCardsByTeamMessageParams) ([]ListDelegationTaskCardsByTeamMessageRow, error) {
+	rows, err := q.db.Query(ctx, listDelegationTaskCardsByTeamMessage, arg.SourceTeamMessageID, arg.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}

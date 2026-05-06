@@ -92,6 +92,7 @@ LEFT JOIN LATERAL (
       AND c.workspace_id = i.workspace_id
 ) cc ON true
 WHERE i.source_team_message_id = $1
+  AND i.workspace_id = $2
 ORDER BY i.created_at ASC;
 
 -- name: ListIssuesByTeamSession :many

@@ -877,7 +877,10 @@ func (h *Handler) ListDelegationTaskCardsByTeamMessage(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
-	rows, err := h.Queries.ListDelegationTaskCardsByTeamMessage(r.Context(), pgtype.UUID{Bytes: mid.Bytes, Valid: true})
+	rows, err := h.Queries.ListDelegationTaskCardsByTeamMessage(r.Context(), db.ListDelegationTaskCardsByTeamMessageParams{
+		SourceTeamMessageID: pgtype.UUID{Bytes: mid.Bytes, Valid: true},
+		WorkspaceID:         wsUUID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list delegation task cards")
 		return
