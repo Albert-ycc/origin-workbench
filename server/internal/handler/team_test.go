@@ -662,6 +662,72 @@ func TestListDelegationTaskCardsByTeamMessageIncludesLatestResultPreview(t *test
 	}
 }
 
+func TestListDelegationTaskCardsByTeamMessageIncludesFreshNoCommentCard(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	captainID := createTeamTestAgent(t, "Fresh Card Captain")
+	memberID := createTeamTestAgent(t, "Fresh Card Reviewer")
+	team := createTeamViaHandler(t, captainID, []string{memberID})
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/teams/"+team.ID+"/messages", map[string]any{
+		"content": "@Fresh Card Captain 请拆一张还没有结果的任务卡",
+	})
+	req = withURLParam(req, "id", team.ID)
+	testHandler.PostTeamMessage(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("PostTeamMessage: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	completeCaptainDelegationForTest(
+		t,
+		team.ID,
+		captainID,
+		"@Fresh Card Reviewer 请先领取任务，暂时不要写结果评论。",
+	)
+
+	var sourceMessageID string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT source_team_message_id::text
+		FROM issue
+		WHERE assignee_id = $1 AND source_team_message_id IS NOT NULL
+		ORDER BY created_at DESC LIMIT 1
+	`, memberID).Scan(&sourceMessageID); err != nil {
+		t.Fatalf("load delegated issue source message: %v", err)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodGet, "/api/issues/by-team-message/"+sourceMessageID+"/cards", nil)
+	req = withURLParam(req, "messageId", sourceMessageID)
+	testHandler.ListDelegationTaskCardsByTeamMessage(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListDelegationTaskCardsByTeamMessage: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Cards []DelegationTaskCardResponse `json:"cards"`
+		Total int                          `json:"total"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode cards: %v", err)
+	}
+	if resp.Total != 1 || len(resp.Cards) != 1 {
+		t.Fatalf("expected one card, got total=%d cards=%+v", resp.Total, resp.Cards)
+	}
+	card := resp.Cards[0]
+	if card.AssigneeName == nil || *card.AssigneeName != "Fresh Card Reviewer" {
+		t.Fatalf("assignee name mismatch: %+v", card.AssigneeName)
+	}
+	if card.LatestResultPreview != nil {
+		t.Fatalf("latest result preview = %q, want nil", *card.LatestResultPreview)
+	}
+	if card.LatestResultCommentID != nil {
+		t.Fatalf("latest result comment id = %q, want nil", *card.LatestResultCommentID)
+	}
+	if card.CommentCount != 0 {
+		t.Fatalf("comment_count = %d, want 0", card.CommentCount)
+	}
+}
+
 func TestMissionCaptainDelegationCreatesMissionAssignmentAndEvent(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

@@ -70,7 +70,7 @@ SELECT
     a.name AS assignee_name,
     a.avatar_url AS assignee_avatar_url,
     lc.id AS latest_result_comment_id,
-    lc.content AS latest_result_content,
+    COALESCE(lc.content, '') AS latest_result_content,
     COALESCE(cc.comment_count, 0)::bigint AS comment_count
 FROM issue i
 LEFT JOIN agent a
