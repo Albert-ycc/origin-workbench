@@ -82,10 +82,12 @@ export function FileViewer({
   path,
   content,
   onChange,
+  readOnly = false,
 }: {
   path: string;
   content: string;
   onChange: (content: string) => void;
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const isMd = isMarkdown(path);
@@ -103,7 +105,7 @@ export function FileViewer({
           {path}
         </span>
         <div className="flex items-center gap-1">
-          {isMd && (
+          {isMd && !readOnly && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -122,7 +124,7 @@ export function FileViewer({
                 }
               />
               <TooltipContent>
-                {editing ? "Preview" : "Edit"}
+                {editing ? "预览" : "编辑"}
               </TooltipContent>
             </Tooltip>
           )}
@@ -131,23 +133,24 @@ export function FileViewer({
 
       {/* File content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {isMd && !editing ? (
+        {isMd && (!editing || readOnly) ? (
           <div className="p-6">
             {frontmatter && <FrontmatterCard data={frontmatter} />}
             <Markdown mode="full">
-              {body || "*No content yet*"}
+              {body || "*暂无内容*"}
             </Markdown>
           </div>
         ) : (
           <Textarea
             value={content}
             onChange={(e) => onChange(e.target.value)}
+            readOnly={readOnly}
             placeholder={
               isMd
-                ? "Write markdown content..."
-                : "File content..."
+                ? "编写 Markdown 内容..."
+                : "文件内容..."
             }
-            className="h-full min-h-full resize-none rounded-none border-0 font-mono text-sm leading-relaxed focus-visible:ring-0"
+            className="h-full min-h-full resize-none rounded-none border-0 font-mono text-sm leading-relaxed focus-visible:ring-0 read-only:cursor-default"
           />
         )}
       </div>

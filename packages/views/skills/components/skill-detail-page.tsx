@@ -786,6 +786,7 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
               path={selectedPath}
               content={selectedContent}
               onChange={handleFileContentChange}
+              readOnly={!canEdit}
             />
           </div>
 
