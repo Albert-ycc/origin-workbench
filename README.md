@@ -51,14 +51,16 @@ in.
 
 ## Model API runtime
 
-Origin can connect to an external OpenAI-compatible model API for chat-style
-agent replies. This is currently a lightweight API runtime: it supplies a model
-brain, but it does not automatically inherit Codex or Claude Code abilities such
-as local file access, shell execution, browser control, MCP tools, or skills.
-Those require Origin's own full agent runtime layer.
+Origin can connect to an external OpenAI-compatible model API, relay gateway,
+or cc-switch / Codex OpenAI-compatible environment for chat-style agent replies.
+The API runtime now includes an Origin-owned tool-call loop and read-only local
+file tools (`list_directory`, `read_text_file`, `search_text`) so API-backed
+agents can inspect allowed project context. It still does not inherit Codex or
+Claude Code abilities such as file writes, shell execution, browser control,
+MCP tools, or skill execution.
 
-See [`docs/model-api-runtime.md`](docs/model-api-runtime.md) for the capability
-boundary, environment variables, and full-agent roadmap.
+See [`docs/model-api-runtime.md`](docs/model-api-runtime.md) for capabilities,
+environment variables, and the full-agent roadmap.
 
 ## Differences from upstream Multica
 

@@ -41,12 +41,13 @@ Origin 把 Multica 从「面向人 + Agent 团队的多租户 SaaS」改造成 *
 
 ## 大模型 API runtime
 
-Origin 可以对接 OpenAI 兼容的大模型 API，用来给聊天型 Agent 提供模型回复。
-当前实现是轻量 API runtime：它只提供模型「脑子」，不会自动继承 Codex /
-Claude Code 的本地文件、Shell、浏览器、MCP、skills 等工具能力。那些能力需要
-Origin 自己补完整的 agent runtime 层。
+Origin 可以对接 OpenAI 兼容的大模型 API、中转站，或 cc-switch / Codex 写入的
+OpenAI 兼容环境变量，用来给聊天型 Agent 提供模型回复。
+现在 API runtime 已补上 Origin 自己的工具循环和只读本地文件工具
+（`list_directory`、`read_text_file`、`search_text`），API Agent 可以读取和搜索允许目录里的项目上下文。
+它仍不会自动继承 Codex / Claude Code 的写文件、Shell、浏览器、MCP、skills 执行等能力。
 
-能力边界、环境变量和后续完整 Agent 模式路线图见
+能力说明、环境变量和后续完整 Agent 模式路线图见
 [`docs/model-api-runtime.md`](docs/model-api-runtime.md)。
 
 ## 跟上游 Multica 的差别

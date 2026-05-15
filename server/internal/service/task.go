@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/apitools"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/mention"
 	"github.com/multica-ai/multica/server/internal/modelapi"
@@ -32,6 +33,7 @@ type TaskService struct {
 	Bus                  *events.Bus
 	Wakeup               TaskWakeupNotifier
 	APIChatClientFactory func(runtimeconfig.APIRuntimeConfig) apiRuntimeChatClient
+	APIToolExecutor      apiRuntimeToolExecutor
 	// EmptyClaim caches "this runtime has no queued task" so the daemon
 	// poll path can skip a Postgres scan on the steady-state empty case.
 	// Optional — a nil cache disables the fast path and every claim
@@ -48,6 +50,11 @@ type apiRuntimeChatClient interface {
 	Chat(ctx context.Context, req modelapi.ChatRequest) (modelapi.ChatResult, error)
 }
 
+type apiRuntimeToolExecutor interface {
+	Tools() []modelapi.Tool
+	Execute(ctx context.Context, call modelapi.ToolCall) (string, error)
+}
+
 type skillCandidate struct {
 	Name        string
 	Description string
@@ -60,6 +67,7 @@ type skillCandidate struct {
 const triggerSummaryMaxLen = 200
 
 const apiRuntimeChatTaskTimeout = 5 * time.Minute
+const apiRuntimeMaxToolRounds = 8
 
 // truncateForSummary returns s shortened to maxRunes, with a trailing
 // `…` when truncated. Operates on runes (not bytes) so multibyte characters
@@ -549,10 +557,11 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 		return fail(err.Error())
 	}
 
-	res, err := s.apiRuntimeChatClient(cfg).Chat(ctx, modelapi.ChatRequest{
-		Model:    model,
-		Messages: messages,
-	})
+	toolExecutor, err := s.apiRuntimeToolExecutor()
+	if err != nil {
+		return fail(err.Error())
+	}
+	res, err := runAPIRuntimeChatLoop(ctx, s.apiRuntimeChatClient(cfg), toolExecutor, model, messages)
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -586,6 +595,77 @@ func (s *TaskService) apiRuntimeChatClient(cfg runtimeconfig.APIRuntimeConfig) a
 		return s.APIChatClientFactory(cfg)
 	}
 	return modelapi.NewClient(cfg.APIKey, cfg.BaseURL, nil)
+}
+
+func (s *TaskService) apiRuntimeToolExecutor() (apiRuntimeToolExecutor, error) {
+	if s.APIToolExecutor != nil {
+		return s.APIToolExecutor, nil
+	}
+	return apitools.NewLocalExecutor(apitools.ConfigFromEnv())
+}
+
+func runAPIRuntimeChatLoop(ctx context.Context, client apiRuntimeChatClient, toolExecutor apiRuntimeToolExecutor, model string, messages []modelapi.Message) (modelapi.ChatResult, error) {
+	var total modelapi.ChatResult
+	tools := []modelapi.Tool(nil)
+	if toolExecutor != nil {
+		tools = toolExecutor.Tools()
+	}
+
+	for round := 0; round < apiRuntimeMaxToolRounds; round++ {
+		res, err := client.Chat(ctx, modelapi.ChatRequest{
+			Model:    model,
+			Messages: messages,
+			Tools:    tools,
+		})
+		if err != nil {
+			return total, err
+		}
+		accumulateAPIRuntimeUsage(&total, res)
+		if len(res.ToolCalls) == 0 {
+			total.Content = res.Content
+			return total, nil
+		}
+		if toolExecutor == nil || len(tools) == 0 {
+			return total, fmt.Errorf("model requested tool calls, but API runtime tools are not configured")
+		}
+
+		messages = append(messages, modelapi.Message{
+			Role:      "assistant",
+			Content:   res.Content,
+			ToolCalls: res.ToolCalls,
+		})
+		for _, call := range res.ToolCalls {
+			output, err := toolExecutor.Execute(ctx, call)
+			if err != nil {
+				output = apiRuntimeToolErrorJSON(call.Function.Name, err)
+			}
+			messages = append(messages, modelapi.Message{
+				Role:       "tool",
+				ToolCallID: call.ID,
+				Content:    output,
+			})
+		}
+	}
+
+	return total, fmt.Errorf("API runtime exceeded %d tool-call rounds", apiRuntimeMaxToolRounds)
+}
+
+func accumulateAPIRuntimeUsage(total *modelapi.ChatResult, res modelapi.ChatResult) {
+	total.InputTokens += res.InputTokens
+	total.OutputTokens += res.OutputTokens
+	total.CacheReadTokens += res.CacheReadTokens
+	total.CacheWriteTokens += res.CacheWriteTokens
+}
+
+func apiRuntimeToolErrorJSON(name string, err error) string {
+	raw, marshalErr := json.Marshal(map[string]string{
+		"tool":  name,
+		"error": err.Error(),
+	})
+	if marshalErr != nil {
+		return fmt.Sprintf(`{"tool":%q,"error":%q}`, name, err.Error())
+	}
+	return string(raw)
 }
 
 func apiRuntimeModelForAgent(agent db.Agent, cfg runtimeconfig.APIRuntimeConfig) string {

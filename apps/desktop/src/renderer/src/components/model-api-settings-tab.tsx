@@ -31,6 +31,7 @@ const OPTIONAL_ENV = [
   "ORIGIN_MODEL_BASE_URL",
   "ORIGIN_MODEL_NAMES",
   "ORIGIN_MODEL_RUNTIME_NAME",
+  "ORIGIN_MODEL_TOOL_ROOTS",
 ];
 
 interface ModelApiMetadata {
@@ -89,7 +90,8 @@ function runtimeModels(value: unknown): RuntimeModel[] {
 
 function buildEnvSnippet(defaultModel: string) {
   return [
-    'export ORIGIN_MODEL_PROVIDER="openai"',
+    "# 方式 A：Origin 专属变量",
+    'export ORIGIN_MODEL_PROVIDER="openai_compatible"',
     'export ORIGIN_MODEL_API_KEY="sk-..."',
     `export ORIGIN_MODEL_NAME="${defaultModel}"`,
     "",
@@ -97,6 +99,15 @@ function buildEnvSnippet(defaultModel: string) {
     'export ORIGIN_MODEL_BASE_URL="https://api.openai.com/v1"',
     `export ORIGIN_MODEL_NAMES="${defaultModel}"`,
     'export ORIGIN_MODEL_RUNTIME_NAME="大模型 API"',
+    "",
+    "# 可选：限制 API runtime 可读取和搜索的本地目录，多个目录用逗号分隔",
+    'export ORIGIN_MODEL_TOOL_ROOTS="/Users/albert/OriginWorkbenchMount"',
+    "",
+    "# 方式 B：中转站 / cc-switch / Codex 兼容变量",
+    "# 如果没有 ORIGIN_MODEL_*，Origin 会自动读取这些变量",
+    'export OPENAI_API_KEY="sk-..."',
+    'export OPENAI_BASE_URL="https://your-relay.example/v1"',
+    `export OPENAI_MODEL="${defaultModel}"`,
   ].join("\n");
 }
 
@@ -164,8 +175,9 @@ export function ModelApiSettingsTab() {
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">大模型 API</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            对接 OpenAI 兼容的 Chat Completions API。当前是轻量 API 模式：
-            负责模型回复，不等同于 Codex / Claude Code 的本地工具 runtime。
+            对接 OpenAI 兼容的 Chat Completions API、中转站或 cc-switch / Codex 配置，并由 Origin
+            补上工具循环和只读本地文件工具。
+            Shell、浏览器、MCP 等能力仍需要完整本地 Agent runtime。
           </p>
         </div>
         <Button
@@ -223,11 +235,17 @@ export function ModelApiSettingsTab() {
               />
               <FieldRow
                 label="任务能力"
-                value={metadata.task_execution === "chat_only" ? "仅聊天任务" : "—"}
+                value={
+                  metadata.task_execution === "tool_loop"
+                    ? "聊天 + 工具循环"
+                    : metadata.task_execution === "chat_only"
+                      ? "仅聊天任务"
+                      : "—"
+                }
               />
               <FieldRow
                 label="工具 / Skills"
-                value={metadata.supports_tools ? "支持" : "暂不支持"}
+                value={metadata.supports_tools ? "支持内置文件工具" : "暂不支持"}
               />
             </div>
           </CardContent>
@@ -235,21 +253,39 @@ export function ModelApiSettingsTab() {
 
         <Card>
           <CardHeader>
-            <CardTitle>能力边界</CardTitle>
+            <CardTitle>中转站 / cc-switch</CardTitle>
             <CardDescription>
-              大模型 API 只提供模型能力；本地执行能力需要 Origin 自己的 Agent runtime。
+              支持 cc-switch、CodeAPI、TokenGo、9527code、OpenRouter 等 OpenAI 兼容入口。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+              Origin 会优先读取 ORIGIN_MODEL_*。如果这些变量不存在，会兜底读取
+              OPENAI_API_KEY、OPENAI_BASE_URL、OPENAI_API_BASE、OPENAI_API_BASE_URL、
+              OPENAI_MODEL、OPENAI_MODEL_NAME、OPENAI_MODELS。cc-switch 请使用 Codex / OpenAI
+              兼容配置，Base URL 通常需要带 /v1；Claude Code 的 ANTHROPIC_* 配置不会被当成
+              Chat Completions API 使用。
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>工具能力</CardTitle>
+            <CardDescription>
+              大模型 API 负责决策，Origin 负责执行内置工具并把结果回传给模型。
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
               <div className="flex items-center gap-2 font-medium">
                 <Wrench className="h-4 w-4" />
-                当前不开放本地工具调用
+                已开放只读本地文件工具
               </div>
               <p className="mt-2 text-muted-foreground">
-                API runtime 暂不读取本地文件、不运行 Shell、不控制浏览器、不调用
-                MCP，也不加载 Codex 或 Claude Code 的 skills。后续需要通过工具注册、
-                权限控制、执行适配器和审计日志补成完整 Agent 模式。
+                当前支持 list_directory、read_text_file、search_text。可通过
+                ORIGIN_MODEL_TOOL_ROOTS 限定可读取和搜索的目录；暂不开放写文件、Shell、浏览器、
+                MCP 或 Codex / Claude Code 原生 skills 执行。
               </p>
             </div>
           </CardContent>

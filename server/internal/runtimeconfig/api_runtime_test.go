@@ -56,8 +56,14 @@ func TestLoadAPIRuntimeConfigBuildsRedactedMetadata(t *testing.T) {
 	if !md.APIKeyConfigured || !md.BaseURLConfigured {
 		t.Fatalf("metadata should expose configured booleans only: %+v", md)
 	}
-	if md.TaskExecution != "chat_only" {
-		t.Fatalf("task execution metadata = %q, want chat_only", md.TaskExecution)
+	if md.TaskExecution != "tool_loop" {
+		t.Fatalf("task execution metadata = %q, want tool_loop", md.TaskExecution)
+	}
+	if !md.SupportsTools {
+		t.Fatalf("metadata should advertise API runtime tools: %+v", md)
+	}
+	if !contains(md.OptionalEnv, EnvToolRoots) {
+		t.Fatalf("optional env should include %s: %+v", EnvToolRoots, md.OptionalEnv)
 	}
 	if len(md.Models) != 2 {
 		t.Fatalf("expected 2 models, got %d", len(md.Models))
@@ -65,6 +71,69 @@ func TestLoadAPIRuntimeConfigBuildsRedactedMetadata(t *testing.T) {
 	if md.Models[0].ID != "gpt-4.1-mini" || !md.Models[0].Default {
 		t.Fatalf("first model should be default, got %+v", md.Models[0])
 	}
+}
+
+func TestLoadAPIRuntimeConfigAcceptsOpenAICompatibleEnvAliases(t *testing.T) {
+	env := map[string]string{
+		EnvOpenAIAPIKey:  "sk-cc-switch",
+		EnvOpenAIBaseURL: "https://relay.example.test/v1",
+		EnvOpenAIModel:   "gpt-5-codex",
+		EnvOpenAIModels:  "gpt-5-codex,claude-sonnet-4",
+	}
+
+	cfg, ok := LoadAPIRuntimeConfig(func(key string) string { return env[key] })
+	if !ok {
+		t.Fatal("expected API runtime config from OpenAI-compatible aliases")
+	}
+	if cfg.APIKey != "sk-cc-switch" {
+		t.Fatalf("api key = %q", cfg.APIKey)
+	}
+	if cfg.BaseURL != "https://relay.example.test/v1" {
+		t.Fatalf("base url = %q", cfg.BaseURL)
+	}
+	if cfg.DefaultModel != "gpt-5-codex" {
+		t.Fatalf("default model = %q", cfg.DefaultModel)
+	}
+	if cfg.ConfigSource != "environment:openai_compatible" {
+		t.Fatalf("config source = %q", cfg.ConfigSource)
+	}
+	if len(cfg.ModelIDs) != 2 || cfg.ModelIDs[1] != "claude-sonnet-4" {
+		t.Fatalf("model ids = %+v", cfg.ModelIDs)
+	}
+}
+
+func TestLoadAPIRuntimeConfigPrefersOriginEnvOverOpenAICompatibleAliases(t *testing.T) {
+	env := map[string]string{
+		EnvAPIKey:        "sk-origin",
+		EnvBaseURL:       "https://origin.example.test/v1",
+		EnvModelName:     "origin-model",
+		EnvOpenAIAPIKey:  "sk-cc-switch",
+		EnvOpenAIBaseURL: "https://relay.example.test/v1",
+		EnvOpenAIModel:   "relay-model",
+	}
+
+	cfg, ok := LoadAPIRuntimeConfig(func(key string) string { return env[key] })
+	if !ok {
+		t.Fatal("expected API runtime config")
+	}
+	if cfg.APIKey != "sk-origin" || cfg.BaseURL != "https://origin.example.test/v1" {
+		t.Fatalf("Origin env should win, got api_key=%q base_url=%q", cfg.APIKey, cfg.BaseURL)
+	}
+	if cfg.DefaultModel != "origin-model" {
+		t.Fatalf("Origin model should win, got %q", cfg.DefaultModel)
+	}
+	if cfg.ConfigSource != "environment:origin" {
+		t.Fatalf("config source = %q", cfg.ConfigSource)
+	}
+}
+
+func contains(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAPIRuntimeModelsFromMetadata(t *testing.T) {

@@ -17,17 +17,43 @@ const (
 )
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type ChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	Tools    []Tool    `json:"tools,omitempty"`
+}
+
+type Tool struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+type ToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type ChatResult struct {
 	Content          string
+	ToolCalls        []ToolCall
 	InputTokens      int64
 	OutputTokens     int64
 	CacheReadTokens  int64
@@ -103,10 +129,11 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) 
 		return ChatResult{}, fmt.Errorf("decode model API response: %w", err)
 	}
 	for _, choice := range out.Choices {
-		content := strings.TrimSpace(choice.Message.Content)
-		if content != "" {
+		content := strings.TrimSpace(choice.Message.Content.Value)
+		if content != "" || len(choice.Message.ToolCalls) > 0 {
 			return ChatResult{
 				Content:         content,
+				ToolCalls:       choice.Message.ToolCalls,
 				InputTokens:     out.Usage.PromptTokens,
 				OutputTokens:    out.Usage.CompletionTokens,
 				CacheReadTokens: out.Usage.PromptTokensDetails.CachedTokens,
@@ -118,6 +145,13 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) 
 
 func normalizeBaseURL(baseURL string) string {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return DefaultBaseURL
+	}
+	const chatCompletionsSuffix = "/chat/completions"
+	if strings.HasSuffix(strings.ToLower(baseURL), chatCompletionsSuffix) {
+		baseURL = strings.TrimRight(baseURL[:len(baseURL)-len(chatCompletionsSuffix)], "/")
+	}
 	if baseURL == "" {
 		return DefaultBaseURL
 	}
@@ -139,7 +173,8 @@ func parseAPIError(payload []byte) string {
 type chatCompletionResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   nullableString `json:"content"`
+			ToolCalls []ToolCall     `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
@@ -149,4 +184,16 @@ type chatCompletionResponse struct {
 			CachedTokens int64 `json:"cached_tokens"`
 		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
+}
+
+type nullableString struct {
+	Value string
+}
+
+func (s *nullableString) UnmarshalJSON(raw []byte) error {
+	if string(raw) == "null" {
+		s.Value = ""
+		return nil
+	}
+	return json.Unmarshal(raw, &s.Value)
 }

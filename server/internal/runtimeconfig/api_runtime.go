@@ -13,6 +13,15 @@ const (
 	EnvModelName   = "ORIGIN_MODEL_NAME"
 	EnvModelNames  = "ORIGIN_MODEL_NAMES"
 	EnvRuntimeName = "ORIGIN_MODEL_RUNTIME_NAME"
+	EnvToolRoots   = "ORIGIN_MODEL_TOOL_ROOTS"
+
+	EnvOpenAIAPIKey     = "OPENAI_API_KEY"
+	EnvOpenAIBaseURL    = "OPENAI_BASE_URL"
+	EnvOpenAIAPIBase    = "OPENAI_API_BASE"
+	EnvOpenAIAPIBaseURL = "OPENAI_API_BASE_URL"
+	EnvOpenAIModel      = "OPENAI_MODEL"
+	EnvOpenAIModelName  = "OPENAI_MODEL_NAME"
+	EnvOpenAIModels     = "OPENAI_MODELS"
 
 	DefaultProvider    = "openai_compatible"
 	DefaultRuntimeName = "External Model API"
@@ -24,6 +33,7 @@ const (
 type APIRuntimeConfig struct {
 	Provider          string
 	RuntimeName       string
+	ConfigSource      string
 	APIKey            string
 	BaseURL           string
 	ModelIDs          []string
@@ -64,8 +74,8 @@ func LoadAPIRuntimeConfig(getenv func(string) string) (APIRuntimeConfig, bool) {
 		provider = DefaultProvider
 	}
 
-	apiKey := strings.TrimSpace(getenv(EnvAPIKey))
-	baseURL := strings.TrimSpace(getenv(EnvBaseURL))
+	apiKey := firstConfiguredEnv(getenv, EnvAPIKey, EnvOpenAIAPIKey)
+	baseURL := firstConfiguredEnv(getenv, EnvBaseURL, EnvOpenAIBaseURL, EnvOpenAIAPIBaseURL, EnvOpenAIAPIBase)
 	apiKeyConfigured := apiKey != ""
 	baseURLConfigured := baseURL != ""
 	modelIDs := configuredModelIDs(getenv)
@@ -83,7 +93,7 @@ func LoadAPIRuntimeConfig(getenv func(string) string) (APIRuntimeConfig, bool) {
 		return APIRuntimeConfig{}, false
 	}
 
-	defaultModel := strings.TrimSpace(getenv(EnvModelName))
+	defaultModel := firstConfiguredEnv(getenv, EnvModelName, EnvOpenAIModel, EnvOpenAIModelName)
 	if defaultModel == "" && len(modelIDs) > 0 {
 		defaultModel = modelIDs[0]
 	}
@@ -91,6 +101,7 @@ func LoadAPIRuntimeConfig(getenv func(string) string) (APIRuntimeConfig, bool) {
 	return APIRuntimeConfig{
 		Provider:          provider,
 		RuntimeName:       runtimeName,
+		ConfigSource:      apiRuntimeConfigSource(getenv),
 		APIKey:            apiKey,
 		BaseURL:           baseURL,
 		ModelIDs:          modelIDs,
@@ -136,18 +147,35 @@ func (c APIRuntimeConfig) Models() []APIRuntimeModel {
 }
 
 func MetadataFromConfig(c APIRuntimeConfig) ([]byte, error) {
+	configSource := strings.TrimSpace(c.ConfigSource)
+	if configSource == "" {
+		configSource = "environment"
+	}
 	md := APIRuntimeMetadata{
 		APIRuntime:        true,
 		ManagedBy:         ManagedByOriginAPI,
-		ConfigSource:      "environment",
+		ConfigSource:      configSource,
 		APIKeyConfigured:  c.APIKeyConfigured,
 		BaseURLConfigured: c.BaseURLConfigured,
-		SupportsTools:     false,
-		TaskExecution:     "chat_only",
+		SupportsTools:     true,
+		TaskExecution:     "tool_loop",
 		DefaultModel:      c.DefaultModel,
 		Models:            c.Models(),
 		RequiredEnv:       []string{EnvAPIKey, EnvModelName},
-		OptionalEnv:       []string{EnvProvider, EnvBaseURL, EnvModelNames, EnvRuntimeName},
+		OptionalEnv: []string{
+			EnvProvider,
+			EnvBaseURL,
+			EnvModelNames,
+			EnvRuntimeName,
+			EnvToolRoots,
+			EnvOpenAIAPIKey,
+			EnvOpenAIBaseURL,
+			EnvOpenAIAPIBase,
+			EnvOpenAIAPIBaseURL,
+			EnvOpenAIModel,
+			EnvOpenAIModelName,
+			EnvOpenAIModels,
+		},
 	}
 	return json.Marshal(md)
 }
@@ -187,5 +215,55 @@ func configuredModelIDs(getenv func(string) string) []string {
 	for _, part := range strings.Split(getenv(EnvModelNames), ",") {
 		add(part)
 	}
+	add(getenv(EnvOpenAIModel))
+	add(getenv(EnvOpenAIModelName))
+	for _, part := range strings.Split(getenv(EnvOpenAIModels), ",") {
+		add(part)
+	}
 	return out
+}
+
+func firstConfiguredEnv(getenv func(string) string, names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func apiRuntimeConfigSource(getenv func(string) string) string {
+	originNames := []string{
+		EnvProvider,
+		EnvAPIKey,
+		EnvBaseURL,
+		EnvModelName,
+		EnvModelNames,
+		EnvRuntimeName,
+	}
+	if hasConfiguredEnv(getenv, originNames...) {
+		return "environment:origin"
+	}
+	openAICompatibleNames := []string{
+		EnvOpenAIAPIKey,
+		EnvOpenAIBaseURL,
+		EnvOpenAIAPIBase,
+		EnvOpenAIAPIBaseURL,
+		EnvOpenAIModel,
+		EnvOpenAIModelName,
+		EnvOpenAIModels,
+	}
+	if hasConfiguredEnv(getenv, openAICompatibleNames...) {
+		return "environment:openai_compatible"
+	}
+	return "environment"
+}
+
+func hasConfiguredEnv(getenv func(string) string, names ...string) bool {
+	for _, name := range names {
+		if strings.TrimSpace(getenv(name)) != "" {
+			return true
+		}
+	}
+	return false
 }
