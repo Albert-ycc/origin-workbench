@@ -632,6 +632,16 @@ func TestListDelegationTaskCardsByTeamMessageIncludesLatestResultPreview(t *test
 	}); err != nil {
 		t.Fatalf("create comment: %v", err)
 	}
+	if _, err := testHandler.Queries.CreateComment(context.Background(), db.CreateCommentParams{
+		IssueID:     parseUUID(issueID),
+		WorkspaceID: parseUUID(testWorkspaceID),
+		AuthorType:  "member",
+		AuthorID:    parseUUID(testUserID),
+		Content:     "系统状态变更不应该覆盖 agent 的 latest result preview。",
+		Type:        "system",
+	}); err != nil {
+		t.Fatalf("create system comment: %v", err)
+	}
 
 	w = httptest.NewRecorder()
 	req = newRequest(http.MethodGet, "/api/issues/by-team-message/"+sourceMessageID+"/cards", nil)
@@ -657,8 +667,8 @@ func TestListDelegationTaskCardsByTeamMessageIncludesLatestResultPreview(t *test
 	if card.LatestResultPreview == nil || !strings.Contains(*card.LatestResultPreview, "第一段结论") {
 		t.Fatalf("latest result preview mismatch: %+v", card.LatestResultPreview)
 	}
-	if card.CommentCount != 1 {
-		t.Fatalf("comment_count = %d, want 1", card.CommentCount)
+	if card.CommentCount != 2 {
+		t.Fatalf("comment_count = %d, want 2", card.CommentCount)
 	}
 }
 

@@ -7,6 +7,7 @@ import type { Workspace, MemberWithUser, Invitation } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
 import type { TeamMessage } from "./team";
+import type { MeetingInsightCard, MeetingSession, MeetingTranscriptSegment } from "./meeting";
 
 // WebSocket event types (matching Go server protocol/events.go)
 export type WSEventType =
@@ -62,6 +63,17 @@ export type WSEventType =
   | "project:created"
   | "project:updated"
   | "project:deleted"
+  | "project:memory_doc_updated"
+  | "meeting:created"
+  | "meeting:updated"
+  | "meeting:started"
+  | "meeting:stopped"
+  | "meeting:transcript_segment_created"
+  | "meeting:insight_created"
+  | "meeting:insight_updated"
+  | "meeting:strong_alert_created"
+  | "meeting:summary_created"
+  | "meeting:analysis_status_updated"
   | "label:created"
   | "label:updated"
   | "label:deleted"
@@ -161,15 +173,20 @@ export interface InboxBatchArchivedPayload {
   count: number;
 }
 
-export interface CommentCreatedPayload {
+interface IssueSourceEventPayload {
+  source_team_message_id?: string | null;
+  source_team_session_id?: string | null;
+}
+
+export interface CommentCreatedPayload extends IssueSourceEventPayload {
   comment: Comment;
 }
 
-export interface CommentUpdatedPayload {
+export interface CommentUpdatedPayload extends IssueSourceEventPayload {
   comment: Comment;
 }
 
-export interface CommentDeletedPayload {
+export interface CommentDeletedPayload extends IssueSourceEventPayload {
   comment_id: string;
   issue_id: string;
 }
@@ -180,6 +197,24 @@ export interface WorkspaceUpdatedPayload {
 
 export interface WorkspaceDeletedPayload {
   workspace_id: string;
+}
+
+export interface MeetingSessionPayload {
+  meeting: MeetingSession;
+}
+
+export interface MeetingTranscriptSegmentCreatedPayload {
+  meeting_id: string;
+  segment: MeetingTranscriptSegment;
+}
+
+export interface MeetingInsightCardPayload {
+  meeting_id: string;
+  card: MeetingInsightCard;
+}
+
+export interface MeetingSummaryCreatedPayload {
+  meeting_id: string;
 }
 
 export interface MemberUpdatedPayload {
@@ -198,20 +233,20 @@ export interface MemberRemovedPayload {
   workspace_id: string;
 }
 
-export interface SubscriberAddedPayload {
+export interface SubscriberAddedPayload extends IssueSourceEventPayload {
   issue_id: string;
   user_type: string;
   user_id: string;
   reason: string;
 }
 
-export interface SubscriberRemovedPayload {
+export interface SubscriberRemovedPayload extends IssueSourceEventPayload {
   issue_id: string;
   user_type: string;
   user_id: string;
 }
 
-export interface ActivityCreatedPayload {
+export interface ActivityCreatedPayload extends IssueSourceEventPayload {
   issue_id: string;
   entry: TimelineEntry;
 }
@@ -268,12 +303,12 @@ export interface TaskCancelledPayload {
   status: string;
 }
 
-export interface ReactionAddedPayload {
+export interface ReactionAddedPayload extends IssueSourceEventPayload {
   reaction: Reaction;
   issue_id: string;
 }
 
-export interface ReactionRemovedPayload {
+export interface ReactionRemovedPayload extends IssueSourceEventPayload {
   comment_id: string;
   issue_id: string;
   emoji: string;
@@ -281,12 +316,12 @@ export interface ReactionRemovedPayload {
   actor_id: string;
 }
 
-export interface IssueReactionAddedPayload {
+export interface IssueReactionAddedPayload extends IssueSourceEventPayload {
   reaction: IssueReaction;
   issue_id: string;
 }
 
-export interface IssueReactionRemovedPayload {
+export interface IssueReactionRemovedPayload extends IssueSourceEventPayload {
   issue_id: string;
   emoji: string;
   actor_type: string;

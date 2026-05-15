@@ -90,20 +90,21 @@ func (h *Handler) AddReaction(w http.ResponseWriter, r *http.Request) {
 	// Look up issue title for inbox notifications.
 	issueID := uuidToString(comment.IssueID)
 	var issueTitle, issueStatus string
+	payload := h.issueSourcePayload(r.Context(), comment.IssueID, wsUUID)
 	if issue, err := h.Queries.GetIssue(r.Context(), comment.IssueID); err == nil {
 		issueTitle = issue.Title
 		issueStatus = issue.Status
+		payload = addIssueSourcePayload(payload, issue)
 	}
 
-	h.publish(protocol.EventReactionAdded, workspaceID, actorType, actorID, map[string]any{
-		"reaction":            resp,
-		"issue_id":            issueID,
-		"issue_title":         issueTitle,
-		"issue_status":        issueStatus,
-		"comment_id":          uuidToString(comment.ID),
-		"comment_author_type": comment.AuthorType,
-		"comment_author_id":   uuidToString(comment.AuthorID),
-	})
+	payload["reaction"] = resp
+	payload["issue_id"] = issueID
+	payload["issue_title"] = issueTitle
+	payload["issue_status"] = issueStatus
+	payload["comment_id"] = uuidToString(comment.ID)
+	payload["comment_author_type"] = comment.AuthorType
+	payload["comment_author_id"] = uuidToString(comment.AuthorID)
+	h.publish(protocol.EventReactionAdded, workspaceID, actorType, actorID, payload)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -158,13 +159,13 @@ func (h *Handler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.publish(protocol.EventReactionRemoved, workspaceID, actorType, actorID, map[string]any{
-		"comment_id": uuidToString(comment.ID),
-		"issue_id":   uuidToString(comment.IssueID),
-		"emoji":      req.Emoji,
-		"actor_type": actorType,
-		"actor_id":   actorID,
-	})
+	payload := h.issueSourcePayload(r.Context(), comment.IssueID, wsUUID)
+	payload["comment_id"] = uuidToString(comment.ID)
+	payload["issue_id"] = uuidToString(comment.IssueID)
+	payload["emoji"] = req.Emoji
+	payload["actor_type"] = actorType
+	payload["actor_id"] = actorID
+	h.publish(protocol.EventReactionRemoved, workspaceID, actorType, actorID, payload)
 	w.WriteHeader(http.StatusNoContent)
 }
 

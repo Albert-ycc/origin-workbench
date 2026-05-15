@@ -22,15 +22,23 @@ export function useCreateIdea() {
   return useMutation({
     mutationFn: (data: CreateIdeaRequest) => api.createIdea(data),
     onSuccess: (detail) => {
+      const projectId = detail.idea.project_id;
       qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId), (old) =>
         old && !old.ideas.some((i) => i.id === detail.idea.id)
           ? { ...old, ideas: [detail.idea, ...old.ideas], total: old.total + 1 }
           : old,
       );
+      if (projectId) {
+        qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId, "active", projectId), (old) =>
+          old && !old.ideas.some((i) => i.id === detail.idea.id)
+            ? { ...old, ideas: [detail.idea, ...old.ideas], total: old.total + 1 }
+            : old,
+        );
+      }
       qc.setQueryData<IdeaDetail>(ideaKeys.detail(wsId, detail.idea.id), detail);
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ideaKeys.list(wsId) });
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
     },
   });
 }
@@ -46,7 +54,7 @@ export function useUpdateIdea() {
     },
     onSettled: (_data, _error, vars) => {
       qc.invalidateQueries({ queryKey: ideaKeys.detail(wsId, vars.id) });
-      qc.invalidateQueries({ queryKey: ideaKeys.list(wsId) });
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
     },
   });
 }
@@ -66,6 +74,17 @@ export function useArchiveIdea() {
             }
           : old,
       );
+      if (idea.project_id) {
+        qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId, "active", idea.project_id), (old) =>
+          old
+            ? {
+                ...old,
+                ideas: old.ideas.filter((i) => i.id !== idea.id),
+                total: Math.max(0, old.total - 1),
+              }
+            : old,
+        );
+      }
       qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
     },
   });
@@ -86,6 +105,7 @@ export function useDeleteIdea() {
             }
           : old,
       );
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
       qc.removeQueries({ queryKey: ideaKeys.detail(wsId, id) });
     },
   });
@@ -102,7 +122,7 @@ export function useCreateIdeaNote() {
         old ? { ...old, notes: [note, ...old.notes] } : old,
       );
       qc.invalidateQueries({ queryKey: ideaKeys.detail(wsId, vars.ideaId) });
-      qc.invalidateQueries({ queryKey: ideaKeys.list(wsId) });
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
     },
   });
 }
@@ -140,11 +160,31 @@ export function usePromoteIdea() {
             }
           : old,
       );
+      if (idea.project_id) {
+        qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId, "active", idea.project_id), (old) =>
+          old
+            ? {
+                ...old,
+                ideas: old.ideas.filter((i) => i.id !== idea.id),
+                total: Math.max(0, old.total - 1),
+              }
+            : old,
+        );
+      }
       qc.setQueryData<ListMissionsResponse>(missionKeys.list(wsId), (old) =>
         old && !old.missions.some((m) => m.id === mission.mission.id)
           ? { ...old, missions: [mission.mission, ...old.missions], total: old.total + 1 }
           : old,
       );
+      if (mission.mission.project_id) {
+        qc.setQueryData<ListMissionsResponse>(
+          missionKeys.list(wsId, "active", mission.mission.project_id),
+          (old) =>
+            old && !old.missions.some((m) => m.id === mission.mission.id)
+              ? { ...old, missions: [mission.mission, ...old.missions], total: old.total + 1 }
+              : old,
+        );
+      }
       qc.setQueryData<MissionDetail>(
         missionKeys.detail(wsId, mission.mission.id),
         mission,
@@ -168,6 +208,13 @@ function patchIdeaCaches(
       ? { ...old, ideas: old.ideas.map((i) => (i.id === idea.id ? idea : i)) }
       : old,
   );
+  if (idea.project_id) {
+    qc.setQueryData<ListIdeasResponse>(ideaKeys.list(wsId, "active", idea.project_id), (old) =>
+      old
+        ? { ...old, ideas: old.ideas.map((i) => (i.id === idea.id ? idea : i)) }
+        : old,
+    );
+  }
   qc.setQueryData<IdeaDetail>(ideaKeys.detail(wsId, idea.id), (old) =>
     old ? { ...old, idea } : old,
   );

@@ -526,16 +526,19 @@ func (h *Handler) appendCouncilConclusionToProjectMemory(ctx context.Context, se
 	stamp := time.Now().Format("2006-01-02")
 	entry := fmt.Sprintf("- %s · %s → %s（[查看会议](origin://councils/%s)）", stamp, topic, conclusion, uuidToString(session.ID))
 	newDoc := appendToMemorySection(p.MemoryDoc, "## 关键决策", entry)
-	if _, err := h.Queries.UpdateProjectV12(ctx, db.UpdateProjectV12Params{
+	updatedProject, err := h.Queries.UpdateProjectV12(ctx, db.UpdateProjectV12Params{
 		ID:                 p.ID,
 		MemoryDoc:          pgtype.Text{String: newDoc, Valid: true},
 		MemoryDocUpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Warn("council memory append: update failed",
 			"council_id", uuidToString(session.ID),
 			"project_id", uuidToString(session.ProjectID),
 			"err", err)
+		return
 	}
+	h.publishProjectMemoryDocUpdated(updatedProject)
 }
 
 // relayCouncilAdjournmentToSource appends an assistant-role message to the

@@ -6,8 +6,8 @@ import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
 import { AVATAR_SET, AVATAR_SET_SIZE } from "./avatar-set";
 
-// 7 列 × 2 行 — 跟头像区可用宽度匹配，避免右侧大片留白；30 个 Lorelei 备
-// 选里一次刷出 14 个，保证「换一批」体验有足够变化。
+// 7 列 × 2 行 — 跟头像区可用宽度匹配，避免右侧大片留白；50 个内置
+// 头像里一次刷出 14 个，保证「换一批」体验有足够变化。
 export const AVATARS_PER_PAGE = 14;
 
 interface AvatarPickerProps {

@@ -152,6 +152,52 @@ describe("ApiClient", () => {
   // 端点路径（确认走 /api/origin/* 还是 /api/* 平铺）。
   // ─────────────────────────────────────────────────────────────────────────
 
+  it("issues HTTP contract for Origin Mission endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ missions: [], total: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listMissions("active");
+    await client.listMissions("archived");
+    await client.listMissions({ status: "active", project_id: "project-1" });
+    await client.createMission({
+      project_id: "project-1",
+      title: "项目内 Mission",
+      prompt: "把项目右栏接成真实入口",
+      captain_agent_id: "agent-1",
+    });
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+      body: init?.body,
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/missions", method: "GET" },
+      { url: "https://api.example.test/api/missions?status=archived", method: "GET" },
+      { url: "https://api.example.test/api/missions?project_id=project-1", method: "GET" },
+      {
+        url: "https://api.example.test/api/missions",
+        method: "POST",
+        body: JSON.stringify({
+          project_id: "project-1",
+          title: "项目内 Mission",
+          prompt: "把项目右栏接成真实入口",
+          captain_agent_id: "agent-1",
+        }),
+      },
+    ]);
+  });
+
   it("issues HTTP contract for Origin Idea endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(
@@ -167,8 +213,10 @@ describe("ApiClient", () => {
 
     await client.listIdeas("active");
     await client.listIdeas("archived");
+    await client.listIdeas({ status: "active", project_id: "project-1" });
     await client.getIdea("idea-1");
     await client.createIdea({
+      project_id: "project-1",
       title: "PRD 养鱼",
       description: "先收进想法池",
       nurturer_agent_id: "agent-1",
@@ -194,11 +242,13 @@ describe("ApiClient", () => {
     expect(calls).toMatchObject([
       { url: "https://api.example.test/api/ideas", method: "GET" },
       { url: "https://api.example.test/api/ideas?status=archived", method: "GET" },
+      { url: "https://api.example.test/api/ideas?project_id=project-1", method: "GET" },
       { url: "https://api.example.test/api/ideas/idea-1", method: "GET" },
       {
         url: "https://api.example.test/api/ideas",
         method: "POST",
         body: JSON.stringify({
+          project_id: "project-1",
           title: "PRD 养鱼",
           description: "先收进想法池",
           nurturer_agent_id: "agent-1",
@@ -319,8 +369,10 @@ describe("ApiClient", () => {
 
     await client.listExplorations("active");
     await client.listExplorations("archived");
+    await client.listExplorations({ status: "active", project_id: "project-1" });
     await client.getExploration("e-1");
     await client.createExploration({
+      project_id: "project-1",
       topic: "营养库 schema 单表 vs 分表",
       question: "选哪个更适合长期演化？",
     });
@@ -348,11 +400,13 @@ describe("ApiClient", () => {
     expect(calls).toMatchObject([
       { url: "https://api.example.test/api/explorations", method: "GET" },
       { url: "https://api.example.test/api/explorations?status=archived", method: "GET" },
+      { url: "https://api.example.test/api/explorations?project_id=project-1", method: "GET" },
       { url: "https://api.example.test/api/explorations/e-1", method: "GET" },
       {
         url: "https://api.example.test/api/explorations",
         method: "POST",
         body: JSON.stringify({
+          project_id: "project-1",
           topic: "营养库 schema 单表 vs 分表",
           question: "选哪个更适合长期演化？",
         }),

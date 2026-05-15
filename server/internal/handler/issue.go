@@ -117,6 +117,19 @@ func trimDelegationPreview(content string) *string {
 	return &text
 }
 
+func (h *Handler) validateProjectInWorkspace(ctx context.Context, projectID, workspaceID pgtype.UUID) error {
+	if !projectID.Valid {
+		return nil
+	}
+	if _, err := h.Queries.GetProjectInWorkspaceV12(ctx, db.GetProjectInWorkspaceV12Params{
+		ID:          projectID,
+		WorkspaceID: workspaceID,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func delegationTaskCardToResponse(row db.ListDelegationTaskCardsByTeamMessageRow, prefix string) DelegationTaskCardResponse {
 	assigneeID := uuidToPtr(row.AssigneeID)
 	var assigneeName *string
@@ -1275,6 +1288,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 			projectID = parent.ProjectID
 		}
 	}
+	if err := h.validateProjectInWorkspace(r.Context(), projectID, wsUUID); err != nil {
+		writeError(w, http.StatusBadRequest, "project not found in this workspace")
+		return
+	}
 
 	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
 	if !ok {
@@ -1560,6 +1577,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		if req.ProjectID != nil {
 			projectUUID, ok := parseUUIDOrBadRequest(w, *req.ProjectID, "project_id")
 			if !ok {
+				return
+			}
+			if err := h.validateProjectInWorkspace(r.Context(), projectUUID, prevIssue.WorkspaceID); err != nil {
+				writeError(w, http.StatusBadRequest, "project not found in this workspace")
 				return
 			}
 			params.ProjectID = projectUUID
@@ -1979,6 +2000,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			if req.Updates.ProjectID != nil {
 				projectUUID, err := util.ParseUUID(*req.Updates.ProjectID)
 				if err != nil {
+					continue
+				}
+				if err := h.validateProjectInWorkspace(r.Context(), projectUUID, prevIssue.WorkspaceID); err != nil {
 					continue
 				}
 				params.ProjectID = projectUUID

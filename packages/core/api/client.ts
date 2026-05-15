@@ -148,6 +148,16 @@ import type {
   AppendMemoryDocRequest,
   NotificationPreferenceResponse,
   NotificationPreferences,
+  CreateMeetingSessionRequest,
+  CreateMeetingTranscriptSegmentRequest,
+  ListMeetingInsightCardsResponse,
+  ListMeetingSessionsResponse,
+  ListMeetingTranscriptSegmentsResponse,
+  MeetingInsightCard,
+  MeetingInsightStatus,
+  MeetingSession,
+  MeetingTranscriptSegment,
+  UpdateMeetingSessionRequest,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import { type Logger, noopLogger } from "../logger";
@@ -240,6 +250,23 @@ export class ApiError extends Error {
     this.statusText = statusText;
     this.body = body;
   }
+}
+
+type OriginListStatus = "active" | "archived";
+type OriginProjectListFilter =
+  | OriginListStatus
+  | {
+      status?: OriginListStatus;
+      project_id?: string;
+    };
+
+function originProjectListQuery(filter: OriginProjectListFilter = "active") {
+  const opts = typeof filter === "string" ? { status: filter } : filter;
+  const params = new URLSearchParams();
+  if (opts.status === "archived") params.set("status", "archived");
+  if (opts.project_id) params.set("project_id", opts.project_id);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 export class ApiClient {
@@ -1429,9 +1456,8 @@ export class ApiClient {
 
   // ── Missions ─────────────────────────────────────────────────────────────
 
-  async listMissions(status: "active" | "archived" = "active"): Promise<ListMissionsResponse> {
-    const query = status === "archived" ? "?status=archived" : "";
-    return this.fetch(`/api/missions${query}`);
+  async listMissions(filter: OriginProjectListFilter = "active"): Promise<ListMissionsResponse> {
+    return this.fetch(`/api/missions${originProjectListQuery(filter)}`);
   }
 
   async getMission(id: string): Promise<MissionDetail> {
@@ -1458,9 +1484,8 @@ export class ApiClient {
 
   // ── Ideas (Origin idea pool) ─────────────────────────────────────────────
 
-  async listIdeas(status: "active" | "archived" = "active"): Promise<ListIdeasResponse> {
-    const query = status === "archived" ? "?status=archived" : "";
-    return this.fetch(`/api/ideas${query}`);
+  async listIdeas(filter: OriginProjectListFilter = "active"): Promise<ListIdeasResponse> {
+    return this.fetch(`/api/ideas${originProjectListQuery(filter)}`);
   }
 
   async getIdea(id: string): Promise<IdeaDetail> {
@@ -1573,9 +1598,8 @@ export class ApiClient {
 
   // ── Explorations (Origin §14.7 — Branching Exploration) ──────────────────
 
-  async listExplorations(status: "active" | "archived" = "active"): Promise<ListExplorationsResponse> {
-    const query = status === "archived" ? "?status=archived" : "";
-    return this.fetch(`/api/explorations${query}`);
+  async listExplorations(filter: OriginProjectListFilter = "active"): Promise<ListExplorationsResponse> {
+    return this.fetch(`/api/explorations${originProjectListQuery(filter)}`);
   }
 
   async getExploration(id: string): Promise<ExplorationDetail> {
@@ -1718,6 +1742,77 @@ export class ApiClient {
     return this.fetch(`/api/v12/projects/${id}/memory-doc/append`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // ── Meeting copilot (Origin §18) ────────────────────────────────────────
+
+  async listMeetings(filter: { project_id?: string } = {}): Promise<ListMeetingSessionsResponse> {
+    const params = new URLSearchParams();
+    if (filter.project_id) params.set("project_id", filter.project_id);
+    const qs = params.toString();
+    return this.fetch(`/api/v13/meetings${qs ? `?${qs}` : ""}`);
+  }
+
+  async getMeeting(id: string): Promise<MeetingSession> {
+    return this.fetch(`/api/v13/meetings/${id}`);
+  }
+
+  async createMeeting(data: CreateMeetingSessionRequest): Promise<MeetingSession> {
+    return this.fetch("/api/v13/meetings", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateMeeting(id: string, data: UpdateMeetingSessionRequest): Promise<MeetingSession> {
+    return this.fetch(`/api/v13/meetings/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async startMeeting(id: string): Promise<MeetingSession> {
+    return this.fetch(`/api/v13/meetings/${id}/start`, { method: "POST" });
+  }
+
+  async stopMeeting(id: string): Promise<MeetingSession> {
+    return this.fetch(`/api/v13/meetings/${id}/stop`, { method: "POST" });
+  }
+
+  async listMeetingTranscriptSegments(
+    meetingId: string,
+    filter: { after_seq?: number; limit?: number } = {},
+  ): Promise<ListMeetingTranscriptSegmentsResponse> {
+    const params = new URLSearchParams();
+    if (filter.after_seq !== undefined) params.set("after_seq", String(filter.after_seq));
+    if (filter.limit !== undefined) params.set("limit", String(filter.limit));
+    const qs = params.toString();
+    return this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments${qs ? `?${qs}` : ""}`);
+  }
+
+  async createMeetingTranscriptSegment(
+    meetingId: string,
+    data: CreateMeetingTranscriptSegmentRequest,
+  ): Promise<MeetingTranscriptSegment> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listMeetingInsightCards(meetingId: string): Promise<ListMeetingInsightCardsResponse> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/insights`);
+  }
+
+  async updateMeetingInsightStatus(
+    meetingId: string,
+    insightId: string,
+    status: MeetingInsightStatus,
+  ): Promise<MeetingInsightCard> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/insights/${insightId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
     });
   }
 

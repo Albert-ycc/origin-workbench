@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, Notification } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, systemPreferences } from "electron";
 import { homedir } from "os";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
@@ -173,10 +173,10 @@ function createWindow(): void {
 // without fighting for the shared single-instance lock. The suffix is
 // appended to the app name + userData path, so each worktree gets its own
 // lock file. Default (no env var) keeps behavior unchanged — the common
-// single-worktree case still lands at "Multica Canary".
+// single-worktree case still lands at "Origin Canary".
 const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Multica Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Multica Canary";
+  ? `Origin Canary ${process.env.DESKTOP_APP_SUFFIX}`
+  : "Origin Canary";
 
 function isLocalDesktopBuild(): boolean {
   return process.execPath.includes("Origin.app");
@@ -225,10 +225,10 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId(
       isLocalDesktopBuild()
-        ? "ai.multica.desktop.local"
+        ? "ai.origin.desktop.local"
         : is.dev
-          ? "ai.multica.desktop.dev"
-          : "ai.multica.desktop",
+          ? "ai.origin.desktop.dev"
+          : "ai.origin.desktop",
     );
 
     // macOS: replace the default Electron dock icon with the bundled logo
@@ -250,6 +250,27 @@ if (!gotTheLock) {
     // false configuration.
     ipcMain.handle("shell:openExternal", (_event, url: string) => {
       return openExternalSafely(url);
+    });
+
+    ipcMain.handle("dialog:select-directory", async () => {
+      const options: Electron.OpenDialogOptions = {
+        properties: ["openDirectory", "createDirectory"],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled) return null;
+      return result.filePaths[0] ?? null;
+    });
+
+    ipcMain.handle("media:microphone-status", () => {
+      if (process.platform !== "darwin") return "unknown";
+      return systemPreferences.getMediaAccessStatus("microphone");
+    });
+
+    ipcMain.handle("media:request-microphone", async () => {
+      if (process.platform !== "darwin") return true;
+      return systemPreferences.askForMediaAccess("microphone");
     });
 
     // Sync IPC: app version + normalized OS for preload. Sync (not invoke) so

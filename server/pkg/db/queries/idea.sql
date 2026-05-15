@@ -8,6 +8,7 @@
 -- by removing the promoted idea from the list — keep both ends in sync.
 SELECT * FROM idea
 WHERE workspace_id = $1
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id')::uuid)
   AND status NOT IN ('archived', 'promoted')
 ORDER BY
   CASE WHEN last_nurtured_at IS NULL THEN updated_at ELSE last_nurtured_at END DESC;
@@ -15,6 +16,7 @@ ORDER BY
 -- name: ListArchivedIdeas :many
 SELECT * FROM idea
 WHERE workspace_id = $1
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id')::uuid)
   AND status = 'archived'
 ORDER BY updated_at DESC;
 
@@ -25,10 +27,10 @@ WHERE id = $1 AND workspace_id = $2;
 -- name: CreateIdea :one
 INSERT INTO idea (
     workspace_id, created_by_user_id, nurturer_agent_id,
-    title, description, source, source_ref, tags, status
+    title, description, source, source_ref, tags, status, project_id
 ) VALUES (
     $1, $2, sqlc.narg('nurturer_agent_id')::uuid,
-    $3, $4, $5, $6, $7, $8
+    $3, $4, $5, $6, $7, $8, sqlc.narg('project_id')::uuid
 )
 RETURNING *;
 

@@ -60,7 +60,7 @@ Multica v0.2.21:
       releases).
 
 4.  UI polish
-    - Lorelei avatar set (30 SVG presets) bundled as a deterministic
+    - Origin avatar set (50 PNG presets) bundled as a deterministic
       offline avatar pool, replacing emoji and DiceBear remote URLs.
     - Sidebar header simplified from a workspace dropdown into a
       pure user-identity block; the avatar dropdown menu (which

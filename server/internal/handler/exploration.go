@@ -18,6 +18,7 @@ import (
 type ExplorationResponse struct {
 	ID               string  `json:"id"`
 	WorkspaceID      string  `json:"workspace_id"`
+	ProjectID        *string `json:"project_id"`
 	CreatedByUserID  string  `json:"created_by_user_id"`
 	RelatedMissionID *string `json:"related_mission_id"`
 	RelatedIdeaID    *string `json:"related_idea_id"`
@@ -67,6 +68,7 @@ type ListExplorationsResponse struct {
 type CreateExplorationRequest struct {
 	Topic            string  `json:"topic"`
 	Question         string  `json:"question"`
+	ProjectID        *string `json:"project_id"`
 	RelatedMissionID *string `json:"related_mission_id"`
 	RelatedIdeaID    *string `json:"related_idea_id"`
 }
@@ -111,6 +113,7 @@ func explorationToResponse(e db.Exploration) ExplorationResponse {
 	return ExplorationResponse{
 		ID:               uuidToString(e.ID),
 		WorkspaceID:      uuidToString(e.WorkspaceID),
+		ProjectID:        uuidToPtr(e.ProjectID),
 		CreatedByUserID:  uuidToString(e.CreatedByUserID),
 		RelatedMissionID: uuidToPtr(e.RelatedMissionID),
 		RelatedIdeaID:    uuidToPtr(e.RelatedIdeaID),
@@ -193,12 +196,22 @@ func (h *Handler) ListExplorations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	projectID, ok := h.projectIDFromQuery(w, r, wsUUID)
+	if !ok {
+		return
+	}
 	var rows []db.Exploration
 	var err error
 	if r.URL.Query().Get("status") == "archived" {
-		rows, err = h.Queries.ListArchivedExplorations(r.Context(), wsUUID)
+		rows, err = h.Queries.ListArchivedExplorations(r.Context(), db.ListArchivedExplorationsParams{
+			WorkspaceID: wsUUID,
+			ProjectID:   projectID,
+		})
 	} else {
-		rows, err = h.Queries.ListExplorations(r.Context(), wsUUID)
+		rows, err = h.Queries.ListExplorations(r.Context(), db.ListExplorationsParams{
+			WorkspaceID: wsUUID,
+			ProjectID:   projectID,
+		})
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list explorations")
@@ -252,6 +265,10 @@ func (h *Handler) CreateExploration(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	projectID, ok := h.projectIDFromRequest(w, r, req.ProjectID, wsUUID)
+	if !ok {
+		return
+	}
 
 	// Verify related refs belong to this workspace before persisting — DB
 	// has no cross-workspace FK constraint, so the handler is the only line
@@ -281,6 +298,7 @@ func (h *Handler) CreateExploration(w http.ResponseWriter, r *http.Request) {
 		Topic:            req.Topic,
 		Question:         strings.TrimSpace(req.Question),
 		Status:           "open",
+		ProjectID:        projectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create exploration")

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, PanelLeftClose, Plus } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -28,21 +27,21 @@ import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { toast } from "sonner";
 import { ActorAvatar } from "../common/actor-avatar";
+import { useNavigation } from "../navigation";
 import { ProjectWorkspacePage } from "./project-workspace-page";
 
 // /workspaces 二栏布局: 左 sidebar list + 右主区 detail
 // /workspaces/:id 走同一个组件，:id 决定主区显示哪个项目
-export function ProjectWorkspacesListPage() {
+export function ProjectWorkspacesListPage({ projectId }: { projectId?: string }) {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
-  const navigate = useNavigate();
-  const { id: routeId } = useParams<{ id: string }>();
+  const navigation = useNavigation();
   const { data: projects = [], isLoading } = useQuery(
     projectV12ListOptions(wsId),
   );
   const [creating, setCreating] = useState(false);
 
-  const activeId = routeId ?? projects[0]?.id ?? "";
+  const activeId = projectId ?? projects[0]?.id ?? "";
 
   // Sidebar collapse — persisted so the user's preference survives reloads.
   // The chat column is the protagonist of this page; the project picker is
@@ -128,7 +127,7 @@ export function ProjectWorkspacesListPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          navigate(paths.projectWorkspaceDetail(project.id))
+	                          navigation.push(paths.projectWorkspaceDetail(project.id))
                         }
                         className={cn(
                           "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
@@ -206,6 +205,12 @@ export function ProjectWorkspacesListPage() {
   );
 }
 
+type DirectoryPickerAPI = {
+  desktopAPI?: {
+    selectDirectory?: () => Promise<string | null>;
+  };
+};
+
 const projectStatusDot: Record<string, string> = {
   active: "bg-emerald-500",
   paused: "bg-amber-500",
@@ -228,7 +233,7 @@ const projectStatusCopy: Record<string, string> = {
 function CreateProjectDialog({ onClose }: { onClose: () => void }) {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
-  const navigate = useNavigate();
+  const navigation = useNavigation();
   const create = useCreateProjectV12(wsId);
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const activeAgents = agents.filter((a) => !a.archived_at);
@@ -237,6 +242,9 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [localDir, setLocalDir] = useState("");
+  const canPickDirectory =
+    typeof window !== "undefined" &&
+    Boolean((window as unknown as DirectoryPickerAPI).desktopAPI?.selectDirectory);
 
   const toggleAgent = (id: string) => {
     setAgentIds((prev) => {
@@ -279,10 +287,17 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
       });
       toast.success(`「${project.title}」已创建`);
       onClose();
-      navigate(paths.projectWorkspaceDetail(project.id));
+      navigation.push(paths.projectWorkspaceDetail(project.id));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "创建失败");
     }
+  };
+
+  const pickDirectory = async () => {
+    const picker = (window as unknown as DirectoryPickerAPI).desktopAPI?.selectDirectory;
+    if (!picker) return;
+    const dir = await picker();
+    if (dir) setLocalDir(dir);
   };
 
   return (
@@ -321,15 +336,23 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
 
           <div className="space-y-1.5">
             <Label htmlFor="proj-dir" className="text-xs">绑定本地工作目录</Label>
-            <Input
-              id="proj-dir"
-              value={localDir}
-              onChange={(e) => setLocalDir(e.target.value)}
-              placeholder="~/work/my-project"
-              className="font-mono text-[12px]"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="proj-dir"
+                value={localDir}
+                onChange={(e) => setLocalDir(e.target.value)}
+                placeholder="/path/to/project"
+                className="font-mono text-[12px]"
+              />
+              {canPickDirectory && (
+                <Button type="button" variant="outline" onClick={pickDirectory}>
+                  <FolderOpen className="size-4" />
+                  选择
+                </Button>
+              )}
+            </div>
             <p className="text-[11px] text-muted-foreground">
-              绑定后不可改。所有项目 agent 默认获得读权限。
+              绑定后不可改。该路径会传递给本地 runtime 作为工作目录上下文；实际读写权限取决于本机运行环境。
             </p>
           </div>
 

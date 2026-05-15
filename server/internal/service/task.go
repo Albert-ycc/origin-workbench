@@ -16,7 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/mention"
+	"github.com/multica-ai/multica/server/internal/modelapi"
 	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/multica-ai/multica/server/internal/runtimeconfig"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -24,11 +26,12 @@ import (
 )
 
 type TaskService struct {
-	Queries   *db.Queries
-	TxStarter TxStarter
-	Hub       *realtime.Hub
-	Bus       *events.Bus
-	Wakeup    TaskWakeupNotifier
+	Queries              *db.Queries
+	TxStarter            TxStarter
+	Hub                  *realtime.Hub
+	Bus                  *events.Bus
+	Wakeup               TaskWakeupNotifier
+	APIChatClientFactory func(runtimeconfig.APIRuntimeConfig) apiRuntimeChatClient
 	// EmptyClaim caches "this runtime has no queued task" so the daemon
 	// poll path can skip a Postgres scan on the steady-state empty case.
 	// Optional — a nil cache disables the fast path and every claim
@@ -41,6 +44,10 @@ type TaskWakeupNotifier interface {
 	NotifyTaskAvailable(runtimeID, taskID string)
 }
 
+type apiRuntimeChatClient interface {
+	Chat(ctx context.Context, req modelapi.ChatRequest) (modelapi.ChatResult, error)
+}
+
 type skillCandidate struct {
 	Name        string
 	Description string
@@ -51,6 +58,8 @@ type skillCandidate struct {
 // transmit (it ends up in every task list response). 200 is enough for a
 // recognisable preview of a one-paragraph comment.
 const triggerSummaryMaxLen = 200
+
+const apiRuntimeChatTaskTimeout = 5 * time.Minute
 
 // truncateForSummary returns s shortened to maxRunes, with a trailing
 // `…` when truncated. Operates on runes (not bytes) so multibyte characters
@@ -105,6 +114,24 @@ func NewTaskService(q *db.Queries, tx TxStarter, hub *realtime.Hub, bus *events.
 	return &TaskService{Queries: q, TxStarter: tx, Hub: hub, Bus: bus, Wakeup: wakeup}
 }
 
+func (s *TaskService) ensureAgentRuntimeCanQueueDaemonTask(ctx context.Context, agent db.Agent) error {
+	if !agent.RuntimeID.Valid {
+		return fmt.Errorf("agent has no runtime")
+	}
+	rt, err := s.Queries.GetAgentRuntime(ctx, agent.RuntimeID)
+	if err != nil {
+		return fmt.Errorf("load runtime: %w", err)
+	}
+	return runtimeCanQueueDaemonTask(rt)
+}
+
+func runtimeCanQueueDaemonTask(rt db.AgentRuntime) error {
+	if runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata) {
+		return fmt.Errorf("API runtime only supports server-side chat tasks; issue and project tasks require a local runtime")
+	}
+	return nil
+}
+
 // EnqueueTaskForIssue creates a queued task for an agent-assigned issue.
 // No context snapshot is stored — the agent fetches all data it needs at
 // runtime via the multica CLI.
@@ -139,6 +166,10 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 	if !agent.RuntimeID.Valid {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "agent has no runtime")
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
+	}
+	if err := s.ensureAgentRuntimeCanQueueDaemonTask(ctx, agent); err != nil {
+		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agent.ID), "error", err)
+		return db.AgentTaskQueue{}, err
 	}
 
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
@@ -188,6 +219,10 @@ func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue,
 	if !agent.RuntimeID.Valid {
 		slog.Error("mention task enqueue failed: agent has no runtime", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID))
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
+	}
+	if err := s.ensureAgentRuntimeCanQueueDaemonTask(ctx, agent); err != nil {
+		slog.Error("mention task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+		return db.AgentTaskQueue{}, err
 	}
 
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
@@ -272,6 +307,9 @@ func (s *TaskService) EnqueueQuickCreateTask(ctx context.Context, workspaceID, r
 	if !agent.RuntimeID.Valid {
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
+	if err := s.ensureAgentRuntimeCanQueueDaemonTask(ctx, agent); err != nil {
+		return db.AgentTaskQueue{}, err
+	}
 
 	payload := QuickCreateContext{
 		Type:        QuickCreateContextType,
@@ -323,6 +361,9 @@ func (s *TaskService) EnqueueProjectCompactionTask(ctx context.Context, workspac
 	}
 	if !agent.RuntimeID.Valid {
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
+	}
+	if err := s.ensureAgentRuntimeCanQueueDaemonTask(ctx, agent); err != nil {
+		return db.AgentTaskQueue{}, err
 	}
 
 	payload := ProjectCompactionContext{
@@ -383,6 +424,26 @@ func (s *TaskService) EnqueueChatTaskForAgent(ctx context.Context, chatSession d
 	if !agent.RuntimeID.Valid {
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
+	rt, err := s.Queries.GetAgentRuntime(ctx, agent.RuntimeID)
+	if err != nil {
+		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+		return db.AgentTaskQueue{}, fmt.Errorf("load runtime: %w", err)
+	}
+	apiRuntime := runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata)
+	if !apiRuntime {
+		if err := runtimeCanQueueDaemonTask(rt); err != nil {
+			slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+			return db.AgentTaskQueue{}, err
+		}
+	}
+	if apiRuntime {
+		cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromEnv()
+		if !ok || cfg.Status() != "online" {
+			err := fmt.Errorf("API runtime is not online; set %s and %s", runtimeconfig.EnvAPIKey, runtimeconfig.EnvModelName)
+			slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+			return db.AgentTaskQueue{}, err
+		}
+	}
 
 	var taskContext []byte
 	if len(taskContexts) > 0 && len(taskContexts[0]) > 0 {
@@ -413,8 +474,192 @@ func (s *TaskService) EnqueueChatTaskForAgent(ctx context.Context, chatSession d
 	s.recordMailboxSubmissionIfNeeded(ctx, agent, chatSession, task)
 	// See EnqueueTaskForIssue for ordering rationale.
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
-	s.notifyTaskAvailable(task)
+	if apiRuntime {
+		s.runAPIRuntimeChatTasksAsync(agentID)
+	} else {
+		s.notifyTaskAvailable(task)
+	}
 	return task, nil
+}
+
+func (s *TaskService) runAPIRuntimeChatTasksAsync(agentID pgtype.UUID) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), apiRuntimeChatTaskTimeout)
+		defer cancel()
+		if err := s.runQueuedAPIRuntimeChatTasks(ctx, agentID); err != nil {
+			slog.Warn("API runtime chat executor stopped", "agent_id", util.UUIDToString(agentID), "error", err)
+		}
+	}()
+}
+
+func (s *TaskService) runQueuedAPIRuntimeChatTasks(ctx context.Context, agentID pgtype.UUID) error {
+	for {
+		task, err := s.ClaimTask(ctx, agentID)
+		if err != nil {
+			return err
+		}
+		if task == nil {
+			return nil
+		}
+		if err := s.runClaimedAPIRuntimeChatTask(ctx, *task); err != nil {
+			slog.Warn("API runtime chat task failed", "task_id", util.UUIDToString(task.ID), "error", err)
+		}
+	}
+}
+
+func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.AgentTaskQueue) error {
+	runningTask, err := s.StartTask(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	task = *runningTask
+
+	fail := func(message string) error {
+		_, failErr := s.FailTask(ctx, task.ID, message, "", "", "api_runtime_error")
+		if failErr != nil {
+			return fmt.Errorf("%s; fail task: %w", message, failErr)
+		}
+		return errors.New(message)
+	}
+
+	if !task.ChatSessionID.Valid {
+		return fail("API runtime only supports chat tasks")
+	}
+
+	rt, err := s.Queries.GetAgentRuntime(ctx, task.RuntimeID)
+	if err != nil {
+		return fail("failed to load API runtime")
+	}
+	if !runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata) {
+		return fail("claimed task does not belong to an API runtime")
+	}
+
+	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromEnv()
+	if !ok || cfg.Status() != "online" {
+		return fail("API runtime is not configured; set ORIGIN_MODEL_API_KEY and ORIGIN_MODEL_NAME")
+	}
+
+	agent, err := s.Queries.GetAgent(ctx, task.AgentID)
+	if err != nil {
+		return fail("failed to load agent for API runtime task")
+	}
+	model := apiRuntimeModelForAgent(agent, cfg)
+	messages, err := s.buildAPIRuntimeChatMessages(ctx, task, agent)
+	if err != nil {
+		return fail(err.Error())
+	}
+
+	res, err := s.apiRuntimeChatClient(cfg).Chat(ctx, modelapi.ChatRequest{
+		Model:    model,
+		Messages: messages,
+	})
+	if err != nil {
+		return fail(err.Error())
+	}
+
+	if res.InputTokens > 0 || res.OutputTokens > 0 || res.CacheReadTokens > 0 || res.CacheWriteTokens > 0 {
+		if err := s.Queries.UpsertTaskUsage(ctx, db.UpsertTaskUsageParams{
+			TaskID:           task.ID,
+			Provider:         cfg.Provider,
+			Model:            model,
+			InputTokens:      res.InputTokens,
+			OutputTokens:     res.OutputTokens,
+			CacheReadTokens:  res.CacheReadTokens,
+			CacheWriteTokens: res.CacheWriteTokens,
+		}); err != nil {
+			slog.Warn("failed to record API runtime usage", "task_id", util.UUIDToString(task.ID), "error", err)
+		}
+	}
+
+	result, _ := json.Marshal(protocol.TaskCompletedPayload{
+		TaskID: util.UUIDToString(task.ID),
+		Output: res.Content,
+	})
+	if _, err := s.CompleteTask(ctx, task.ID, result, "", ""); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *TaskService) apiRuntimeChatClient(cfg runtimeconfig.APIRuntimeConfig) apiRuntimeChatClient {
+	if s.APIChatClientFactory != nil {
+		return s.APIChatClientFactory(cfg)
+	}
+	return modelapi.NewClient(cfg.APIKey, cfg.BaseURL, nil)
+}
+
+func apiRuntimeModelForAgent(agent db.Agent, cfg runtimeconfig.APIRuntimeConfig) string {
+	if agent.Model.Valid {
+		if model := strings.TrimSpace(agent.Model.String); model != "" {
+			return model
+		}
+	}
+	return cfg.DefaultModel
+}
+
+func (s *TaskService) buildAPIRuntimeChatMessages(ctx context.Context, task db.AgentTaskQueue, agent db.Agent) ([]modelapi.Message, error) {
+	if !task.ChatSessionID.Valid {
+		return nil, fmt.Errorf("chat session is required")
+	}
+
+	var messages []modelapi.Message
+	systemPrompt := s.buildAPIRuntimeSystemPrompt(ctx, task, agent)
+	if systemPrompt != "" {
+		messages = append(messages, modelapi.Message{Role: "system", Content: systemPrompt})
+	}
+
+	history, err := s.Queries.ListChatMessages(ctx, task.ChatSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load chat history: %w", err)
+	}
+	for _, msg := range history {
+		role := msg.Role
+		if role != "user" && role != "assistant" && role != "system" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		messages = append(messages, modelapi.Message{Role: role, Content: content})
+	}
+	if len(messages) == 0 || (len(messages) == 1 && messages[0].Role == "system") {
+		return nil, fmt.Errorf("chat history has no user message")
+	}
+	return messages, nil
+}
+
+func (s *TaskService) buildAPIRuntimeSystemPrompt(ctx context.Context, task db.AgentTaskQueue, agent db.Agent) string {
+	var parts []string
+	if instructions := strings.TrimSpace(agent.Instructions); instructions != "" {
+		parts = append(parts, instructions)
+	}
+
+	skills, requestedNames := s.LoadAgentSkillsForTask(ctx, agent.ID, agent.WorkspaceID, task.Context)
+	if len(skills) > 0 {
+		var b strings.Builder
+		b.WriteString("Agent skills available as reference material:")
+		for _, skill := range skills {
+			b.WriteString("\n\n# ")
+			b.WriteString(skill.Name)
+			if skill.Content != "" {
+				b.WriteString("\n")
+				b.WriteString(skill.Content)
+			}
+			for _, file := range skill.Files {
+				b.WriteString("\n\n## ")
+				b.WriteString(file.Path)
+				b.WriteString("\n")
+				b.WriteString(file.Content)
+			}
+		}
+		if len(requestedNames) > 0 {
+			b.WriteString("\n\nThe user explicitly invoked: ")
+			b.WriteString(strings.Join(requestedNames, ", "))
+		}
+		parts = append(parts, b.String())
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
 // CancelTasksForIssue cancels every active task on the issue, reconciles each
@@ -1746,6 +1991,7 @@ func (s *TaskService) delegateTeamMentions(ctx context.Context, session db.ChatS
 		// issue 创建后自动 enqueue assignment task（沿用 v1.0 issue 流）。
 		if _, err := s.EnqueueTaskForIssue(ctx, issue); err != nil {
 			failed = append(failed, t.AgentName)
+			s.markDelegationIssueBlocked(ctx, issue, err)
 			slog.Warn("team delegation issue task enqueue failed",
 				"issue_id", util.UUIDToString(issue.ID),
 				"target_agent_id", util.UUIDToString(t.AgentID),
@@ -1786,6 +2032,29 @@ func (s *TaskService) delegateTeamMentions(ctx context.Context, session db.ChatS
 	if body != "" {
 		s.createTeamSystemMessage(ctx, session, team.ID, body)
 	}
+}
+
+func (s *TaskService) markDelegationIssueBlocked(ctx context.Context, issue db.Issue, enqueueErr error) {
+	updated, err := s.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+		ID:     issue.ID,
+		Status: "blocked",
+	})
+	if err == nil {
+		issue = updated
+	}
+	reason := strings.TrimSpace(enqueueErr.Error())
+	if reason == "" {
+		reason = "agent task enqueue failed"
+	}
+	s.createAgentComment(
+		ctx,
+		issue.ID,
+		issue.AssigneeID,
+		"任务暂时无法启动："+reason+"。请检查 agent runtime 后重新派发或手动处理。",
+		"system",
+		pgtype.UUID{},
+	)
+	s.broadcastIssueUpdated(issue)
 }
 
 // teamMentionTask 是从 captain reply 里解析出的一条派活：被 @ 的 agent +
@@ -2698,7 +2967,7 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
 		ActorType:   "agent",
 		ActorID:     util.UUIDToString(agentID),
-		Payload: map[string]any{
+		Payload: addIssueSourceFields(map[string]any{
 			"comment": map[string]any{
 				"id":          util.UUIDToString(comment.ID),
 				"issue_id":    util.UUIDToString(comment.IssueID),
@@ -2711,29 +2980,42 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 			},
 			"issue_title":  issue.Title,
 			"issue_status": issue.Status,
-		},
+		}, issue),
 	})
+}
+
+func addIssueSourceFields(payload map[string]any, issue db.Issue) map[string]any {
+	if issue.SourceTeamMessageID.Valid {
+		payload["source_team_message_id"] = util.UUIDToString(issue.SourceTeamMessageID)
+	}
+	if issue.SourceTeamSessionID.Valid {
+		payload["source_team_session_id"] = util.UUIDToString(issue.SourceTeamSessionID)
+	}
+	return payload
 }
 
 func issueToMap(issue db.Issue, issuePrefix string) map[string]any {
 	return map[string]any{
-		"id":              util.UUIDToString(issue.ID),
-		"workspace_id":    util.UUIDToString(issue.WorkspaceID),
-		"number":          issue.Number,
-		"identifier":      issuePrefix + "-" + strconv.Itoa(int(issue.Number)),
-		"title":           issue.Title,
-		"description":     util.TextToPtr(issue.Description),
-		"status":          issue.Status,
-		"priority":        issue.Priority,
-		"assignee_type":   util.TextToPtr(issue.AssigneeType),
-		"assignee_id":     util.UUIDToPtr(issue.AssigneeID),
-		"creator_type":    issue.CreatorType,
-		"creator_id":      util.UUIDToString(issue.CreatorID),
-		"parent_issue_id": util.UUIDToPtr(issue.ParentIssueID),
-		"position":        issue.Position,
-		"due_date":        util.TimestampToPtr(issue.DueDate),
-		"created_at":      util.TimestampToString(issue.CreatedAt),
-		"updated_at":      util.TimestampToString(issue.UpdatedAt),
+		"id":                     util.UUIDToString(issue.ID),
+		"workspace_id":           util.UUIDToString(issue.WorkspaceID),
+		"number":                 issue.Number,
+		"identifier":             issuePrefix + "-" + strconv.Itoa(int(issue.Number)),
+		"title":                  issue.Title,
+		"description":            util.TextToPtr(issue.Description),
+		"status":                 issue.Status,
+		"priority":               issue.Priority,
+		"assignee_type":          util.TextToPtr(issue.AssigneeType),
+		"assignee_id":            util.UUIDToPtr(issue.AssigneeID),
+		"creator_type":           issue.CreatorType,
+		"creator_id":             util.UUIDToString(issue.CreatorID),
+		"parent_issue_id":        util.UUIDToPtr(issue.ParentIssueID),
+		"project_id":             util.UUIDToPtr(issue.ProjectID),
+		"position":               issue.Position,
+		"due_date":               util.TimestampToPtr(issue.DueDate),
+		"source_team_message_id": util.UUIDToPtr(issue.SourceTeamMessageID),
+		"source_team_session_id": util.UUIDToPtr(issue.SourceTeamSessionID),
+		"created_at":             util.TimestampToString(issue.CreatedAt),
+		"updated_at":             util.TimestampToString(issue.UpdatedAt),
 	}
 }
 

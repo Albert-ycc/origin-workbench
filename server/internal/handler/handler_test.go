@@ -36,6 +36,7 @@ const (
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
+	requireIntegrationDB := os.Getenv("INTEGRATION_TESTS") == "1"
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
@@ -44,11 +45,17 @@ func TestMain(m *testing.M) {
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		fmt.Printf("Skipping tests: could not connect to database: %v\n", err)
+		if requireIntegrationDB {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		fmt.Printf("Skipping tests: database not reachable: %v\n", err)
 		pool.Close()
+		if requireIntegrationDB {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 

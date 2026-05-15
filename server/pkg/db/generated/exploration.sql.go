@@ -41,12 +41,12 @@ const createExploration = `-- name: CreateExploration :one
 INSERT INTO exploration (
     workspace_id, created_by_user_id,
     related_mission_id, related_idea_id,
-    topic, question, status
+    topic, question, status, project_id
 ) VALUES (
     $1, $2,
     $6::uuid,
     $7::uuid,
-    $3, $4, $5
+    $3, $4, $5, $8::uuid
 )
 RETURNING id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id
 `
@@ -59,6 +59,7 @@ type CreateExplorationParams struct {
 	Status           string      `json:"status"`
 	RelatedMissionID pgtype.UUID `json:"related_mission_id"`
 	RelatedIdeaID    pgtype.UUID `json:"related_idea_id"`
+	ProjectID        pgtype.UUID `json:"project_id"`
 }
 
 func (q *Queries) CreateExploration(ctx context.Context, arg CreateExplorationParams) (Exploration, error) {
@@ -70,6 +71,7 @@ func (q *Queries) CreateExploration(ctx context.Context, arg CreateExplorationPa
 		arg.Status,
 		arg.RelatedMissionID,
 		arg.RelatedIdeaID,
+		arg.ProjectID,
 	)
 	var i Exploration
 	err := row.Scan(
@@ -246,12 +248,18 @@ func (q *Queries) GetExplorationInWorkspace(ctx context.Context, arg GetExplorat
 const listArchivedExplorations = `-- name: ListArchivedExplorations :many
 SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id FROM exploration
 WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR project_id = $2::uuid)
   AND status = 'archived'
 ORDER BY updated_at DESC
 `
 
-func (q *Queries) ListArchivedExplorations(ctx context.Context, workspaceID pgtype.UUID) ([]Exploration, error) {
-	rows, err := q.db.Query(ctx, listArchivedExplorations, workspaceID)
+type ListArchivedExplorationsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListArchivedExplorations(ctx context.Context, arg ListArchivedExplorationsParams) ([]Exploration, error) {
+	rows, err := q.db.Query(ctx, listArchivedExplorations, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,15 +341,21 @@ const listExplorations = `-- name: ListExplorations :many
 
 SELECT id, workspace_id, created_by_user_id, related_mission_id, related_idea_id, topic, question, status, decision, created_at, updated_at, project_id FROM exploration
 WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR project_id = $2::uuid)
   AND status <> 'archived'
 ORDER BY updated_at DESC
 `
 
+type ListExplorationsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
 // =====================
 // Exploration CRUD
 // =====================
-func (q *Queries) ListExplorations(ctx context.Context, workspaceID pgtype.UUID) ([]Exploration, error) {
-	rows, err := q.db.Query(ctx, listExplorations, workspaceID)
+func (q *Queries) ListExplorations(ctx context.Context, arg ListExplorationsParams) ([]Exploration, error) {
+	rows, err := q.db.Query(ctx, listExplorations, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

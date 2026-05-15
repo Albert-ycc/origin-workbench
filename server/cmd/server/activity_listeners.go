@@ -256,33 +256,65 @@ func handleTaskActivity(ctx context.Context, bus *events.Bus, queries *db.Querie
 		return
 	}
 
-	publishActivityEvent(bus, e, activity)
+	publishActivityEvent(bus, e, activity, issue)
 }
 
 // publishActivityEvent sends an activity:created event for WS broadcasting.
 // Payload matches frontend ActivityCreatedPayload: { issue_id, entry: TimelineEntry }
-func publishActivityEvent(bus *events.Bus, original events.Event, activity db.ActivityLog) {
+func publishActivityEvent(bus *events.Bus, original events.Event, activity db.ActivityLog, sourceIssues ...any) {
 	actorType := ""
 	if activity.ActorType.Valid {
 		actorType = activity.ActorType.String
 	}
 	action := activity.Action
+	payload := map[string]any{
+		"issue_id": util.UUIDToString(activity.IssueID),
+		"entry": map[string]any{
+			"type":       "activity",
+			"id":         util.UUIDToString(activity.ID),
+			"actor_type": actorType,
+			"actor_id":   util.UUIDToString(activity.ActorID),
+			"action":     action,
+			"details":    json.RawMessage(activity.Details),
+			"created_at": util.TimestampToString(activity.CreatedAt),
+		},
+	}
+	addActivityIssueSource(payload, original.Payload, sourceIssues...)
 	bus.Publish(events.Event{
 		Type:        protocol.EventActivityCreated,
 		WorkspaceID: original.WorkspaceID,
 		ActorType:   original.ActorType,
 		ActorID:     original.ActorID,
-		Payload: map[string]any{
-			"issue_id": util.UUIDToString(activity.IssueID),
-			"entry": map[string]any{
-				"type":       "activity",
-				"id":         util.UUIDToString(activity.ID),
-				"actor_type": actorType,
-				"actor_id":   util.UUIDToString(activity.ActorID),
-				"action":     action,
-				"details":    json.RawMessage(activity.Details),
-				"created_at": util.TimestampToString(activity.CreatedAt),
-			},
-		},
+		Payload:     payload,
 	})
+}
+
+func addActivityIssueSource(payload map[string]any, originalPayload any, sourceIssues ...any) {
+	for _, source := range sourceIssues {
+		switch issue := source.(type) {
+		case handler.IssueResponse:
+			if issue.SourceTeamMessageID != nil {
+				payload["source_team_message_id"] = *issue.SourceTeamMessageID
+			}
+			if issue.SourceTeamSessionID != nil {
+				payload["source_team_session_id"] = *issue.SourceTeamSessionID
+			}
+			return
+		case db.Issue:
+			if issue.SourceTeamMessageID.Valid {
+				payload["source_team_message_id"] = util.UUIDToString(issue.SourceTeamMessageID)
+			}
+			if issue.SourceTeamSessionID.Valid {
+				payload["source_team_session_id"] = util.UUIDToString(issue.SourceTeamSessionID)
+			}
+			return
+		}
+	}
+	raw, ok := originalPayload.(map[string]any)
+	if !ok {
+		return
+	}
+	if issue, ok := raw["issue"].(handler.IssueResponse); ok {
+		addActivityIssueSource(payload, nil, issue)
+	}
 }

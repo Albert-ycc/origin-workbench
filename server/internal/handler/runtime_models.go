@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/runtimeconfig"
 )
 
 // ---------------------------------------------------------------------------
@@ -212,7 +213,32 @@ func (h *Handler) InitiateListModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := h.ModelListStore.Create(uuidToString(rt.ID))
+	if runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata) {
+		models := apiRuntimeModelEntries(rt.Metadata)
+		if len(models) == 0 {
+			h.ModelListStore.Fail(req.ID, "no API model configured; set ORIGIN_MODEL_NAME")
+		} else {
+			h.ModelListStore.Complete(req.ID, models, true)
+		}
+		writeJSON(w, http.StatusOK, h.ModelListStore.Get(req.ID))
+		return
+	}
+
 	writeJSON(w, http.StatusOK, req)
+}
+
+func apiRuntimeModelEntries(metadata []byte) []ModelEntry {
+	models := runtimeconfig.ModelsFromMetadata(metadata)
+	entries := make([]ModelEntry, 0, len(models))
+	for _, model := range models {
+		entries = append(entries, ModelEntry{
+			ID:       model.ID,
+			Label:    model.Label,
+			Provider: model.Provider,
+			Default:  model.Default,
+		})
+	}
+	return entries
 }
 
 // GetModelListRequest returns the status of a model list request.

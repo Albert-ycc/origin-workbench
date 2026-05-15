@@ -37,7 +37,7 @@ linux:
     - AppImage
     - deb
     - rpm
-  artifactName: multica-desktop-${version}-linux-${arch}.${ext}
+  artifactName: origin-${version}-linux-${arch}.${ext}
 rpm:
   # Disable RPM build-id symlinks. Electron apps embed the upstream Electron
   # binary, whose GNU build-id is identical across every app shipping the same
@@ -49,7 +49,7 @@ rpm:
 win:
   target:
     - nsis
-  artifactName: multica-desktop-${version}-windows-${arch}.${ext}
+  artifactName: origin-${version}-windows-${arch}.${ext}
 publish:
   provider: github
   owner: Albert-ycc

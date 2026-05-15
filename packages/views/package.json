@@ -26,6 +26,7 @@
     "./explorations": "./explorations/index.ts",
     "./missions": "./missions/index.ts",
     "./teams": "./teams/index.ts",
+    "./meetings": "./meetings/index.ts",
     "./project-workspaces": "./project-workspaces/index.ts",
     "./modals/registry": "./modals/registry.tsx",
     "./modals/create-issue": "./modals/create-issue.tsx",

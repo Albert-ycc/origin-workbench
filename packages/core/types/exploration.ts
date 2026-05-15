@@ -8,6 +8,7 @@ export type ExplorationBranchVerdict =
 export interface Exploration {
   id: string;
   workspace_id: string;
+  project_id?: string | null;
   created_by_user_id: string;
   related_mission_id: string | null;
   related_idea_id: string | null;
@@ -45,6 +46,7 @@ export interface ExplorationDetail {
 }
 
 export interface CreateExplorationRequest {
+  project_id?: string;
   topic: string;
   question?: string;
   related_mission_id?: string;

@@ -16,18 +16,26 @@ export function useCreateMission() {
   return useMutation({
     mutationFn: (data: CreateMissionRequest) => api.createMission(data),
     onSuccess: (detail) => {
+      const projectId = detail.mission.project_id;
       qc.setQueryData<ListMissionsResponse>(missionKeys.list(wsId), (old) =>
         old && !old.missions.some((m) => m.id === detail.mission.id)
           ? { ...old, missions: [detail.mission, ...old.missions], total: old.total + 1 }
           : old,
       );
+      if (projectId) {
+        qc.setQueryData<ListMissionsResponse>(missionKeys.list(wsId, "active", projectId), (old) =>
+          old && !old.missions.some((m) => m.id === detail.mission.id)
+            ? { ...old, missions: [detail.mission, ...old.missions], total: old.total + 1 }
+            : old,
+        );
+      }
       qc.setQueryData<MissionDetail>(
         missionKeys.detail(wsId, detail.mission.id),
         detail,
       );
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: missionKeys.list(wsId) });
+      qc.invalidateQueries({ queryKey: missionKeys.all(wsId) });
     },
   });
 }
@@ -43,7 +51,7 @@ export function useUpdateMission() {
     },
     onSettled: (_data, _error, vars) => {
       qc.invalidateQueries({ queryKey: missionKeys.detail(wsId, vars.id) });
-      qc.invalidateQueries({ queryKey: missionKeys.list(wsId) });
+      qc.invalidateQueries({ queryKey: missionKeys.all(wsId) });
     },
   });
 }
@@ -63,6 +71,17 @@ export function useArchiveMission() {
             }
           : old,
       );
+      if (mission.project_id) {
+        qc.setQueryData<ListMissionsResponse>(missionKeys.list(wsId, "active", mission.project_id), (old) =>
+          old
+            ? {
+                ...old,
+                missions: old.missions.filter((m) => m.id !== mission.id),
+                total: Math.max(0, old.total - 1),
+              }
+            : old,
+        );
+      }
       qc.invalidateQueries({ queryKey: missionKeys.all(wsId) });
     },
   });
@@ -81,6 +100,16 @@ function patchMissionCaches(
         }
       : old,
   );
+  if (mission.project_id) {
+    qc.setQueryData<ListMissionsResponse>(missionKeys.list(wsId, "active", mission.project_id), (old) =>
+      old
+        ? {
+            ...old,
+            missions: old.missions.map((m) => (m.id === mission.id ? mission : m)),
+          }
+        : old,
+    );
+  }
   qc.setQueryData<MissionDetail>(missionKeys.detail(wsId, mission.id), (old) =>
     old ? { ...old, mission } : old,
   );

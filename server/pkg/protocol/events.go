@@ -105,31 +105,31 @@ const (
 	EventMissionArchived = "mission:archived"
 
 	// Idea events (Origin idea pool)
-	EventIdeaCreated  = "idea:created"
-	EventIdeaUpdated  = "idea:updated"
-	EventIdeaArchived = "idea:archived"
-	EventIdeaDeleted  = "idea:deleted"
-	EventIdeaPromoted = "idea:promoted"
+	EventIdeaCreated     = "idea:created"
+	EventIdeaUpdated     = "idea:updated"
+	EventIdeaArchived    = "idea:archived"
+	EventIdeaDeleted     = "idea:deleted"
+	EventIdeaPromoted    = "idea:promoted"
 	EventIdeaNoteAdded   = "idea:note_added"
 	EventIdeaNoteDeleted = "idea:note_deleted"
 
 	// Council Session events (Origin on-demand multi-agent room)
-	EventCouncilCreated            = "council:created"
-	EventCouncilUpdated            = "council:updated"
-	EventCouncilAdjourned          = "council:adjourned"
-	EventCouncilArchived           = "council:archived"
-	EventCouncilDeleted            = "council:deleted"
+	EventCouncilCreated           = "council:created"
+	EventCouncilUpdated           = "council:updated"
+	EventCouncilAdjourned         = "council:adjourned"
+	EventCouncilArchived          = "council:archived"
+	EventCouncilDeleted           = "council:deleted"
 	EventCouncilParticipantJoined = "council:participant_joined"
 	EventCouncilParticipantLeft   = "council:participant_left"
 
 	// Exploration events (Origin §14.7 Branching Exploration)
-	EventExplorationCreated        = "exploration:created"
-	EventExplorationUpdated        = "exploration:updated"
-	EventExplorationArchived       = "exploration:archived"
-	EventExplorationDeleted        = "exploration:deleted"
-	EventExplorationBranchCreated  = "exploration:branch_created"
-	EventExplorationBranchUpdated  = "exploration:branch_updated"
-	EventExplorationBranchDeleted  = "exploration:branch_deleted"
+	EventExplorationCreated       = "exploration:created"
+	EventExplorationUpdated       = "exploration:updated"
+	EventExplorationArchived      = "exploration:archived"
+	EventExplorationDeleted       = "exploration:deleted"
+	EventExplorationBranchCreated = "exploration:branch_created"
+	EventExplorationBranchUpdated = "exploration:branch_updated"
+	EventExplorationBranchDeleted = "exploration:branch_deleted"
 
 	// ToolBinding events (Origin §14.9 — bind external tools to subjects)
 	EventToolBindingCreated = "tool_binding:created"
@@ -141,6 +141,19 @@ const (
 	// classification. Reuse them — frontend WS subscribers don't distinguish.
 	EventProjectArchived         = "project:archived"
 	EventProjectMemoryDocUpdated = "project:memory_doc_updated"
+
+	// Meeting copilot events (Origin §18 — realtime meeting transcript,
+	// evidence-backed insight cards, and right-side strong visual alerts).
+	EventMeetingCreated                  = "meeting:created"
+	EventMeetingUpdated                  = "meeting:updated"
+	EventMeetingStarted                  = "meeting:started"
+	EventMeetingStopped                  = "meeting:stopped"
+	EventMeetingTranscriptSegmentCreated = "meeting:transcript_segment_created"
+	EventMeetingInsightCreated           = "meeting:insight_created"
+	EventMeetingInsightUpdated           = "meeting:insight_updated"
+	EventMeetingStrongAlertCreated       = "meeting:strong_alert_created"
+	EventMeetingSummaryCreated           = "meeting:summary_created"
+	EventMeetingAnalysisStatusUpdated    = "meeting:analysis_status_updated"
 
 	// Mailbox events (Origin §14.8 — Agent work mode = mailbox).
 	// Created when a mailbox-mode agent receives a chat message and starts

@@ -2,10 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveX, Bot, FileText, FolderOpen, Network, PanelLeft, PanelRightClose, PanelRightOpen, Sparkles, UserPlus, Users } from "lucide-react";
+import {
+  AlertCircle,
+  Archive,
+  ArchiveX,
+  Bot,
+  Compass,
+  FileText,
+  FolderOpen,
+  Lightbulb,
+  Loader2,
+  Mic,
+  Network,
+  PanelLeft,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  Sparkles,
+  Target,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { api } from "@multica/core/api";
 import {
   projectV12DetailOptions,
@@ -22,7 +43,22 @@ import {
   projectArchivedSessionsOptions,
   projectCompactionPreviewJobOptions,
 } from "@multica/core/projects-v12";
-import type { CompactionPreview, PinnedQuoteCandidate } from "@multica/core/types";
+import {
+  missionListOptions,
+  useCreateMission,
+} from "@multica/core/missions";
+import { ideaListOptions, useCreateIdea } from "@multica/core/ideas";
+import {
+  explorationListOptions,
+  useCreateExploration,
+} from "@multica/core/explorations";
+import type {
+  CompactionPreview,
+  Exploration,
+  Idea,
+  Mission,
+  PinnedQuoteCandidate,
+} from "@multica/core/types";
 import { teamDetailOptions } from "@multica/core/teams";
 import { useCreateCouncilSession } from "@multica/core/councils";
 import { agentListOptions } from "@multica/core/workspace/queries";
@@ -52,6 +88,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { ChatPane } from "../teams/team-detail-page";
 import { EditTeamDialog } from "../teams/edit-team-dialog";
+import { useNavigation } from "../navigation";
 
 // Project workspace page (PRD §17.3). Two-column layout:
 //   left  — project main chat (one long timeline; reuses chat-window contract)
@@ -77,6 +114,8 @@ export function ProjectWorkspacePage({
   onExpandSidebar?: () => void;
 }) {
   const wsId = useWorkspaceId();
+  const paths = useWorkspacePaths();
+  const navigation = useNavigation();
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
   const { data: project, isLoading } = useQuery(projectV12DetailOptions(wsId, projectId));
@@ -226,6 +265,14 @@ export function ProjectWorkspacePage({
             第 {project.compaction_count} 次压缩
           </span>
           {team && <ManageMembersButton team={team} />}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigation.push(paths.projectMeetings(project.id))}
+          >
+            <Mic className="size-4" />
+            会议
+          </Button>
           {mainChat && (
             <ConveneCouncilButton
               projectId={projectId}
@@ -433,28 +480,24 @@ export function ProjectWorkspacePage({
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
                 <FolderOpen className="size-8 opacity-40" />
                 <p className="max-w-xs text-xs leading-relaxed">
-                  团队工作文件浏览器还没接入。当前项目绑定的本地目录是：
+                  当前项目绑定的本地工作目录上下文是：
                 </p>
                 <code className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground">
                   {project.local_dir || "（未设置）"}
                 </code>
                 <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground/80">
-                  Phase B+ 计划接 chokidar IPC，让你在这里直接看 / 双击打开
-                  / 钉文件给 Agent。在那之前，请先在 Finder 里打开这个目录。
+                  该路径会传递给本地 runtime 作为工作目录上下文；这里不承诺额外的默认读写权限。
                 </p>
               </div>
             )}
 
             {activeTab === "items" && (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
-                <Network className="size-8 opacity-40" />
-                <p className="text-xs leading-relaxed max-w-xs">
-                  Mission / Idea / Exploration 接入中
-                  <br />
-                  数据已迁到项目维度（mission/idea.project_id），列表渲染待 Phase
-                  B+ 实装
-                </p>
-              </div>
+              <ProjectOriginItemsTab
+                projectId={projectId}
+                team={team}
+                captain={captain}
+                memberAgents={memberAgents}
+              />
             )}
 
             {activeTab === "archive" && (
@@ -465,6 +508,404 @@ export function ProjectWorkspacePage({
       </div>
     </div>
   );
+}
+
+function ProjectOriginItemsTab({
+  projectId,
+  team,
+  captain,
+  memberAgents,
+}: {
+  projectId: string;
+  team: Team | undefined;
+  captain: Agent | undefined;
+  memberAgents: Agent[];
+}) {
+  const wsId = useWorkspaceId();
+  const { data: missions = [], isLoading: missionsLoading, error: missionsError } = useQuery(
+    missionListOptions(wsId, "active", projectId),
+  );
+  const { data: ideas = [], isLoading: ideasLoading, error: ideasError } = useQuery(
+    ideaListOptions(wsId, "active", projectId),
+  );
+  const {
+    data: explorations = [],
+    isLoading: explorationsLoading,
+    error: explorationsError,
+  } = useQuery(explorationListOptions(wsId, "active", projectId));
+
+  const createMission = useCreateMission();
+  const createIdea = useCreateIdea();
+  const createExploration = useCreateExploration();
+  const [missionDraft, setMissionDraft] = useState("");
+  const [ideaDraft, setIdeaDraft] = useState("");
+  const [explorationDraft, setExplorationDraft] = useState("");
+
+  const visibleMissions = useMemo(
+    () => keepProjectItems(missions, projectId),
+    [missions, projectId],
+  );
+  const visibleIdeas = useMemo(
+    () => keepProjectItems(ideas, projectId),
+    [ideas, projectId],
+  );
+  const visibleExplorations = useMemo(
+    () => keepProjectItems(explorations, projectId),
+    [explorations, projectId],
+  );
+
+  const loading = missionsLoading || ideasLoading || explorationsLoading;
+  const error = missionsError ?? ideasError ?? explorationsError;
+  const hasItems =
+    visibleMissions.length > 0 ||
+    visibleIdeas.length > 0 ||
+    visibleExplorations.length > 0;
+
+  const submitMission = async () => {
+    const prompt = missionDraft.trim();
+    if (!prompt) return;
+    if (!captain) {
+      toast.error("当前项目还没有负责人，无法创建 Mission");
+      return;
+    }
+    try {
+      await createMission.mutateAsync({
+        project_id: projectId,
+        team_id: team?.id,
+        captain_agent_id: captain.id,
+        member_agent_ids: memberAgents.map((agent) => agent.id),
+        title: titleFromProjectDraft(prompt, "未命名 Mission"),
+        prompt,
+        risk_level: "low",
+        execution_mode: "auto",
+      });
+      setMissionDraft("");
+      toast.success("Mission 已创建");
+    } catch (err) {
+      toast.error("Mission 创建失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const submitIdea = async () => {
+    const description = ideaDraft.trim();
+    if (!description) return;
+    try {
+      await createIdea.mutateAsync({
+        project_id: projectId,
+        description,
+        source: "manual",
+      });
+      setIdeaDraft("");
+      toast.success("Idea 已记录");
+    } catch (err) {
+      toast.error("Idea 创建失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const submitExploration = async () => {
+    const topic = explorationDraft.trim();
+    if (!topic) return;
+    try {
+      await createExploration.mutateAsync({
+        project_id: projectId,
+        topic: titleFromProjectDraft(topic, "未命名探索"),
+        question: topic,
+      });
+      setExplorationDraft("");
+      toast.success("Exploration 已创建");
+    } catch (err) {
+      toast.error("Exploration 创建失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      <div className="space-y-4 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">项目入口</h2>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              只展示当前项目下仍活跃的 Mission、Idea 和 Exploration。
+            </p>
+          </div>
+          <Badge variant="outline" className="shrink-0">
+            {visibleMissions.length + visibleIdeas.length + visibleExplorations.length}
+          </Badge>
+        </div>
+
+        {error ? (
+          <div className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <div className="font-medium">项目入口加载失败</div>
+              <div className="mt-1 text-destructive/80">
+                {error instanceof Error ? error.message : String(error)}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <QuickProjectItemComposer
+          icon={Target}
+          title="Mission"
+          value={missionDraft}
+          placeholder="要让项目团队执行什么？"
+          buttonLabel="创建"
+          disabled={!captain || createMission.isPending}
+          pending={createMission.isPending}
+          onChange={setMissionDraft}
+          onSubmit={submitMission}
+        />
+        <QuickProjectItemComposer
+          icon={Lightbulb}
+          title="Idea"
+          value={ideaDraft}
+          placeholder="先收进项目想法池..."
+          buttonLabel="记录"
+          disabled={createIdea.isPending}
+          pending={createIdea.isPending}
+          onChange={setIdeaDraft}
+          onSubmit={submitIdea}
+        />
+        <QuickProjectItemComposer
+          icon={Compass}
+          title="Exploration"
+          value={explorationDraft}
+          placeholder="要探索或比较什么方案？"
+          buttonLabel="探索"
+          disabled={createExploration.isPending}
+          pending={createExploration.isPending}
+          onChange={setExplorationDraft}
+          onSubmit={submitExploration}
+        />
+
+        {loading ? (
+          <div className="space-y-2 pt-1">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : !hasItems && !error ? (
+          <div className="rounded-md border border-dashed bg-muted/20 p-4 text-center text-xs leading-relaxed text-muted-foreground">
+            当前项目还没有活跃入口。可以从上方快速创建，后续会按项目维度留在这里。
+          </div>
+        ) : (
+          <div className="space-y-4 pt-1">
+            <ProjectItemSection
+              icon={Target}
+              title="Missions"
+              items={visibleMissions}
+              getKey={(mission) => mission.id}
+              renderItem={(mission) => (
+                <ProjectItemRow
+                  title={mission.title}
+                  meta={`${missionStatusLabel(mission.status)} · ${formatProjectItemTime(mission.updated_at)}`}
+                  body={mission.summary || mission.prompt}
+                />
+              )}
+            />
+            <ProjectItemSection
+              icon={Lightbulb}
+              title="Ideas"
+              items={visibleIdeas}
+              getKey={(idea) => idea.id}
+              renderItem={(idea) => (
+                <ProjectItemRow
+                  title={idea.title}
+                  meta={`${ideaStatusLabel(idea.status)} · ${formatProjectItemTime(idea.updated_at)}`}
+                  body={idea.description}
+                />
+              )}
+            />
+            <ProjectItemSection
+              icon={Compass}
+              title="Explorations"
+              items={visibleExplorations}
+              getKey={(exploration) => exploration.id}
+              renderItem={(exploration) => (
+                <ProjectItemRow
+                  title={exploration.topic}
+                  meta={`${explorationStatusLabel(exploration.status)} · ${formatProjectItemTime(exploration.updated_at)}`}
+                  body={exploration.question || exploration.decision}
+                />
+              )}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QuickProjectItemComposer({
+  icon: Icon,
+  title,
+  value,
+  placeholder,
+  buttonLabel,
+  disabled,
+  pending,
+  onChange,
+  onSubmit,
+}: {
+  icon: typeof Bot;
+  title: string;
+  value: string;
+  placeholder: string;
+  buttonLabel: string;
+  disabled?: boolean;
+  pending?: boolean;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium">
+        <Icon className="size-3.5 text-muted-foreground" />
+        {title}
+      </div>
+      <Textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={2}
+        className="min-h-16 resize-none text-xs"
+        disabled={disabled}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            if (!disabled && value.trim()) onSubmit();
+          }
+        }}
+      />
+      <div className="mt-2 flex justify-end">
+        <Button
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={onSubmit}
+          disabled={disabled || !value.trim()}
+        >
+          {pending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+          {buttonLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ProjectItemSection<T>({
+  icon: Icon,
+  title,
+  items,
+  getKey,
+  renderItem,
+}: {
+  icon: typeof Bot;
+  title: string;
+  items: T[];
+  getKey: (item: T) => string;
+  renderItem: (item: T) => React.ReactNode;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Icon className="size-3.5" />
+        {title}
+        <span className="text-[10px]">({items.length})</span>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={getKey(item)}>{renderItem(item)}</div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProjectItemRow({
+  title,
+  meta,
+  body,
+}: {
+  title: string;
+  meta: string;
+  body?: string;
+}) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 truncate text-sm font-medium">{title || "未命名"}</div>
+        <div className="shrink-0 text-[10px] text-muted-foreground">{meta}</div>
+      </div>
+      {body ? (
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          {body}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function keepProjectItems<T extends { project_id?: string | null }>(
+  items: T[],
+  projectId: string,
+) {
+  return items.filter((item) => item.project_id === undefined || item.project_id === projectId);
+}
+
+function titleFromProjectDraft(value: string, fallback: string) {
+  const first = value.trim().replace(/\s+/g, " ").split(/[。.!?\n]/)[0] ?? "";
+  if (!first) return fallback;
+  return first.length > 42 ? `${first.slice(0, 42)}...` : first;
+}
+
+function formatProjectItemTime(raw: string) {
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function missionStatusLabel(status: Mission["status"]) {
+  return {
+    draft: "草稿",
+    planning: "规划中",
+    waiting_confirmation: "待确认",
+    executing: "执行中",
+    blocked: "受阻",
+    completed: "已完成",
+    archived: "已归档",
+  }[status] ?? status;
+}
+
+function ideaStatusLabel(status: Idea["status"]) {
+  return {
+    draft: "草稿",
+    nurturing: "养育中",
+    promoted: "已升级",
+    archived: "已归档",
+  }[status] ?? status;
+}
+
+function explorationStatusLabel(status: Exploration["status"]) {
+  return {
+    open: "开放",
+    converging: "收敛中",
+    closed: "已关闭",
+    archived: "已归档",
+  }[status] ?? status;
 }
 
 function ArchivedSessionsTab({ projectId }: { projectId: string }) {

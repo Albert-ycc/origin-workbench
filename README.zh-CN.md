@@ -39,6 +39,16 @@ Origin 把 Multica 从「面向人 + Agent 团队的多租户 SaaS」改造成 *
 
 整个系统跑在 `localhost`。没有 Origin Cloud、没有团队邀请、没有邮箱验证——填个名字、挑个头像就进来。
 
+## 大模型 API runtime
+
+Origin 可以对接 OpenAI 兼容的大模型 API，用来给聊天型 Agent 提供模型回复。
+当前实现是轻量 API runtime：它只提供模型「脑子」，不会自动继承 Codex /
+Claude Code 的本地文件、Shell、浏览器、MCP、skills 等工具能力。那些能力需要
+Origin 自己补完整的 agent runtime 层。
+
+能力边界、环境变量和后续完整 Agent 模式路线图见
+[`docs/model-api-runtime.md`](docs/model-api-runtime.md)。
+
 ## 跟上游 Multica 的差别
 
 | 维度 | 上游 Multica | Origin Fork |
@@ -50,7 +60,7 @@ Origin 把 Multica 从「面向人 + Agent 团队的多租户 SaaS」改造成 *
 | 成员 / 邀请 / Labs / Repos | 设置页签 | **已删**——跟单用户模型冲突。 |
 | 自动更新 | 拉官方 Multica releases | **已删**——会把 fork 覆盖掉。 |
 | 想法池 / Council Session / User Profile | — | 新产品对象（Phase 1，migrations 074–076）。 |
-| 头像 | DiceBear 远程 URL 生成 | 内置 30 张 Lorelei 离线头像池。 |
+| 头像 | DiceBear 远程 URL 生成 | 内置 50 张原点风格离线头像池。 |
 
 完整的修改清单见 [`NOTICE`](NOTICE)。
 

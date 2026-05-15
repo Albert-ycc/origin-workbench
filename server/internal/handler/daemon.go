@@ -915,6 +915,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				resp.ProjectID = uuidToString(issue.ProjectID)
 				if proj, err := h.Queries.GetProject(r.Context(), issue.ProjectID); err == nil {
 					resp.ProjectTitle = proj.Title
+					resp.ProjectLocalDir = proj.LocalDir
 				}
 				if rows := h.listProjectResourcesForProject(r.Context(), issue.ProjectID); len(rows) > 0 {
 					out := make([]ProjectResourceData, 0, len(rows))
@@ -1080,6 +1081,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				resp.ProjectID = uuidToString(cs.ProjectID)
 				if proj, err := h.Queries.GetProjectV12(r.Context(), cs.ProjectID); err == nil {
 					resp.ProjectTitle = proj.Title
+					resp.ProjectLocalDir = proj.LocalDir
 					resp.ProjectMemoryDoc = proj.MemoryDoc
 				}
 				if task.AgentID.Valid {
@@ -1180,6 +1182,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.ProjectCompaction = data
 			resp.ProjectTitle = data.ProjectTitle
 			resp.ProjectMemoryDoc = data.MemoryDoc
+			if projectUUID, ok := parseUUID2(pc.ProjectID); ok {
+				if proj, err := h.Queries.GetProjectV12(r.Context(), projectUUID); err == nil {
+					resp.ProjectLocalDir = proj.LocalDir
+				}
+			}
 		}
 	}
 

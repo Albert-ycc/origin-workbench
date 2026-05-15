@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/runtimeconfig"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -366,12 +367,24 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 
 	var runtimes []db.AgentRuntime
 	var err error
+	userID := requestUserID(r)
+	ownerFilter := r.URL.Query().Get("owner")
 
-	if ownerFilter := r.URL.Query().Get("owner"); ownerFilter == "me" {
-		userID, ok := requireUserID(w, r)
+	if ownerFilter == "me" {
+		var ok bool
+		userID, ok = requireUserID(w, r)
 		if !ok {
 			return
 		}
+	}
+
+	if err := h.syncConfiguredAPIRuntime(r, workspaceID, userID); err != nil {
+		slog.Warn("sync API runtime failed", "workspace_id", workspaceID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to sync API runtime")
+		return
+	}
+
+	if ownerFilter == "me" {
 		runtimes, err = h.Queries.ListAgentRuntimesByOwner(r.Context(), db.ListAgentRuntimesByOwnerParams{
 			WorkspaceID: parseUUID(workspaceID),
 			OwnerID:     parseUUID(userID),
@@ -391,6 +404,34 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) syncConfiguredAPIRuntime(r *http.Request, workspaceID, userID string) error {
+	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromEnv()
+	if !ok {
+		return nil
+	}
+	metadata, err := runtimeconfig.MetadataFromConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	var ownerID pgtype.UUID
+	if userID != "" {
+		ownerID = parseUUID(userID)
+	}
+	_, err = h.Queries.UpsertAgentRuntime(r.Context(), db.UpsertAgentRuntimeParams{
+		WorkspaceID: parseUUID(workspaceID),
+		DaemonID:    strToText(cfg.DaemonID(userID)),
+		Name:        cfg.RuntimeName,
+		RuntimeMode: runtimeconfig.RuntimeModeCloud,
+		Provider:    cfg.Provider,
+		Status:      cfg.Status(),
+		DeviceInfo:  cfg.DeviceInfo(),
+		Metadata:    metadata,
+		OwnerID:     ownerID,
+	})
+	return err
 }
 
 // DeleteAgentRuntime deletes a runtime after permission and dependency checks.

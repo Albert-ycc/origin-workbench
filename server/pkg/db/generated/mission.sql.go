@@ -44,10 +44,10 @@ func (q *Queries) ArchiveMission(ctx context.Context, id pgtype.UUID) (Mission, 
 const createMission = `-- name: CreateMission :one
 INSERT INTO mission (
     workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id,
-    title, prompt, summary, outcome, status, risk_level, execution_mode
+    title, prompt, summary, outcome, status, risk_level, execution_mode, project_id
 ) VALUES (
     $1, $2, $3, $12, $4,
-    $5, $6, $7, $8, $9, $10, $11
+    $5, $6, $7, $8, $9, $10, $11, $13::uuid
 )
 RETURNING id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id
 `
@@ -65,6 +65,7 @@ type CreateMissionParams struct {
 	RiskLevel       string      `json:"risk_level"`
 	ExecutionMode   string      `json:"execution_mode"`
 	ChatSessionID   pgtype.UUID `json:"chat_session_id"`
+	ProjectID       pgtype.UUID `json:"project_id"`
 }
 
 func (q *Queries) CreateMission(ctx context.Context, arg CreateMissionParams) (Mission, error) {
@@ -81,6 +82,7 @@ func (q *Queries) CreateMission(ctx context.Context, arg CreateMissionParams) (M
 		arg.RiskLevel,
 		arg.ExecutionMode,
 		arg.ChatSessionID,
+		arg.ProjectID,
 	)
 	var i Mission
 	err := row.Scan(
@@ -429,12 +431,18 @@ func (q *Queries) GetMissionInWorkspace(ctx context.Context, arg GetMissionInWor
 const listArchivedMissions = `-- name: ListArchivedMissions :many
 SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id FROM mission
 WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR project_id = $2::uuid)
   AND status = 'archived'
 ORDER BY updated_at DESC
 `
 
-func (q *Queries) ListArchivedMissions(ctx context.Context, workspaceID pgtype.UUID) ([]Mission, error) {
-	rows, err := q.db.Query(ctx, listArchivedMissions, workspaceID)
+type ListArchivedMissionsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListArchivedMissions(ctx context.Context, arg ListArchivedMissionsParams) ([]Mission, error) {
+	rows, err := q.db.Query(ctx, listArchivedMissions, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -602,15 +610,21 @@ const listMissions = `-- name: ListMissions :many
 
 SELECT id, workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id, title, prompt, summary, outcome, status, risk_level, execution_mode, created_at, updated_at, project_id FROM mission
 WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR project_id = $2::uuid)
   AND status <> 'archived'
 ORDER BY updated_at DESC
 `
 
+type ListMissionsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
 // =====================
 // Mission CRUD
 // =====================
-func (q *Queries) ListMissions(ctx context.Context, workspaceID pgtype.UUID) ([]Mission, error) {
-	rows, err := q.db.Query(ctx, listMissions, workspaceID)
+func (q *Queries) ListMissions(ctx context.Context, arg ListMissionsParams) ([]Mission, error) {
+	rows, err := q.db.Query(ctx, listMissions, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

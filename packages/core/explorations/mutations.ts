@@ -19,6 +19,7 @@ export function useCreateExploration() {
   return useMutation({
     mutationFn: (data: CreateExplorationRequest) => api.createExploration(data),
     onSuccess: (detail: ExplorationDetail) => {
+      const projectId = detail.exploration.project_id;
       qc.setQueryData<ListExplorationsResponse>(
         explorationKeys.list(wsId),
         (old) =>
@@ -30,6 +31,19 @@ export function useCreateExploration() {
               }
             : { explorations: [detail.exploration], total: 1 },
       );
+      if (projectId) {
+        qc.setQueryData<ListExplorationsResponse>(
+          explorationKeys.list(wsId, "active", projectId),
+          (old) =>
+            old
+              ? {
+                  ...old,
+                  explorations: [detail.exploration, ...old.explorations],
+                  total: old.total + 1,
+                }
+              : { explorations: [detail.exploration], total: 1 },
+        );
+      }
       qc.setQueryData<ExplorationDetail>(
         explorationKeys.detail(wsId, detail.exploration.id),
         detail,
@@ -74,6 +88,19 @@ export function useArchiveExploration() {
               }
             : old,
       );
+      if (exp.project_id) {
+        qc.setQueryData<ListExplorationsResponse>(
+          explorationKeys.list(wsId, "active", exp.project_id),
+          (old) =>
+            old
+              ? {
+                  ...old,
+                  explorations: old.explorations.filter((e) => e.id !== exp.id),
+                  total: Math.max(0, old.total - 1),
+                }
+              : old,
+        );
+      }
       patchExplorationCaches(qc, wsId, exp);
     },
     onSettled: () => {
@@ -99,10 +126,11 @@ export function useDeleteExploration() {
               }
             : old,
       );
+      qc.invalidateQueries({ queryKey: explorationKeys.all(wsId) });
       qc.removeQueries({ queryKey: explorationKeys.detail(wsId, id) });
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: explorationKeys.list(wsId) });
+      qc.invalidateQueries({ queryKey: explorationKeys.all(wsId) });
     },
   });
 }
@@ -215,6 +243,20 @@ function patchExplorationCaches(
           }
         : old,
   );
+  if (exp.project_id) {
+    qc.setQueryData<ListExplorationsResponse>(
+      explorationKeys.list(wsId, "active", exp.project_id),
+      (old) =>
+        old
+          ? {
+              ...old,
+              explorations: old.explorations.map((e) =>
+                e.id === exp.id ? exp : e,
+              ),
+            }
+          : old,
+    );
+  }
   qc.setQueryData<ExplorationDetail>(
     explorationKeys.detail(wsId, exp.id),
     (old) => (old ? { ...old, exploration: exp } : old),

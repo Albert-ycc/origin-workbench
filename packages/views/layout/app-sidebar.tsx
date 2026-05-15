@@ -53,9 +53,8 @@ import { useMyRuntimesNeedUpdate } from "@multica/core/runtimes/hooks";
 import { pinListOptions } from "@multica/core/pins/queries";
 import { useDeletePin, useReorderPins } from "@multica/core/pins/mutations";
 import { issueDetailOptions } from "@multica/core/issues/queries";
-import { projectDetailOptions } from "@multica/core/projects/queries";
+import { projectV12DetailOptions } from "@multica/core/projects-v12";
 import type { PinnedItem } from "@multica/core/types";
-import { ProjectIcon } from "../projects/components/project-icon";
 import { resolveUserAvatarUrl } from "../common/default-avatar";
 import { userProfileOptions } from "@multica/core/user-profile";
 
@@ -223,7 +222,7 @@ function PinRow({
     enabled: isIssue,
   });
   const projectQuery = useQuery({
-    ...projectDetailOptions(wsId, pin.item_id),
+    ...projectV12DetailOptions(wsId, pin.item_id),
     enabled: !isIssue,
   });
 
@@ -251,7 +250,7 @@ function PinRow({
   if (projectQuery.isPending) return <PinSkeleton />;
   if (projectQuery.isError || !projectQuery.data) return null;
   const project = projectQuery.data;
-  const iconNode = <ProjectIcon project={project} size="sm" />;
+  const iconNode = <FolderKanban className="!size-3.5 shrink-0" />;
   return (
     <SortablePinItem
       pin={pin}
@@ -437,11 +436,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
                       <SortableContext items={localPinned.map((p) => p.id)} strategy={verticalListSortingStrategy}>
                         <SidebarMenu className="gap-0.5">
-                          {localPinned.map((pin: PinnedItem) => (
-                            <PinRow
+	                          {localPinned.map((pin: PinnedItem) => (
+	                            <PinRow
                               key={pin.id}
                               pin={pin}
-                              href={pin.item_type === "issue" ? p.issueDetail(pin.item_id) : p.projectDetail(pin.item_id)}
+	                              href={pin.item_type === "issue" ? p.issueDetail(pin.item_id) : p.projectWorkspaceDetail(pin.item_id)}
                               pathname={pathname}
                               onUnpin={() => deletePin.mutate({ itemType: pin.item_type, itemId: pin.item_id })}
                               wsId={wsId ?? ""}

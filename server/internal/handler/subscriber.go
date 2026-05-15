@@ -95,12 +95,13 @@ func (h *Handler) SubscribeToIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.publish(protocol.EventSubscriberAdded, workspaceID, callerActorType, callerActorID, map[string]any{
+	payload := addIssueSourcePayload(map[string]any{
 		"issue_id":  issueID,
 		"user_type": targetUserType,
 		"user_id":   targetUserID,
 		"reason":    "manual",
-	})
+	}, issue)
+	h.publish(protocol.EventSubscriberAdded, workspaceID, callerActorType, callerActorID, payload)
 
 	writeJSON(w, http.StatusOK, map[string]bool{"subscribed": true})
 }
@@ -149,11 +150,12 @@ func (h *Handler) UnsubscribeFromIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.publish(protocol.EventSubscriberRemoved, workspaceID, callerActorType, callerActorID, map[string]any{
+	payload := addIssueSourcePayload(map[string]any{
 		"issue_id":  issueID,
 		"user_type": targetUserType,
 		"user_id":   targetUserID,
-	})
+	}, issue)
+	h.publish(protocol.EventSubscriberRemoved, workspaceID, callerActorType, callerActorID, payload)
 
 	writeJSON(w, http.StatusOK, map[string]bool{"subscribed": false})
 }

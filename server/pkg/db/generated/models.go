@@ -488,6 +488,86 @@ type MailboxItem struct {
 	ProjectID            pgtype.UUID        `json:"project_id"`
 }
 
+type MeetingInsightCard struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	MeetingID         pgtype.UUID        `json:"meeting_id"`
+	Type              string             `json:"type"`
+	Severity          string             `json:"severity"`
+	Title             string             `json:"title"`
+	Reason            string             `json:"reason"`
+	SuggestedQuestion string             `json:"suggested_question"`
+	EvidenceQuote     string             `json:"evidence_quote"`
+	EvidenceSegmentID pgtype.UUID        `json:"evidence_segment_id"`
+	EvidenceStartMs   pgtype.Int4        `json:"evidence_start_ms"`
+	EvidenceEndMs     pgtype.Int4        `json:"evidence_end_ms"`
+	Confidence        float64            `json:"confidence"`
+	Status            string             `json:"status"`
+	DedupeKey         pgtype.Text        `json:"dedupe_key"`
+	AlertedAt         pgtype.Timestamptz `json:"alerted_at"`
+	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MeetingSession struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	Title             string             `json:"title"`
+	Goal              string             `json:"goal"`
+	UserRole          string             `json:"user_role"`
+	Strategy          []byte             `json:"strategy"`
+	ReminderMode      string             `json:"reminder_mode"`
+	ReminderIntensity string             `json:"reminder_intensity"`
+	SoundEnabled      bool               `json:"sound_enabled"`
+	AsrProvider       string             `json:"asr_provider"`
+	ModelSource       string             `json:"model_source"`
+	AnalysisStatus    string             `json:"analysis_status"`
+	Status            string             `json:"status"`
+	CreatedByUserID   pgtype.UUID        `json:"created_by_user_id"`
+	StartedAt         pgtype.Timestamptz `json:"started_at"`
+	StoppedAt         pgtype.Timestamptz `json:"stopped_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MeetingSummary struct {
+	MeetingID        pgtype.UUID        `json:"meeting_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
+	SummaryMd        string             `json:"summary_md"`
+	Decisions        []byte             `json:"decisions"`
+	Questions        []byte             `json:"questions"`
+	Risks            []byte             `json:"risks"`
+	Feedback         []byte             `json:"feedback"`
+	Tensions         []byte             `json:"tensions"`
+	ActionItems      []byte             `json:"action_items"`
+	MemoryCandidates []byte             `json:"memory_candidates"`
+	SourceSeqStart   pgtype.Int4        `json:"source_seq_start"`
+	SourceSeqEnd     pgtype.Int4        `json:"source_seq_end"`
+	GeneratedBy      string             `json:"generated_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MeetingTranscriptSegment struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	MeetingID     pgtype.UUID        `json:"meeting_id"`
+	Seq           int32              `json:"seq"`
+	StartedAt     pgtype.Timestamptz `json:"started_at"`
+	EndedAt       pgtype.Timestamptz `json:"ended_at"`
+	SpeakerLabel  string             `json:"speaker_label"`
+	Text          string             `json:"text"`
+	Confidence    float64            `json:"confidence"`
+	AudioOffsetMs pgtype.Int4        `json:"audio_offset_ms"`
+	Source        string             `json:"source"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Member struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

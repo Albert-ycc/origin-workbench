@@ -20,6 +20,7 @@ import (
 type IdeaResponse struct {
 	ID                string   `json:"id"`
 	WorkspaceID       string   `json:"workspace_id"`
+	ProjectID         *string  `json:"project_id"`
 	CreatedByUserID   string   `json:"created_by_user_id"`
 	NurturerAgentID   *string  `json:"nurturer_agent_id"`
 	PromotedMissionID *string  `json:"promoted_mission_id"`
@@ -62,6 +63,7 @@ type ListIdeasResponse struct {
 type CreateIdeaRequest struct {
 	Title           string   `json:"title"`
 	Description     string   `json:"description"`
+	ProjectID       *string  `json:"project_id"`
 	Source          string   `json:"source"`
 	SourceRef       string   `json:"source_ref"`
 	Tags            []string `json:"tags"`
@@ -116,6 +118,7 @@ func ideaToResponse(i db.Idea) IdeaResponse {
 	return IdeaResponse{
 		ID:                uuidToString(i.ID),
 		WorkspaceID:       uuidToString(i.WorkspaceID),
+		ProjectID:         uuidToPtr(i.ProjectID),
 		CreatedByUserID:   uuidToString(i.CreatedByUserID),
 		NurturerAgentID:   uuidToPtr(i.NurturerAgentID),
 		PromotedMissionID: uuidToPtr(i.PromotedMissionID),
@@ -204,13 +207,23 @@ func (h *Handler) ListIdeas(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	projectID, ok := h.projectIDFromQuery(w, r, wsUUID)
+	if !ok {
+		return
+	}
 
 	var ideas []db.Idea
 	var err error
 	if r.URL.Query().Get("status") == "archived" {
-		ideas, err = h.Queries.ListArchivedIdeas(r.Context(), wsUUID)
+		ideas, err = h.Queries.ListArchivedIdeas(r.Context(), db.ListArchivedIdeasParams{
+			WorkspaceID: wsUUID,
+			ProjectID:   projectID,
+		})
 	} else {
-		ideas, err = h.Queries.ListIdeas(r.Context(), wsUUID)
+		ideas, err = h.Queries.ListIdeas(r.Context(), db.ListIdeasParams{
+			WorkspaceID: wsUUID,
+			ProjectID:   projectID,
+		})
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list ideas")
@@ -288,6 +301,10 @@ func (h *Handler) CreateIdea(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	projectID, ok := h.projectIDFromRequest(w, r, req.ProjectID, wsUUID)
+	if !ok {
+		return
+	}
 
 	var nurturerUUID pgtype.UUID
 	if req.NurturerAgentID != nil && strings.TrimSpace(*req.NurturerAgentID) != "" {
@@ -321,6 +338,7 @@ func (h *Handler) CreateIdea(w http.ResponseWriter, r *http.Request) {
 		SourceRef:       strings.TrimSpace(req.SourceRef),
 		Tags:            tags,
 		Status:          "nurturing",
+		ProjectID:       projectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create idea")
@@ -828,6 +846,7 @@ func (h *Handler) PromoteIdea(w http.ResponseWriter, r *http.Request) {
 		RiskLevel:       normalizeRiskLevel(req.RiskLevel),
 		ExecutionMode:   normalizeExecutionMode(req.ExecutionMode),
 		ChatSessionID:   session.ID,
+		ProjectID:       idea.ProjectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create mission")

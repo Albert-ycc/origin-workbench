@@ -5,12 +5,14 @@
 -- name: ListMissions :many
 SELECT * FROM mission
 WHERE workspace_id = $1
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id')::uuid)
   AND status <> 'archived'
 ORDER BY updated_at DESC;
 
 -- name: ListArchivedMissions :many
 SELECT * FROM mission
 WHERE workspace_id = $1
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id')::uuid)
   AND status = 'archived'
 ORDER BY updated_at DESC;
 
@@ -37,10 +39,10 @@ LIMIT 1;
 -- name: CreateMission :one
 INSERT INTO mission (
     workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id,
-    title, prompt, summary, outcome, status, risk_level, execution_mode
+    title, prompt, summary, outcome, status, risk_level, execution_mode, project_id
 ) VALUES (
     $1, $2, $3, sqlc.narg('chat_session_id'), $4,
-    $5, $6, $7, $8, $9, $10, $11
+    $5, $6, $7, $8, $9, $10, $11, sqlc.narg('project_id')::uuid
 )
 RETURNING *;
 

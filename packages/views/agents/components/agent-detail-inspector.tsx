@@ -318,7 +318,7 @@ function AvatarEditor({
             <div>
               <div className="text-xs font-semibold">从预设选</div>
               <div className="text-[11px] text-muted-foreground">
-                洛蕾莱风格 · 30 个预设
+                原点风格 · 50 个预设
               </div>
             </div>
             <Button

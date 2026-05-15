@@ -34,6 +34,10 @@ function workspaceScoped(slug: string) {
     // navigation goes through projectDetail by id.
     projectWorkspaces: () => `${ws}/workspaces`,
     projectWorkspaceDetail: (id: string) => `${ws}/workspaces/${encode(id)}`,
+    projectMeetings: (projectId: string) =>
+      `${ws}/workspaces/${encode(projectId)}/meetings`,
+    projectMeetingDetail: (projectId: string, meetingId: string) =>
+      `${ws}/workspaces/${encode(projectId)}/meetings/${encode(meetingId)}`,
     autopilots: () => `${ws}/autopilots`,
     autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     agents: () => `${ws}/agents`,

@@ -25,6 +25,7 @@ export type MissionAssignmentStatus =
 export interface Mission {
   id: string;
   workspace_id: string;
+  project_id?: string | null;
   team_id: string;
   captain_agent_id: string;
   chat_session_id: string;
@@ -121,6 +122,7 @@ export interface CreateMissionPlanItemRequest {
 }
 
 export interface CreateMissionRequest {
+  project_id?: string;
   title?: string;
   prompt: string;
   summary?: string;

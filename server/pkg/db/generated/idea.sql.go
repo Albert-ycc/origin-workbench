@@ -74,10 +74,10 @@ func (q *Queries) ClearIdeaNurturer(ctx context.Context, id pgtype.UUID) (Idea, 
 const createIdea = `-- name: CreateIdea :one
 INSERT INTO idea (
     workspace_id, created_by_user_id, nurturer_agent_id,
-    title, description, source, source_ref, tags, status
+    title, description, source, source_ref, tags, status, project_id
 ) VALUES (
     $1, $2, $9::uuid,
-    $3, $4, $5, $6, $7, $8
+    $3, $4, $5, $6, $7, $8, $10::uuid
 )
 RETURNING id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id
 `
@@ -92,6 +92,7 @@ type CreateIdeaParams struct {
 	Tags            []string    `json:"tags"`
 	Status          string      `json:"status"`
 	NurturerAgentID pgtype.UUID `json:"nurturer_agent_id"`
+	ProjectID       pgtype.UUID `json:"project_id"`
 }
 
 func (q *Queries) CreateIdea(ctx context.Context, arg CreateIdeaParams) (Idea, error) {
@@ -105,6 +106,7 @@ func (q *Queries) CreateIdea(ctx context.Context, arg CreateIdeaParams) (Idea, e
 		arg.Tags,
 		arg.Status,
 		arg.NurturerAgentID,
+		arg.ProjectID,
 	)
 	var i Idea
 	err := row.Scan(
@@ -231,12 +233,18 @@ func (q *Queries) GetIdeaInWorkspace(ctx context.Context, arg GetIdeaInWorkspace
 const listArchivedIdeas = `-- name: ListArchivedIdeas :many
 SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id FROM idea
 WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR project_id = $2::uuid)
   AND status = 'archived'
 ORDER BY updated_at DESC
 `
 
-func (q *Queries) ListArchivedIdeas(ctx context.Context, workspaceID pgtype.UUID) ([]Idea, error) {
-	rows, err := q.db.Query(ctx, listArchivedIdeas, workspaceID)
+type ListArchivedIdeasParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListArchivedIdeas(ctx context.Context, arg ListArchivedIdeasParams) ([]Idea, error) {
+	rows, err := q.db.Query(ctx, listArchivedIdeas, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -314,10 +322,16 @@ const listIdeas = `-- name: ListIdeas :many
 
 SELECT id, workspace_id, created_by_user_id, nurturer_agent_id, promoted_mission_id, title, description, source, source_ref, status, tags, last_nurtured_at, created_at, updated_at, project_id FROM idea
 WHERE workspace_id = $1
+  AND ($2::uuid IS NULL OR project_id = $2::uuid)
   AND status NOT IN ('archived', 'promoted')
 ORDER BY
   CASE WHEN last_nurtured_at IS NULL THEN updated_at ELSE last_nurtured_at END DESC
 `
+
+type ListIdeasParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 // =====================
 // Idea CRUD
@@ -325,8 +339,8 @@ ORDER BY
 // "Active" pool excludes both archived (manually shelved) and promoted
 // (already became a Mission and moved on). The mutation cache mirrors this
 // by removing the promoted idea from the list — keep both ends in sync.
-func (q *Queries) ListIdeas(ctx context.Context, workspaceID pgtype.UUID) ([]Idea, error) {
-	rows, err := q.db.Query(ctx, listIdeas, workspaceID)
+func (q *Queries) ListIdeas(ctx context.Context, arg ListIdeasParams) ([]Idea, error) {
+	rows, err := q.db.Query(ctx, listIdeas, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

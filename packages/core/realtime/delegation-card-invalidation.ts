@@ -20,6 +20,9 @@ type TeamMessagesCache = {
   messages: TeamMessage[];
   next_cursor?: string | null;
 };
+type IssueSourceEventPayload = {
+  source_team_message_id?: string | null;
+};
 
 function isDelegationTaskCard(value: unknown): value is DelegationTaskCard {
   return (
@@ -189,10 +192,11 @@ export function invalidateDelegationCardsForIssueId(
   qc: QueryClient,
   wsId: string,
   issueId: string,
+  source?: IssueSourceEventPayload,
 ) {
-  invalidateDelegationCardsForMessageIds(
-    qc,
-    wsId,
-    resolveDelegationSourceMessageIds(qc, wsId, issueId),
-  );
+  const messageIds = resolveDelegationSourceMessageIds(qc, wsId, issueId);
+  if (source?.source_team_message_id) {
+    messageIds.add(source.source_team_message_id);
+  }
+  invalidateDelegationCardsForMessageIds(qc, wsId, messageIds);
 }

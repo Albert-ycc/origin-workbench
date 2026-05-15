@@ -284,13 +284,14 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	groupedAtt := h.groupAttachments(r, []pgtype.UUID{comment.ID})
 	resp := commentToResponse(comment, nil, groupedAtt[uuidToString(comment.ID)])
 	slog.Info("comment created", append(logger.RequestAttrs(r), "comment_id", uuidToString(comment.ID), "issue_id", issueID)...)
-	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), authorType, authorID, map[string]any{
+	payload := addIssueSourcePayload(map[string]any{
 		"comment":             resp,
 		"issue_title":         issue.Title,
 		"issue_assignee_type": textToPtr(issue.AssigneeType),
 		"issue_assignee_id":   uuidToPtr(issue.AssigneeID),
 		"issue_status":        issue.Status,
-	})
+	}, issue)
+	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), authorType, authorID, payload)
 
 	// If the issue is assigned to an agent with on_comment trigger, enqueue a new task.
 	// Skip when the comment comes from the assigned agent itself to avoid loops.
@@ -565,7 +566,9 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	cid := uuidToString(comment.ID)
 	resp := commentToResponse(comment, grouped[cid], groupedAtt[cid])
 	slog.Info("comment updated", append(logger.RequestAttrs(r), "comment_id", commentId)...)
-	h.publish(protocol.EventCommentUpdated, workspaceID, actorType, actorID, map[string]any{"comment": resp})
+	payload := h.issueSourcePayload(r.Context(), existing.IssueID, wsUUID)
+	payload["comment"] = resp
+	h.publish(protocol.EventCommentUpdated, workspaceID, actorType, actorID, payload)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -629,9 +632,9 @@ func (h *Handler) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	h.deleteS3Objects(r.Context(), attachmentURLs)
 	slog.Info("comment deleted", append(logger.RequestAttrs(r), "comment_id", commentId, "issue_id", uuidToString(comment.IssueID))...)
-	h.publish(protocol.EventCommentDeleted, workspaceID, actorType, actorID, map[string]any{
-		"comment_id": uuidToString(comment.ID),
-		"issue_id":   uuidToString(comment.IssueID),
-	})
+	payload := h.issueSourcePayload(r.Context(), comment.IssueID, wsUUID)
+	payload["comment_id"] = uuidToString(comment.ID)
+	payload["issue_id"] = uuidToString(comment.IssueID)
+	h.publish(protocol.EventCommentDeleted, workspaceID, actorType, actorID, payload)
 	w.WriteHeader(http.StatusNoContent)
 }

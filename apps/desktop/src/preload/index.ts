@@ -47,6 +47,14 @@ const desktopAPI = {
   },
   /** Open a URL in the default browser */
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
+  /** Select a local project working directory. Desktop-only capability. */
+  selectDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke("dialog:select-directory"),
+  getMicrophonePermissionStatus: (): Promise<
+    "not-determined" | "granted" | "denied" | "restricted" | "unknown"
+  > => ipcRenderer.invoke("media:microphone-status"),
+  requestMicrophonePermission: (): Promise<boolean> =>
+    ipcRenderer.invoke("media:request-microphone"),
   /** Toggle immersive mode — hide macOS traffic lights for full-screen modals */
   setImmersiveMode: (immersive: boolean) =>
     ipcRenderer.invoke("window:setImmersive", immersive),

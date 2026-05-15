@@ -12,6 +12,14 @@ interface DesktopAPI {
   onInviteOpen: (callback: (invitationId: string) => void) => () => void;
   /** Open a URL in the default browser. */
   openExternal: (url: string) => Promise<void>;
+  /** Select a local project working directory. */
+  selectDirectory: () => Promise<string | null>;
+  /** Read desktop microphone permission status. */
+  getMicrophonePermissionStatus: () => Promise<
+    "not-determined" | "granted" | "denied" | "restricted" | "unknown"
+  >;
+  /** Request microphone access from the desktop shell. */
+  requestMicrophonePermission: () => Promise<boolean>;
   /** Hide macOS traffic lights for full-screen modals; restore when false. */
   setImmersiveMode: (immersive: boolean) => Promise<void>;
   /** Show a native OS notification for a new inbox item. */

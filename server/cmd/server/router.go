@@ -493,6 +493,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 			r.Get("/api/v12/teams/{teamId}/projects", h.ListProjectsByTeamV12)
 
+			// Meeting copilot (Origin §18 — realtime transcript + evidence cards).
+			// Raw audio stays in the desktop renderer for MVP; backend receives
+			// text transcript segments and emits workspace-scoped realtime events.
+			r.Route("/api/v13/meetings", func(r chi.Router) {
+				r.Get("/", h.ListMeetingSessions)
+				r.Post("/", h.CreateMeetingSession)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetMeetingSession)
+					r.Patch("/", h.UpdateMeetingSession)
+					r.Post("/start", h.StartMeetingSession)
+					r.Post("/stop", h.StopMeetingSession)
+					r.Get("/transcript-segments", h.ListMeetingTranscriptSegments)
+					r.Post("/transcript-segments", h.CreateMeetingTranscriptSegment)
+					r.Get("/insights", h.ListMeetingInsightCards)
+					r.Patch("/insights/{insightId}", h.UpdateMeetingInsightStatus)
+				})
+			})
+
 			// Pins
 			r.Route("/api/pins", func(r chi.Router) {
 				r.Get("/", h.ListPins)

@@ -59,6 +59,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
+      INTEGRATION_TESTS: "1"
       # Wires up the RedisLocalSkill*_test.go suite. Distinct from REDIS_URL
       # (which would flip the server binary itself onto the Redis-backed
       # realtime relay + request stores); the tests talk to this Redis
@@ -82,3 +83,94 @@ jobs:
 
       - name: Test
         run: cd server && go test ./...
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: multica_e2e
+          POSTGRES_USER: multica
+          POSTGRES_PASSWORD: multica
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U multica -d multica_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://multica:multica@localhost:5432/multica_e2e?sslmode=disable
+      E2E_DATABASE_URL: postgres://multica:multica@localhost:5432/multica_e2e?sslmode=disable
+      REDIS_URL: redis://localhost:6379/0
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      PLAYWRIGHT_BASE_URL: http://localhost:5173
+      PORT: "8080"
+      DESKTOP_RENDERER_PORT: "5173"
+      VITE_API_URL: http://localhost:8080
+      VITE_WS_URL: ws://localhost:8080/ws
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache-dependency-path: server/go.sum
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run migrations
+        run: cd server && go run ./cmd/migrate up
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start backend
+        run: |
+          cd server
+          go run ./cmd/server > /tmp/origin-e2e-backend.log 2>&1 &
+          for i in {1..90}; do
+            if curl -sf http://localhost:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/origin-e2e-backend.log
+          exit 1
+
+      - name: Start desktop renderer
+        run: |
+          pnpm --filter @multica/desktop exec electron-vite --rendererOnly > /tmp/origin-e2e-renderer.log 2>&1 &
+          for i in {1..120}; do
+            if curl -sf http://localhost:5173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/origin-e2e-renderer.log
+          exit 1
+
+      - name: Run Origin smoke
+        run: pnpm exec playwright test e2e/origin-smoke.spec.ts

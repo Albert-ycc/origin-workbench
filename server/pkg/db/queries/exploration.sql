@@ -5,12 +5,14 @@
 -- name: ListExplorations :many
 SELECT * FROM exploration
 WHERE workspace_id = $1
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id')::uuid)
   AND status <> 'archived'
 ORDER BY updated_at DESC;
 
 -- name: ListArchivedExplorations :many
 SELECT * FROM exploration
 WHERE workspace_id = $1
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id')::uuid)
   AND status = 'archived'
 ORDER BY updated_at DESC;
 
@@ -22,12 +24,12 @@ WHERE id = $1 AND workspace_id = $2;
 INSERT INTO exploration (
     workspace_id, created_by_user_id,
     related_mission_id, related_idea_id,
-    topic, question, status
+    topic, question, status, project_id
 ) VALUES (
     $1, $2,
     sqlc.narg('related_mission_id')::uuid,
     sqlc.narg('related_idea_id')::uuid,
-    $3, $4, $5
+    $3, $4, $5, sqlc.narg('project_id')::uuid
 )
 RETURNING *;
 

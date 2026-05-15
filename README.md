@@ -49,6 +49,17 @@ It runs entirely against `localhost`. There is no Origin Cloud, no team
 invitation, no email verification — sign in with a name and an avatar and you're
 in.
 
+## Model API runtime
+
+Origin can connect to an external OpenAI-compatible model API for chat-style
+agent replies. This is currently a lightweight API runtime: it supplies a model
+brain, but it does not automatically inherit Codex or Claude Code abilities such
+as local file access, shell execution, browser control, MCP tools, or skills.
+Those require Origin's own full agent runtime layer.
+
+See [`docs/model-api-runtime.md`](docs/model-api-runtime.md) for the capability
+boundary, environment variables, and full-agent roadmap.
+
 ## Differences from upstream Multica
 
 | Area | Upstream Multica | Origin fork |
@@ -60,7 +71,7 @@ in.
 | Members / invitations / labs / repos | Settings tabs | **Removed** — they conflict with the single-user model. |
 | Auto-updater | Pulls from official Multica releases | **Removed** — would overwrite the fork. |
 | Idea Pool / Council Session / User Profile | — | New product objects (Phase 1, migrations 074–076). |
-| Avatars | Generated via DiceBear remote URLs | Bundled 30-Lorelei offline pool. |
+| Avatars | Generated via DiceBear remote URLs | Bundled 50-Origin offline avatar pool. |
 
 A complete list of substantive modifications lives in [`NOTICE`](NOTICE).
 

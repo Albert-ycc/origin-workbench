@@ -3,8 +3,8 @@ import { api } from "../api";
 
 export const explorationKeys = {
   all: (wsId: string) => ["explorations", wsId] as const,
-  list: (wsId: string, status: "active" | "archived" = "active") =>
-    [...explorationKeys.all(wsId), "list", status] as const,
+  list: (wsId: string, status: "active" | "archived" = "active", projectId?: string | null) =>
+    [...explorationKeys.all(wsId), "list", status, projectId ?? "all"] as const,
   detail: (wsId: string, id: string) =>
     [...explorationKeys.all(wsId), "detail", id] as const,
 };
@@ -12,11 +12,13 @@ export const explorationKeys = {
 export function explorationListOptions(
   wsId: string,
   status: "active" | "archived" = "active",
+  projectId?: string | null,
 ) {
   return queryOptions({
-    queryKey: explorationKeys.list(wsId, status),
-    queryFn: () => api.listExplorations(status),
+    queryKey: explorationKeys.list(wsId, status, projectId),
+    queryFn: () => api.listExplorations(projectId ? { status, project_id: projectId } : status),
     select: (data) => data.explorations,
+    enabled: projectId !== "",
   });
 }
 

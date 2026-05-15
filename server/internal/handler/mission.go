@@ -14,21 +14,22 @@ import (
 )
 
 type MissionResponse struct {
-	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspace_id"`
-	TeamID          string `json:"team_id"`
-	CaptainAgentID  string `json:"captain_agent_id"`
-	ChatSessionID   string `json:"chat_session_id"`
-	CreatedByUserID string `json:"created_by_user_id"`
-	Title           string `json:"title"`
-	Prompt          string `json:"prompt"`
-	Summary         string `json:"summary"`
-	Outcome         string `json:"outcome"`
-	Status          string `json:"status"`
-	RiskLevel       string `json:"risk_level"`
-	ExecutionMode   string `json:"execution_mode"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	ID              string  `json:"id"`
+	WorkspaceID     string  `json:"workspace_id"`
+	ProjectID       *string `json:"project_id"`
+	TeamID          string  `json:"team_id"`
+	CaptainAgentID  string  `json:"captain_agent_id"`
+	ChatSessionID   string  `json:"chat_session_id"`
+	CreatedByUserID string  `json:"created_by_user_id"`
+	Title           string  `json:"title"`
+	Prompt          string  `json:"prompt"`
+	Summary         string  `json:"summary"`
+	Outcome         string  `json:"outcome"`
+	Status          string  `json:"status"`
+	RiskLevel       string  `json:"risk_level"`
+	ExecutionMode   string  `json:"execution_mode"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
 }
 
 type MissionPlanItemResponse struct {
@@ -102,6 +103,7 @@ type CreateMissionRequest struct {
 	Prompt         string                         `json:"prompt"`
 	Summary        string                         `json:"summary"`
 	Outcome        string                         `json:"outcome"`
+	ProjectID      *string                        `json:"project_id"`
 	TeamID         string                         `json:"team_id"`
 	CaptainAgentID string                         `json:"captain_agent_id"`
 	MemberAgentIDs []string                       `json:"member_agent_ids"`
@@ -125,6 +127,7 @@ func missionToResponse(m db.Mission) MissionResponse {
 	return MissionResponse{
 		ID:              uuidToString(m.ID),
 		WorkspaceID:     uuidToString(m.WorkspaceID),
+		ProjectID:       uuidToPtr(m.ProjectID),
 		TeamID:          uuidToString(m.TeamID),
 		CaptainAgentID:  uuidToString(m.CaptainAgentID),
 		ChatSessionID:   uuidToString(m.ChatSessionID),
@@ -385,9 +388,44 @@ func eventPayload(value map[string]any) []byte {
 	return payload
 }
 
+func (h *Handler) projectIDFromQuery(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID) (pgtype.UUID, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if raw == "" {
+		return pgtype.UUID{}, true
+	}
+	projectID, ok := parseUUIDOrBadRequest(w, raw, "project_id")
+	if !ok {
+		return pgtype.UUID{}, false
+	}
+	if err := h.validateProjectInWorkspace(r.Context(), projectID, workspaceID); err != nil {
+		writeError(w, http.StatusBadRequest, "project_id not found in this workspace")
+		return pgtype.UUID{}, false
+	}
+	return projectID, true
+}
+
+func (h *Handler) projectIDFromRequest(w http.ResponseWriter, r *http.Request, raw *string, workspaceID pgtype.UUID) (pgtype.UUID, bool) {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return pgtype.UUID{}, true
+	}
+	projectID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(*raw), "project_id")
+	if !ok {
+		return pgtype.UUID{}, false
+	}
+	if err := h.validateProjectInWorkspace(r.Context(), projectID, workspaceID); err != nil {
+		writeError(w, http.StatusBadRequest, "project_id not found in this workspace")
+		return pgtype.UUID{}, false
+	}
+	return projectID, true
+}
+
 func (h *Handler) ListMissions(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
 	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	projectID, ok := h.projectIDFromQuery(w, r, wsUUID)
 	if !ok {
 		return
 	}
@@ -395,9 +433,15 @@ func (h *Handler) ListMissions(w http.ResponseWriter, r *http.Request) {
 	var missions []db.Mission
 	var err error
 	if r.URL.Query().Get("status") == "archived" {
-		missions, err = h.Queries.ListArchivedMissions(r.Context(), wsUUID)
+		missions, err = h.Queries.ListArchivedMissions(r.Context(), db.ListArchivedMissionsParams{
+			WorkspaceID: wsUUID,
+			ProjectID:   projectID,
+		})
 	} else {
-		missions, err = h.Queries.ListMissions(r.Context(), wsUUID)
+		missions, err = h.Queries.ListMissions(r.Context(), db.ListMissionsParams{
+			WorkspaceID: wsUUID,
+			ProjectID:   projectID,
+		})
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list missions")
@@ -446,6 +490,10 @@ func (h *Handler) CreateMission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	projectID, ok := h.projectIDFromRequest(w, r, req.ProjectID, wsUUID)
 	if !ok {
 		return
 	}
@@ -591,6 +639,7 @@ func (h *Handler) CreateMission(w http.ResponseWriter, r *http.Request) {
 		RiskLevel:       normalizeRiskLevel(req.RiskLevel),
 		ExecutionMode:   normalizeExecutionMode(req.ExecutionMode),
 		ChatSessionID:   session.ID,
+		ProjectID:       projectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create mission")
@@ -687,13 +736,13 @@ func (h *Handler) CreateMission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	assignment, err := h.Queries.CreateMissionAssignment(r.Context(), db.CreateMissionAssignmentParams{
-		MissionID: mission.ID,
-		AgentID:   captain.ID,
-		Status:    assignmentStatus,
-		RiskLevel: mission.RiskLevel,
-		Output:    "",
+		MissionID:  mission.ID,
+		AgentID:    captain.ID,
+		Status:     assignmentStatus,
+		RiskLevel:  mission.RiskLevel,
+		Output:     "",
 		PlanItemID: captainPlanItemID,
-		TaskID:    taskID,
+		TaskID:     taskID,
 	})
 	if err != nil {
 		slog.Warn("failed to create mission assignment", "mission_id", uuidToString(mission.ID), "error", err)

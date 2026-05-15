@@ -4,6 +4,7 @@ import {
   Navigate,
   Outlet,
   useMatches,
+  useParams,
 } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
@@ -20,6 +21,7 @@ import { CouncilsPage } from "@multica/views/councils";
 import { ExplorationsPage } from "@multica/views/explorations";
 import { MissionsPage } from "@multica/views/missions";
 import { TeamsPage } from "@multica/views/teams";
+import { MeetingsPage } from "@multica/views/meetings";
 import { ProjectsPage } from "@multica/views/projects/components";
 import { ProjectWorkspacesListPage } from "@multica/views/project-workspaces";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
@@ -29,8 +31,9 @@ import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { AgentsPage } from "@multica/views/agents";
 import { InboxPage } from "@multica/views/inbox";
 import { SettingsPage } from "@multica/views/settings";
-import { Server } from "lucide-react";
+import { BrainCircuit, Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
+import { ModelApiSettingsTab } from "./components/model-api-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 
 /**
@@ -61,6 +64,17 @@ function PageShell() {
       <Outlet />
     </>
   );
+}
+
+function ProjectWorkspacesRoute() {
+  const { id } = useParams<{ id: string }>();
+  return <ProjectWorkspacesListPage projectId={id} />;
+}
+
+function ProjectMeetingsRoute() {
+  const { id, meetingId } = useParams<{ id: string; meetingId?: string }>();
+  if (!id) return <Navigate to="../workspaces" replace />;
+  return <MeetingsPage projectId={id} meetingId={meetingId} />;
 }
 
 /**
@@ -115,13 +129,23 @@ export const appRoutes: RouteObject[] = [
           // 二栏布局：list-page 自己内嵌 detail，:id 决定选哪个项目
           {
             path: "workspaces",
-            element: <ProjectWorkspacesListPage />,
+            element: <ProjectWorkspacesRoute />,
             handle: { title: "项目工作区" },
           },
           {
             path: "workspaces/:id",
-            element: <ProjectWorkspacesListPage />,
+            element: <ProjectWorkspacesRoute />,
             handle: { title: "项目工作区" },
+          },
+          {
+            path: "workspaces/:id/meetings",
+            element: <ProjectMeetingsRoute />,
+            handle: { title: "会议 Copilot" },
+          },
+          {
+            path: "workspaces/:id/meetings/:meetingId",
+            element: <ProjectMeetingsRoute />,
+            handle: { title: "会议 Copilot" },
           },
           {
             path: "autopilots",
@@ -173,6 +197,12 @@ export const appRoutes: RouteObject[] = [
               <SettingsPage
                 extraAccountTabs={[
                   {
+                    value: "model-api",
+                    label: "大模型 API",
+                    icon: BrainCircuit,
+                    content: <ModelApiSettingsTab />,
+                  },
+                  {
                     value: "daemon",
                     label: "守护进程",
                     icon: Server,
@@ -195,4 +225,3 @@ export function createTabRouter(initialPath: string) {
     initialEntries: [initialPath],
   });
 }
-

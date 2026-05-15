@@ -72,14 +72,15 @@ func (h *Handler) AddIssueReaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := issueReactionToResponse(reaction)
-	h.publish(protocol.EventIssueReactionAdded, workspaceID, actorType, actorID, map[string]any{
+	payload := addIssueSourcePayload(map[string]any{
 		"reaction":     resp,
 		"issue_id":     uuidToString(issue.ID),
 		"issue_title":  issue.Title,
 		"issue_status": issue.Status,
 		"creator_type": issue.CreatorType,
 		"creator_id":   uuidToString(issue.CreatorID),
-	})
+	}, issue)
+	h.publish(protocol.EventIssueReactionAdded, workspaceID, actorType, actorID, payload)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -121,11 +122,12 @@ func (h *Handler) RemoveIssueReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.publish(protocol.EventIssueReactionRemoved, workspaceID, actorType, actorID, map[string]any{
+	payload := addIssueSourcePayload(map[string]any{
 		"issue_id":   uuidToString(issue.ID),
 		"emoji":      req.Emoji,
 		"actor_type": actorType,
 		"actor_id":   actorID,
-	})
+	}, issue)
+	h.publish(protocol.EventIssueReactionRemoved, workspaceID, actorType, actorID, payload)
 	w.WriteHeader(http.StatusNoContent)
 }

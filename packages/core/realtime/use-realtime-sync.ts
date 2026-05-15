@@ -11,11 +11,13 @@ import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
+import { projectV12Keys } from "../projects-v12/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { missionKeys } from "../missions/queries";
 import { teamKeys } from "../teams/queries";
 import { runtimeKeys } from "../runtimes/queries";
+import { meetingKeys } from "../meetings/queries";
 import {
   agentTaskSnapshotKeys,
   agentActivityKeys,
@@ -69,10 +71,16 @@ import type {
   ChatDonePayload,
   ChatPendingTask,
   InvitationCreatedPayload,
+  ListMeetingInsightCardsResponse,
+  ListMeetingTranscriptSegmentsResponse,
   TeamMessageCreatedPayload,
   AgentMemoryCreatedPayload,
   AgentSkillCandidateCreatedPayload,
   AgentEventCreatedPayload,
+  MeetingInsightCardPayload,
+  MeetingSessionPayload,
+  MeetingSummaryCreatedPayload,
+  MeetingTranscriptSegmentCreatedPayload,
 } from "../types";
 
 const chatWsLogger = createLogger("chat.ws");
@@ -141,7 +149,10 @@ export function useRealtimeSync(
       },
       project: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+          qc.invalidateQueries({ queryKey: projectV12Keys.all(wsId) });
+        }
       },
       label: () => {
         // label:created/updated/deleted — also refresh issues, since each
@@ -235,6 +246,16 @@ export function useRealtimeSync(
       // still receive it via ws.on() (a separate subscription channel).
       "task:message",
       "team:message_created",
+      "meeting:created",
+      "meeting:updated",
+      "meeting:started",
+      "meeting:stopped",
+      "meeting:transcript_segment_created",
+      "meeting:insight_created",
+      "meeting:insight_updated",
+      "meeting:strong_alert_created",
+      "meeting:summary_created",
+      "meeting:analysis_status_updated",
       // task:completed / task:failed deliberately NOT here. They go through
       // both the task-prefix invalidate (refreshes the agent-task-snapshot
       // cache) AND the chat-specific ws.on() handlers below. The two
@@ -292,6 +313,75 @@ export function useRealtimeSync(
       if (wsId) onIssueLabelsChanged(qc, wsId, issue_id, labels ?? []);
     });
 
+    const handleMeetingChanged = (p: unknown) => {
+      const { meeting } = p as MeetingSessionPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !meeting?.id) return;
+      qc.setQueryData(meetingKeys.detail(wsId, meeting.id), meeting);
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, meeting.project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId) });
+    };
+
+    const unsubMeetingCreated = ws.on("meeting:created", handleMeetingChanged);
+    const unsubMeetingUpdated = ws.on("meeting:updated", handleMeetingChanged);
+    const unsubMeetingStarted = ws.on("meeting:started", handleMeetingChanged);
+    const unsubMeetingStopped = ws.on("meeting:stopped", handleMeetingChanged);
+
+    const unsubMeetingTranscriptSegmentCreated = ws.on(
+      "meeting:transcript_segment_created",
+      (p) => {
+        const payload = p as MeetingTranscriptSegmentCreatedPayload;
+        const wsId = getCurrentWsId();
+        if (!wsId || !payload.meeting_id || !payload.segment?.id) return;
+        qc.setQueryData<ListMeetingTranscriptSegmentsResponse>(
+          meetingKeys.transcript(wsId, payload.meeting_id),
+          (old) => {
+            if (!old) return old;
+            if (old.segments.some((segment) => segment.id === payload.segment.id)) return old;
+            const segments = [...old.segments, payload.segment].sort((a, b) => a.seq - b.seq);
+            return { segments, total: segments.length };
+          },
+        );
+      },
+    );
+
+    const upsertMeetingInsight = (payload: MeetingInsightCardPayload) => {
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.meeting_id || !payload.card?.id) return;
+      qc.setQueryData<ListMeetingInsightCardsResponse>(
+        meetingKeys.insights(wsId, payload.meeting_id),
+        (old) => {
+          if (!old) return old;
+          const withoutExisting = old.cards.filter((card) => card.id !== payload.card.id);
+          const severityOrder: Record<string, number> = { L3: 0, L2: 1, L1: 2 };
+          const cards = [payload.card, ...withoutExisting].sort(
+            (a, b) =>
+              (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) ||
+              b.created_at.localeCompare(a.created_at),
+          );
+          return { cards, total: cards.length };
+        },
+      );
+    };
+
+    const unsubMeetingInsightCreated = ws.on("meeting:insight_created", (p) =>
+      upsertMeetingInsight(p as MeetingInsightCardPayload),
+    );
+    const unsubMeetingInsightUpdated = ws.on("meeting:insight_updated", (p) =>
+      upsertMeetingInsight(p as MeetingInsightCardPayload),
+    );
+    const unsubMeetingStrongAlertCreated = ws.on("meeting:strong_alert_created", (p) =>
+      upsertMeetingInsight(p as MeetingInsightCardPayload),
+    );
+    const unsubMeetingSummaryCreated = ws.on("meeting:summary_created", (p) => {
+      const { meeting_id } = p as MeetingSummaryCreatedPayload;
+      const wsId = getCurrentWsId();
+      if (!wsId || !meeting_id) return;
+      qc.invalidateQueries({ queryKey: meetingKeys.detail(wsId, meeting_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.insights(wsId, meeting_id) });
+    });
+    const unsubMeetingAnalysisStatusUpdated = ws.on("meeting:analysis_status_updated", handleMeetingChanged);
+
     const unsubInboxNew = ws.on("inbox:new", (p) => {
       const { item } = p as InboxNewPayload;
       if (!item) return;
@@ -343,16 +433,19 @@ export function useRealtimeSync(
     const invalidateTimeline = (issueId: string) => {
       qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
     };
-    const invalidateDelegationCardsByIssueId = (issueId: string) => {
+    const invalidateDelegationCardsByIssueId = (
+      issueId: string,
+      source?: { source_team_message_id?: string | null },
+    ) => {
       const wsId = getCurrentWsId();
-      if (wsId) invalidateDelegationCardsForIssueId(qc, wsId, issueId);
+      if (wsId) invalidateDelegationCardsForIssueId(qc, wsId, issueId, source);
     };
 
     const unsubCommentCreated = ws.on("comment:created", (p) => {
       const { comment } = p as CommentCreatedPayload;
       if (comment?.issue_id) {
         invalidateTimeline(comment.issue_id);
-        invalidateDelegationCardsByIssueId(comment.issue_id);
+        invalidateDelegationCardsByIssueId(comment.issue_id, p as CommentCreatedPayload);
       }
     });
 
@@ -360,7 +453,7 @@ export function useRealtimeSync(
       const { comment } = p as CommentUpdatedPayload;
       if (comment?.issue_id) {
         invalidateTimeline(comment.issue_id);
-        invalidateDelegationCardsByIssueId(comment.issue_id);
+        invalidateDelegationCardsByIssueId(comment.issue_id, p as CommentUpdatedPayload);
       }
     });
 
@@ -368,7 +461,7 @@ export function useRealtimeSync(
       const { issue_id } = p as CommentDeletedPayload;
       if (issue_id) {
         invalidateTimeline(issue_id);
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as CommentDeletedPayload);
       }
     });
 
@@ -376,7 +469,7 @@ export function useRealtimeSync(
       const { issue_id } = p as ActivityCreatedPayload;
       if (issue_id) {
         invalidateTimeline(issue_id);
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as ActivityCreatedPayload);
       }
     });
 
@@ -384,7 +477,7 @@ export function useRealtimeSync(
       const { issue_id } = p as ReactionAddedPayload;
       if (issue_id) {
         invalidateTimeline(issue_id);
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as ReactionAddedPayload);
       }
     });
 
@@ -392,7 +485,7 @@ export function useRealtimeSync(
       const { issue_id } = p as ReactionRemovedPayload;
       if (issue_id) {
         invalidateTimeline(issue_id);
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as ReactionRemovedPayload);
       }
     });
 
@@ -402,7 +495,7 @@ export function useRealtimeSync(
       const { issue_id } = p as IssueReactionAddedPayload;
       if (issue_id) {
         qc.invalidateQueries({ queryKey: issueKeys.reactions(issue_id) });
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as IssueReactionAddedPayload);
       }
     });
 
@@ -410,7 +503,7 @@ export function useRealtimeSync(
       const { issue_id } = p as IssueReactionRemovedPayload;
       if (issue_id) {
         qc.invalidateQueries({ queryKey: issueKeys.reactions(issue_id) });
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as IssueReactionRemovedPayload);
       }
     });
 
@@ -418,7 +511,7 @@ export function useRealtimeSync(
       const { issue_id } = p as SubscriberAddedPayload;
       if (issue_id) {
         qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue_id) });
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as SubscriberAddedPayload);
       }
     });
 
@@ -426,7 +519,7 @@ export function useRealtimeSync(
       const { issue_id } = p as SubscriberRemovedPayload;
       if (issue_id) {
         qc.invalidateQueries({ queryKey: issueKeys.subscribers(issue_id) });
-        invalidateDelegationCardsByIssueId(issue_id);
+        invalidateDelegationCardsByIssueId(issue_id, p as SubscriberRemovedPayload);
       }
     });
 
@@ -803,6 +896,16 @@ export function useRealtimeSync(
       unsubIssueCreated();
       unsubIssueDeleted();
       unsubIssueLabelsChanged();
+      unsubMeetingCreated();
+      unsubMeetingUpdated();
+      unsubMeetingStarted();
+      unsubMeetingStopped();
+      unsubMeetingTranscriptSegmentCreated();
+      unsubMeetingInsightCreated();
+      unsubMeetingInsightUpdated();
+      unsubMeetingStrongAlertCreated();
+      unsubMeetingSummaryCreated();
+      unsubMeetingAnalysisStatusUpdated();
       unsubInboxNew();
       unsubCommentCreated();
       unsubCommentUpdated();
@@ -858,6 +961,8 @@ export function useRealtimeSync(
           qc.invalidateQueries({ queryKey: workspaceKeys.members(wsId) });
           qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
           qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+          qc.invalidateQueries({ queryKey: projectV12Keys.all(wsId) });
+          qc.invalidateQueries({ queryKey: meetingKeys.all(wsId) });
           qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
           qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
           qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });

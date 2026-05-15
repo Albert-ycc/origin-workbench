@@ -12,6 +12,7 @@ export type IdeaNoteKind = "new_angle" | "related_history" | "external_reference
 export interface Idea {
   id: string;
   workspace_id: string;
+  project_id?: string | null;
   created_by_user_id: string;
   nurturer_agent_id: string | null;
   promoted_mission_id: string | null;
@@ -43,6 +44,7 @@ export interface IdeaDetail {
 }
 
 export interface CreateIdeaRequest {
+  project_id?: string;
   title?: string;
   description?: string;
   source?: IdeaSource;

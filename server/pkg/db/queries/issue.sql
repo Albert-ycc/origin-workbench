@@ -79,12 +79,13 @@ LEFT JOIN LATERAL (
     SELECT c.id, c.content
     FROM comment c
     WHERE c.issue_id = i.id
-      AND c.workspace_id = i.workspace_id
-      AND c.author_type = 'agent'
-      AND c.author_id = i.assignee_id
-    ORDER BY c.created_at DESC
-    LIMIT 1
-) lc ON true
+	      AND c.workspace_id = i.workspace_id
+	      AND c.author_type = 'agent'
+	      AND c.author_id = i.assignee_id
+	      AND c.type NOT IN ('system', 'status_change')
+	    ORDER BY c.created_at DESC
+	    LIMIT 1
+	) lc ON true
 LEFT JOIN LATERAL (
     SELECT count(*) AS comment_count
     FROM comment c

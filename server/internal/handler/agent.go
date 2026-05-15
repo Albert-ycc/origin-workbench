@@ -163,6 +163,7 @@ type AgentTaskResponse struct {
 	Repos            []RepoData            `json:"repos,omitempty"`
 	ProjectID        string                `json:"project_id,omitempty"`        // issue's project (v1.0) or chat_session's v1.2 project workspace, when present
 	ProjectTitle     string                `json:"project_title,omitempty"`     // for surfacing in agent context
+	ProjectLocalDir  string                `json:"project_local_dir,omitempty"` // normalized project workspace directory for local runtimes
 	ProjectResources []ProjectResourceData `json:"project_resources,omitempty"` // resources attached to the project
 	// Origin §17.5 — v1.2 project memory injection. Both empty when the
 	// task is not bound to a v1.2 project workspace.

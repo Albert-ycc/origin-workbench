@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +89,16 @@ func projectV12ToResponse(p db.Project) ProjectV12Response {
 	}
 }
 
+func (h *Handler) publishProjectMemoryDocUpdated(p db.Project) ProjectV12Response {
+	resp := projectV12ToResponse(p)
+	h.publish(protocol.EventProjectMemoryDocUpdated, uuidToString(p.WorkspaceID), "system", "", map[string]any{
+		"project":               resp,
+		"project_id":            resp.ID,
+		"memory_doc_updated_at": resp.MemoryDocUpdatedAt,
+	})
+	return resp
+}
+
 func (h *Handler) ListProjectsV12(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
 	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
@@ -134,8 +148,9 @@ func (h *Handler) CreateProjectV12(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
 	}
-	if strings.TrimSpace(req.LocalDir) == "" {
-		writeError(w, http.StatusBadRequest, "local_dir is required")
+	localDir, err := normalizeProjectLocalDir(req.LocalDir)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	wsID := h.resolveWorkspaceID(r)
@@ -162,6 +177,13 @@ func (h *Handler) CreateProjectV12(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		if _, err := h.Queries.GetTeamInWorkspace(r.Context(), db.GetTeamInWorkspaceParams{
+			ID:          uuid,
+			WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "team_id not found in this workspace")
+			return
+		}
 		teamUUID = uuid
 	} else if len(req.AgentIDs) > 0 {
 		captainUUID, ok := parseUUIDOrBadRequest(w, req.CaptainAgentID, "captain_agent_id")
@@ -169,12 +191,29 @@ func (h *Handler) CreateProjectV12(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		agentUUIDs := make([]pgtype.UUID, 0, len(req.AgentIDs))
+		seenAgents := make(map[[16]byte]bool, len(req.AgentIDs))
 		seenCaptain := false
 		for _, raw := range req.AgentIDs {
 			u, ok := parseUUIDOrBadRequest(w, raw, "agent_ids")
 			if !ok {
 				return
 			}
+			if seenAgents[u.Bytes] {
+				continue
+			}
+			agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+				ID:          u,
+				WorkspaceID: wsUUID,
+			})
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "agent_ids contains an agent outside this workspace")
+				return
+			}
+			if agent.ArchivedAt.Valid {
+				writeError(w, http.StatusBadRequest, "agent_ids contains an archived agent")
+				return
+			}
+			seenAgents[u.Bytes] = true
 			agentUUIDs = append(agentUUIDs, u)
 			if uuidEqual(u, captainUUID) {
 				seenCaptain = true
@@ -200,7 +239,7 @@ func (h *Handler) CreateProjectV12(w http.ResponseWriter, r *http.Request) {
 		TeamID:      teamUUID,
 		Title:       req.Title,
 		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
-		LocalDir:    req.LocalDir,
+		LocalDir:    localDir,
 		MemoryDoc:   req.MemoryDoc,
 	})
 	if err != nil {
@@ -279,7 +318,18 @@ func (h *Handler) findOrCreateTeamForAgents(
 		}
 	}
 
-	teams, err := h.Queries.ListTeams(ctx, workspaceID)
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		return db.Team{}, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	qtx := h.Queries.WithTx(tx)
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", projectTeamAdvisoryLockKey(workspaceID, captainAgentID, memberAgentIDs)); err != nil {
+		return db.Team{}, fmt.Errorf("lock team signature: %w", err)
+	}
+
+	teams, err := qtx.ListTeams(ctx, workspaceID)
 	if err != nil {
 		return db.Team{}, fmt.Errorf("list teams: %w", err)
 	}
@@ -287,7 +337,7 @@ func (h *Handler) findOrCreateTeamForAgents(
 		if !uuidEqual(t.CaptainAgentID, captainAgentID) {
 			continue
 		}
-		members, err := h.Queries.ListTeamMembers(ctx, t.ID)
+		members, err := qtx.ListTeamMembers(ctx, t.ID)
 		if err != nil {
 			continue
 		}
@@ -307,8 +357,8 @@ func (h *Handler) findOrCreateTeamForAgents(
 	}
 
 	// 没找到匹配 → 建一个新 team
-	teamName := teamNameFromAgents(ctx, h.Queries, captainAgentID, memberAgentIDs, defaultProjectTitle)
-	team, err := h.Queries.CreateTeam(ctx, db.CreateTeamParams{
+	teamName := teamNameFromAgents(ctx, qtx, captainAgentID, memberAgentIDs, defaultProjectTitle)
+	team, err := qtx.CreateTeam(ctx, db.CreateTeamParams{
 		WorkspaceID:     workspaceID,
 		Name:            teamName,
 		Description:     "由项目「" + defaultProjectTitle + "」自动建立的 agent 协作组",
@@ -323,16 +373,60 @@ func (h *Handler) findOrCreateTeamForAgents(
 		if uuidEqual(m, captainAgentID) {
 			role = "captain"
 		}
-		if _, err := h.Queries.AddTeamMember(ctx, db.AddTeamMemberParams{
+		if _, err := qtx.AddTeamMember(ctx, db.AddTeamMemberParams{
 			TeamID:  team.ID,
 			AgentID: m,
 			Role:    role,
 		}); err != nil {
-			// 部分失败不阻塞 team 创建——下次同 agent 集合 find-or-create 还会复用此 team
-			continue
+			return db.Team{}, fmt.Errorf("add team member: %w", err)
 		}
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.Team{}, fmt.Errorf("commit team creation: %w", err)
+	}
 	return team, nil
+}
+
+func projectTeamAdvisoryLockKey(workspaceID, captainAgentID pgtype.UUID, memberAgentIDs []pgtype.UUID) int64 {
+	ids := make([]string, 0, len(memberAgentIDs))
+	for _, id := range memberAgentIDs {
+		if id.Valid {
+			ids = append(ids, uuidToString(id))
+		}
+	}
+	sort.Strings(ids)
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(uuidToString(workspaceID)))
+	_, _ = h.Write([]byte("|"))
+	_, _ = h.Write([]byte(uuidToString(captainAgentID)))
+	for _, id := range ids {
+		_, _ = h.Write([]byte("|"))
+		_, _ = h.Write([]byte(id))
+	}
+	return int64(h.Sum64())
+}
+
+func normalizeProjectLocalDir(raw string) (string, error) {
+	dir := strings.TrimSpace(raw)
+	if dir == "" {
+		return "", fmt.Errorf("empty local_dir")
+	}
+	if dir == "~" || strings.HasPrefix(dir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if dir == "~" {
+			dir = home
+		} else {
+			dir = filepath.Join(home, strings.TrimPrefix(dir, "~/"))
+		}
+	}
+	dir = filepath.Clean(dir)
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("local_dir must be absolute")
+	}
+	return dir, nil
 }
 
 // teamNameFromAgents 给自动建的 team 起个用户能认得出的名字。优先从
@@ -399,6 +493,9 @@ func (h *Handler) UpdateProjectV12(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := projectV12ToResponse(p)
 	h.publish(protocol.EventProjectUpdated, uuidToString(p.WorkspaceID), "system", "", map[string]any{"project": resp})
+	if req.MemoryDoc != nil {
+		h.publishProjectMemoryDocUpdated(p)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -501,14 +598,16 @@ func (h *Handler) AppendProjectMemoryDoc(w http.ResponseWriter, r *http.Request)
 	}
 	newDoc := p.MemoryDoc + "\n\n" + header + "\n" + req.Body + "\n"
 	updated, err := h.Queries.UpdateProjectV12(r.Context(), db.UpdateProjectV12Params{
-		ID:        pid,
-		MemoryDoc: pgtype.Text{String: newDoc, Valid: true},
+		ID:                 pid,
+		MemoryDoc:          pgtype.Text{String: newDoc, Valid: true},
+		MemoryDocUpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to append")
 		return
 	}
-	writeJSON(w, http.StatusOK, projectV12ToResponse(updated))
+	resp := h.publishProjectMemoryDocUpdated(updated)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // =====================
@@ -1336,18 +1435,24 @@ func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Reques
 		doc = appendToMemorySection(doc, "## 用户钉住的片段", entry.String())
 	}
 
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start compaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
 	// Step 4: archive old session FIRST so the (team_id, project_id) unique
 	// slot is freed (the partial index requires status='active'), then
-	// GetOrCreate picks an INSERT path producing a fresh row.
-	// We stamp the compaction pointer in two writes — initial archive, then
-	// fill the pointer once the new session id is known. Two writes is fine:
-	// the pointer is a UX convenience for the archived sessions tab, not a
-	// integrity guarantee.
-	if err := h.Queries.ArchiveChatSession(r.Context(), oldSession.ID); err != nil {
+	// GetOrCreate picks an INSERT path producing a fresh row. Archive, fresh
+	// session, anchor swap, memory write, and counter increment must commit
+	// atomically so the project never lands in a half-swapped main-chat state.
+	if err := qtx.ArchiveChatSession(r.Context(), oldSession.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to archive old session: "+err.Error())
 		return
 	}
-	newSession, err := h.Queries.GetOrCreateTeamChatSession(r.Context(), db.GetOrCreateTeamChatSessionParams{
+	newSession, err := qtx.GetOrCreateTeamChatSession(r.Context(), db.GetOrCreateTeamChatSessionParams{
 		TeamID:      p.TeamID,
 		WorkspaceID: p.WorkspaceID,
 		CreatorID:   userUUID,
@@ -1364,16 +1469,16 @@ func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Reques
 	}
 	// Fill the compaction pointer + last_compacted_at on the just-archived
 	// row so right-rail "归档会话" tab can thread back to the new session.
-	if err := h.Queries.ArchiveChatSessionWithCompactionPointer(r.Context(), db.ArchiveChatSessionWithCompactionPointerParams{
+	if err := qtx.ArchiveChatSessionWithCompactionPointer(r.Context(), db.ArchiveChatSessionWithCompactionPointerParams{
 		ID:                     oldSession.ID,
 		CompactedIntoSessionID: pgtype.UUID{Bytes: newSession.ID.Bytes, Valid: true},
 	}); err != nil {
-		// non-fatal: the archive itself succeeded, the pointer is cosmetic
-		_ = err
+		writeError(w, http.StatusInternalServerError, "failed to link archived session: "+err.Error())
+		return
 	}
 
 	// Move the project's anchor to the new session.
-	if err := h.Queries.ReplaceProjectMainChatSessionV12(r.Context(), db.ReplaceProjectMainChatSessionV12Params{
+	if err := qtx.ReplaceProjectMainChatSessionV12(r.Context(), db.ReplaceProjectMainChatSessionV12Params{
 		ID:                p.ID,
 		MainChatSessionID: pgtype.UUID{Bytes: newSession.ID.Bytes, Valid: true},
 	}); err != nil {
@@ -1382,7 +1487,7 @@ func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Persist memory_doc + compaction_count.
-	updated, err := h.Queries.UpdateProjectV12(r.Context(), db.UpdateProjectV12Params{
+	updated, err := qtx.UpdateProjectV12(r.Context(), db.UpdateProjectV12Params{
 		ID:                 p.ID,
 		MemoryDoc:          pgtype.Text{String: doc, Valid: true},
 		MemoryDocUpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
@@ -1391,13 +1496,18 @@ func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to write memory_doc: "+err.Error())
 		return
 	}
-	if _, err := h.Queries.IncrementProjectCompactionV12(r.Context(), p.ID); err != nil {
-		// non-fatal: counter drift is cosmetic
-		_ = err
+	updated, err = qtx.IncrementProjectCompactionV12(r.Context(), p.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to increment compaction counter: "+err.Error())
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit compaction")
+		return
 	}
 
 	// Step 4 cont.: write opening system message into the new session
-	opening := fmt.Sprintf("【本项目记忆已更新（基于压缩第 %d 次）】", updated.CompactionCount+1)
+	opening := fmt.Sprintf("【本项目记忆已更新（基于压缩第 %d 次）】", updated.CompactionCount)
 	if cs := strings.TrimSpace(req.CurrentStatus); cs != "" {
 		opening += "\n当前状态：" + cs
 	}
@@ -1420,8 +1530,9 @@ func (h *Handler) ConfirmProjectCompaction(w http.ResponseWriter, r *http.Reques
 		_ = err
 	}
 
+	resp := h.publishProjectMemoryDocUpdated(updated)
 	writeJSON(w, http.StatusOK, ConfirmProjectCompactionResponse{
-		Project:           projectV12ToResponse(updated),
+		Project:           resp,
 		NewChatSessionID:  uuidToString(newSession.ID),
 		ArchivedSessionID: uuidToString(oldSession.ID),
 	})
@@ -1596,7 +1707,8 @@ func (h *Handler) PinChatMessageToProjectMemory(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "failed to pin message")
 		return
 	}
-	writeJSON(w, http.StatusOK, projectV12ToResponse(updated))
+	resp := h.publishProjectMemoryDocUpdated(updated)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GetProjectHistory exposes the project's chat history for agent
@@ -1735,11 +1847,14 @@ func (h *Handler) PostProjectsBroadcastForTeamMemberChange(
 		stamp := time.Now().Format("2006-01-02")
 		entry := fmt.Sprintf("- %s · %s", stamp, content)
 		newDoc := appendToMemorySection(p.MemoryDoc, section, entry)
-		_, _ = h.Queries.UpdateProjectV12(ctx, db.UpdateProjectV12Params{
+		updatedProject, updateErr := h.Queries.UpdateProjectV12(ctx, db.UpdateProjectV12Params{
 			ID:                 p.ID,
 			MemoryDoc:          pgtype.Text{String: newDoc, Valid: true},
 			MemoryDocUpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		})
+		if updateErr == nil {
+			h.publishProjectMemoryDocUpdated(updatedProject)
+		}
 		h.publish(protocol.EventTeamMessageCreated, workspaceID, "system", "", map[string]any{
 			"team_id":    uuidToString(team.ID),
 			"project_id": uuidToString(p.ID),
