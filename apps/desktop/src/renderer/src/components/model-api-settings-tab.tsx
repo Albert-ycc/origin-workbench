@@ -1,12 +1,16 @@
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
   Clipboard,
   KeyRound,
+  ListChecks,
+  Plug,
   RefreshCw,
   ServerCog,
+  ShieldCheck,
+  Terminal,
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -32,6 +36,38 @@ const OPTIONAL_ENV = [
   "ORIGIN_MODEL_NAMES",
   "ORIGIN_MODEL_RUNTIME_NAME",
   "ORIGIN_MODEL_TOOL_ROOTS",
+];
+
+type SetupMode = "official" | "relay" | "ccSwitch";
+
+const SETUP_MODES: Array<{
+  id: SetupMode;
+  title: string;
+  eyebrow: string;
+  description: string;
+  envFamily: string;
+}> = [
+  {
+    id: "ccSwitch",
+    title: "cc-switch / Codex 兼容环境",
+    eyebrow: "推荐给中转站切换",
+    description: "沿用 cc-switch 写出的 OpenAI 兼容变量，Origin 自动识别为 API runtime。",
+    envFamily: "OPENAI_* + ORIGIN_MODEL_TOOL_ROOTS",
+  },
+  {
+    id: "relay",
+    title: "中转站 / OpenRouter",
+    eyebrow: "推荐给第三方网关",
+    description: "用 Origin 专属变量接入任意 OpenAI Chat Completions 兼容 Base URL。",
+    envFamily: "ORIGIN_MODEL_*",
+  },
+  {
+    id: "official",
+    title: "OpenAI 官方 API",
+    eyebrow: "最小配置",
+    description: "只需要 API Key 和模型名，Base URL 可以使用官方默认地址。",
+    envFamily: "ORIGIN_MODEL_*",
+  },
 ];
 
 interface ModelApiMetadata {
@@ -88,26 +124,77 @@ function runtimeModels(value: unknown): RuntimeModel[] {
   });
 }
 
-function buildEnvSnippet(defaultModel: string) {
+function modelList(defaultModel: string) {
+  return defaultModel;
+}
+
+function buildShellSnippet(defaultModel: string, mode: SetupMode) {
+  const models = modelList(defaultModel);
+  if (mode === "ccSwitch") {
+    return [
+      "# 终端 / daemon 启动方式：使用 cc-switch 或 Codex 的 OpenAI 兼容变量",
+      'export OPENAI_API_KEY="sk-..."',
+      'export OPENAI_BASE_URL="https://your-relay.example/v1"',
+      `export OPENAI_MODEL="${defaultModel}"`,
+      `export OPENAI_MODELS="${models}"`,
+      "",
+      "# 可选：限制 API runtime 可读取和搜索的本地目录",
+      'export ORIGIN_MODEL_TOOL_ROOTS="$HOME/OriginWorkbenchMount"',
+      "",
+      "# 重启 Origin 或重启守护进程后，回到本页点“刷新”",
+    ].join("\n");
+  }
+
+  const runtimeName = mode === "official" ? "OpenAI API" : "cc-switch / 中转站";
+  const baseURL =
+    mode === "official" ? "https://api.openai.com/v1" : "https://your-relay.example/v1";
   return [
-    "# 方式 A：Origin 专属变量",
+    "# 终端 / daemon 启动方式：Origin 专属变量优先级最高",
     'export ORIGIN_MODEL_PROVIDER="openai_compatible"',
     'export ORIGIN_MODEL_API_KEY="sk-..."',
+    `export ORIGIN_MODEL_BASE_URL="${baseURL}"`,
     `export ORIGIN_MODEL_NAME="${defaultModel}"`,
+    `export ORIGIN_MODEL_NAMES="${models}"`,
+    `export ORIGIN_MODEL_RUNTIME_NAME="${runtimeName}"`,
     "",
-    "# 可选：对接兼容 OpenAI Chat Completions 的网关时再配置",
-    'export ORIGIN_MODEL_BASE_URL="https://api.openai.com/v1"',
-    `export ORIGIN_MODEL_NAMES="${defaultModel}"`,
-    'export ORIGIN_MODEL_RUNTIME_NAME="大模型 API"',
+    "# 可选：限制 API runtime 可读取和搜索的本地目录",
+    'export ORIGIN_MODEL_TOOL_ROOTS="$HOME/OriginWorkbenchMount"',
     "",
-    "# 可选：限制 API runtime 可读取和搜索的本地目录，多个目录用逗号分隔",
-    'export ORIGIN_MODEL_TOOL_ROOTS="/Users/albert/OriginWorkbenchMount"',
+    "# 重启 Origin 或重启守护进程后，回到本页点“刷新”",
+  ].join("\n");
+}
+
+function buildLaunchctlSnippet(defaultModel: string, mode: SetupMode) {
+  const models = modelList(defaultModel);
+  if (mode === "ccSwitch") {
+    return [
+      "# Mac 图形 App：Finder / Dock 打开的 Origin 读取 launchd 环境",
+      'launchctl setenv OPENAI_API_KEY "sk-..."',
+      'launchctl setenv OPENAI_BASE_URL "https://your-relay.example/v1"',
+      `launchctl setenv OPENAI_MODEL "${defaultModel}"`,
+      `launchctl setenv OPENAI_MODELS "${models}"`,
+      'launchctl setenv ORIGIN_MODEL_TOOL_ROOTS "$HOME/OriginWorkbenchMount"',
+      "",
+      'osascript -e \'quit app "Origin"\'',
+      'open -a "Origin"',
+    ].join("\n");
+  }
+
+  const runtimeName = mode === "official" ? "OpenAI API" : "cc-switch / 中转站";
+  const baseURL =
+    mode === "official" ? "https://api.openai.com/v1" : "https://your-relay.example/v1";
+  return [
+    "# Mac 图形 App：Finder / Dock 打开的 Origin 读取 launchd 环境",
+    'launchctl setenv ORIGIN_MODEL_PROVIDER "openai_compatible"',
+    'launchctl setenv ORIGIN_MODEL_API_KEY "sk-..."',
+    `launchctl setenv ORIGIN_MODEL_BASE_URL "${baseURL}"`,
+    `launchctl setenv ORIGIN_MODEL_NAME "${defaultModel}"`,
+    `launchctl setenv ORIGIN_MODEL_NAMES "${models}"`,
+    `launchctl setenv ORIGIN_MODEL_RUNTIME_NAME "${runtimeName}"`,
+    'launchctl setenv ORIGIN_MODEL_TOOL_ROOTS "$HOME/OriginWorkbenchMount"',
     "",
-    "# 方式 B：中转站 / cc-switch / Codex 兼容变量",
-    "# 如果没有 ORIGIN_MODEL_*，Origin 会自动读取这些变量",
-    'export OPENAI_API_KEY="sk-..."',
-    'export OPENAI_BASE_URL="https://your-relay.example/v1"',
-    `export OPENAI_MODEL="${defaultModel}"`,
+    'osascript -e \'quit app "Origin"\'',
+    'open -a "Origin"',
   ].join("\n");
 }
 
@@ -117,18 +204,70 @@ function FieldRow({
   mono,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   mono?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[128px_minmax(0,1fr)] items-baseline gap-3 py-1.5">
+    <div className="grid grid-cols-[132px_minmax(0,1fr)] items-baseline gap-3 py-1.5">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span
         className={cn("min-w-0 truncate text-sm", mono && "font-mono text-xs")}
-        title={value}
+        title={typeof value === "string" ? value : undefined}
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function StepItem({
+  index,
+  title,
+  description,
+}: {
+  index: number;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border bg-muted/40 text-xs font-medium">
+        {index}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function CopyBlock({
+  title,
+  description,
+  value,
+  onCopy,
+}: {
+  title: string;
+  description: string;
+  value: string;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/15">
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{title}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onCopy}>
+          <Clipboard className="h-3.5 w-3.5" />
+          复制
+        </Button>
+      </div>
+      <pre className="max-h-64 overflow-auto p-4 text-xs leading-relaxed">
+        <code>{value}</code>
+      </pre>
     </div>
   );
 }
@@ -137,6 +276,7 @@ export function ModelApiSettingsTab() {
   const wsId = useWorkspaceId();
   const queryClient = useQueryClient();
   const runtimesQuery = useQuery(runtimeListOptions(wsId));
+  const [activeMode, setActiveMode] = useState<SetupMode>("ccSwitch");
 
   const apiRuntime = useMemo(
     () => runtimesQuery.data?.find(isModelApiRuntime) ?? null,
@@ -153,31 +293,38 @@ export function ModelApiSettingsTab() {
   const optionalEnv = stringList(metadata.optional_env, OPTIONAL_ENV);
   const configured = Boolean(apiRuntime && metadata.api_key_configured);
   const ready = Boolean(configured && apiRuntime?.status === "online" && models.length > 0);
-  const envSnippet = buildEnvSnippet(defaultModel);
+  const shellSnippet = useMemo(
+    () => buildShellSnippet(defaultModel, activeMode),
+    [activeMode, defaultModel],
+  );
+  const launchctlSnippet = useMemo(
+    () => buildLaunchctlSnippet(defaultModel, activeMode),
+    [activeMode, defaultModel],
+  );
+  const activeModeInfo = SETUP_MODES.find((mode) => mode.id === activeMode) ?? SETUP_MODES[0];
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: runtimeKeys.list(wsId) });
     toast.success("正在刷新大模型 API 状态");
   };
 
-  const copySnippet = async () => {
+  const copyText = async (value: string, message: string) => {
     try {
-      await navigator.clipboard.writeText(envSnippet);
-      toast.success("环境变量片段已复制");
+      await navigator.clipboard.writeText(value);
+      toast.success(message);
     } catch {
       toast.error("复制失败");
     }
   };
 
   return (
-    <div>
+    <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">大模型 API</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            对接 OpenAI 兼容的 Chat Completions API、中转站或 cc-switch / Codex 配置，并由 Origin
-            补上工具循环和只读本地文件工具。
-            Shell、浏览器、MCP 等能力仍需要完整本地 Agent runtime。
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            接入 OpenAI Chat Completions 兼容 API、中转站或 cc-switch。模型负责回复和决策，
+            Origin 负责执行已开放的本地工具并回传结果。
           </p>
         </div>
         <Button
@@ -193,14 +340,14 @@ export function ModelApiSettingsTab() {
         </Button>
       </div>
 
-      <div className="mt-6 space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle>连接状态</CardTitle>
                 <CardDescription>
-                  当前状态来自后端识别到的 API runtime，敏感配置只以布尔值展示。
+                  后端只回传识别结果和布尔状态，不会把 API Key 暴露给前端。
                 </CardDescription>
               </div>
               <Badge
@@ -217,96 +364,219 @@ export function ModelApiSettingsTab() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border bg-muted/20 px-4 py-2">
-              <FieldRow label="运行环境" value={apiRuntime?.name ?? "未发现"} />
-              <FieldRow label="状态" value={apiRuntime?.status ?? "—"} />
-              <FieldRow label="Provider" value={apiRuntime?.provider ?? "openai"} />
-              <FieldRow
-                label="配置来源"
-                value={metadata.config_source ?? "environment"}
-              />
-              <FieldRow
-                label="API Key"
-                value={metadata.api_key_configured ? "已配置" : "未配置"}
-              />
-              <FieldRow
-                label="Base URL"
-                value={metadata.base_url_configured ? "已配置" : "使用默认值"}
-              />
-              <FieldRow
-                label="任务能力"
-                value={
-                  metadata.task_execution === "tool_loop"
-                    ? "聊天 + 工具循环"
-                    : metadata.task_execution === "chat_only"
-                      ? "仅聊天任务"
-                      : "—"
-                }
-              />
-              <FieldRow
-                label="工具 / Skills"
-                value={metadata.supports_tools ? "支持内置文件工具" : "暂不支持"}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>中转站 / cc-switch</CardTitle>
-            <CardDescription>
-              支持 cc-switch、CodeAPI、TokenGo、9527code、OpenRouter 等 OpenAI 兼容入口。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-              Origin 会优先读取 ORIGIN_MODEL_*。如果这些变量不存在，会兜底读取
-              OPENAI_API_KEY、OPENAI_BASE_URL、OPENAI_API_BASE、OPENAI_API_BASE_URL、
-              OPENAI_MODEL、OPENAI_MODEL_NAME、OPENAI_MODELS。cc-switch 请使用 Codex / OpenAI
-              兼容配置，Base URL 通常需要带 /v1；Claude Code 的 ANTHROPIC_* 配置不会被当成
-              Chat Completions API 使用。
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>工具能力</CardTitle>
-            <CardDescription>
-              大模型 API 负责决策，Origin 负责执行内置工具并把结果回传给模型。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
-              <div className="flex items-center gap-2 font-medium">
-                <Wrench className="h-4 w-4" />
-                已开放只读本地文件工具
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border bg-muted/20 px-4 py-2">
+                <FieldRow label="运行环境" value={apiRuntime?.name ?? "未发现"} />
+                <FieldRow label="状态" value={apiRuntime?.status ?? "—"} />
+                <FieldRow label="Provider" value={apiRuntime?.provider ?? "openai"} />
+                <FieldRow
+                  label="配置来源"
+                  value={metadata.config_source ?? "environment"}
+                  mono
+                />
               </div>
-              <p className="mt-2 text-muted-foreground">
-                当前支持 list_directory、read_text_file、search_text。可通过
-                ORIGIN_MODEL_TOOL_ROOTS 限定可读取和搜索的目录；暂不开放写文件、Shell、浏览器、
-                MCP 或 Codex / Claude Code 原生 skills 执行。
-              </p>
+              <div className="rounded-lg border bg-muted/20 px-4 py-2">
+                <FieldRow
+                  label="API Key"
+                  value={metadata.api_key_configured ? "已配置" : "未配置"}
+                />
+                <FieldRow
+                  label="Base URL"
+                  value={metadata.base_url_configured ? "已配置" : "默认或未配置"}
+                />
+                <FieldRow
+                  label="任务能力"
+                  value={
+                    metadata.task_execution === "tool_loop"
+                      ? "聊天 + 工具循环"
+                      : metadata.task_execution === "chat_only"
+                        ? "仅聊天任务"
+                        : "—"
+                  }
+                />
+                <FieldRow
+                  label="本地工具"
+                  value={metadata.supports_tools ? "只读文件工具" : "未开放"}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <div className="flex items-start justify-between gap-3">
+            <CardTitle>配置路径</CardTitle>
+            <CardDescription>按顺序做完，再刷新本页看状态。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <StepItem
+              index={1}
+              title="选择接入方式"
+              description="cc-switch 走 OPENAI_*；专属配置走 ORIGIN_MODEL_*。两者同时存在时 ORIGIN_MODEL_* 优先。"
+            />
+            <StepItem
+              index={2}
+              title="写入环境变量"
+              description="Dock 或 Finder 打开的 Mac App 用 launchctl；终端启动 daemon 可用 export。"
+            />
+            <StepItem
+              index={3}
+              title="重启并刷新"
+              description="退出 Origin 后重新打开，让桌面 App 和后端守护进程读取新的环境。"
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <Plug className="mt-0.5 h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle>接入方式</CardTitle>
+              <CardDescription>
+                选择后，下方命令会自动切换变量族和 Base URL 模板。
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {SETUP_MODES.map((mode) => {
+              const selected = mode.id === activeMode;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setActiveMode(mode.id)}
+                  className={cn(
+                    "rounded-lg border p-4 text-left transition-colors hover:bg-muted/30",
+                    selected && "border-primary bg-primary/5",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{mode.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{mode.eyebrow}</p>
+                    </div>
+                    {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />}
+                  </div>
+                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                    {mode.description}
+                  </p>
+                  <Badge variant="outline" className="mt-3 font-mono text-[11px]">
+                    {mode.envFamily}
+                  </Badge>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 rounded-lg border bg-muted/15 px-4 py-3 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <ShieldCheck className="h-4 w-4" />
+              当前选择：{activeModeInfo.title}
+            </div>
+            <p className="mt-2 text-muted-foreground">
+              cc-switch 或中转站的 Base URL 必须是 OpenAI Chat Completions 兼容入口，通常以
+              <span className="font-mono text-xs"> /v1</span> 结尾；Claude Code 的
+              <span className="font-mono text-xs"> ANTHROPIC_*</span> 变量不会被当作
+              Chat Completions API 使用。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <Terminal className="mt-0.5 h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle>复制配置</CardTitle>
+              <CardDescription>
+                替换 API Key、Base URL 和模型名后执行。页面不保存密钥。
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <CopyBlock
+            title="Mac mini 本地 App"
+            description="适合从 Dock、Finder 或当前已安装 Origin.app 打开。"
+            value={launchctlSnippet}
+            onCopy={() => void copyText(launchctlSnippet, "Mac App 配置命令已复制")}
+          />
+          <CopyBlock
+            title="终端 / daemon"
+            description="适合从终端启动后端或调试运行。"
+            value={shellSnippet}
+            onCopy={() => void copyText(shellSnippet, "终端环境变量片段已复制")}
+          />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <Wrench className="mt-0.5 h-5 w-5 text-muted-foreground" />
               <div>
-                <CardTitle>环境变量配置</CardTitle>
+                <CardTitle>工具能力</CardTitle>
                 <CardDescription>
-                  修改后重启服务端或桌面托管的后端进程，再回到这里刷新状态。
+                  API runtime 当前开放安全的只读文件工具。
                 </CardDescription>
               </div>
-              <Button variant="outline" size="sm" onClick={() => void copySnippet()}>
-                <Clipboard className="h-3.5 w-3.5" />
-                复制
-              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-3">
+              {["list_directory", "read_text_file", "search_text"].map((name) => (
+                <div key={name} className="rounded-lg border bg-muted/15 px-3 py-2">
+                  <p className="truncate font-mono text-xs">{name}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              通过 <span className="font-mono text-xs">ORIGIN_MODEL_TOOL_ROOTS</span>{" "}
+              限定可访问目录。写文件、Shell、浏览器、MCP、Codex / Claude Code 原生 skills 仍需要完整本地
+              Agent runtime。
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <ListChecks className="mt-0.5 h-5 w-5 text-muted-foreground" />
+              <div>
+                <CardTitle>模型与变量</CardTitle>
+                <CardDescription>
+                  模型来自环境变量，默认模型用于新建智能体。
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {models.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {models.map((model) => (
+                  <Badge
+                    key={model.id}
+                    variant={model.id === defaultModel ? "default" : "outline"}
+                    className="max-w-full"
+                    title={model.id}
+                  >
+                    <span className="truncate">{model.label ?? model.id}</span>
+                    {model.id === defaultModel && <span>默认</span>}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                暂未发现模型。配置模型名并重启后端后，这里会显示可选模型。
+              </p>
+            )}
+
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-lg border px-3 py-2">
                 <div className="flex items-center gap-1.5 text-xs font-medium">
@@ -324,7 +594,7 @@ export function ModelApiSettingsTab() {
               <div className="rounded-lg border px-3 py-2">
                 <div className="flex items-center gap-1.5 text-xs font-medium">
                   <ServerCog className="h-3.5 w-3.5" />
-                  可选
+                  常用可选
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {optionalEnv.map((name) => (
@@ -335,42 +605,6 @@ export function ModelApiSettingsTab() {
                 </div>
               </div>
             </div>
-            <pre className="max-h-48 overflow-auto rounded-lg border bg-muted/30 p-3 text-xs leading-relaxed">
-              <code>{envSnippet}</code>
-            </pre>
-            <p className="text-xs text-muted-foreground">
-              页面不会保存 API Key。密钥只从后端进程环境变量读取，避免写入前端缓存、本地偏好或数据库。
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>可用模型</CardTitle>
-            <CardDescription>
-              模型列表来自 ORIGIN_MODEL_NAME / ORIGIN_MODEL_NAMES，默认模型会用于新建智能体。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {models.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {models.map((model) => (
-                  <Badge
-                    key={model.id}
-                    variant={model.id === defaultModel ? "default" : "outline"}
-                    className="max-w-full"
-                    title={model.id}
-                  >
-                    <span className="truncate">{model.label ?? model.id}</span>
-                    {model.id === defaultModel && <span>默认</span>}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                暂未发现模型。配置 ORIGIN_MODEL_NAME 后重启后端即可生成 API runtime。
-              </p>
-            )}
           </CardContent>
         </Card>
       </div>
