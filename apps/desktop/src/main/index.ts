@@ -9,9 +9,8 @@ import { openExternalSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
 import { getAppVersion } from "./app-version";
 
-// Bundled icon used for dev-mode dock/taskbar branding. In production the
-// app bundle icon (from electron-builder) wins; this path is only consumed
-// by the `is.dev` branch below.
+// Bundled icon used for dev-mode dock/taskbar branding and native
+// notifications. In production the app bundle icon from electron-builder wins.
 const DEV_ICON_PATH = join(__dirname, "../../resources/icon.png");
 
 // macOS/Linux GUI launches inherit a minimal PATH from launchd that omits
@@ -315,7 +314,11 @@ if (!gotTheLock) {
         },
       ) => {
         if (!Notification.isSupported()) return;
-        const notification = new Notification({ title, body });
+        const notification = new Notification({
+          title,
+          body,
+          icon: DEV_ICON_PATH,
+        });
         notification.on("click", () => {
           if (!mainWindow) return;
           if (mainWindow.isMinimized()) mainWindow.restore();

@@ -24,7 +24,7 @@ Origin's branding split is structural, not transitional. **Don't try to
   bundle id (`ai.origin.desktop`) + userData path
   (`~/Library/Application Support/Origin`) + DMG / zip artifact names
   (`origin-${version}-mac-${arch}.${ext}`) + dock icon + the README hero
-  + the in-app Lorelei mascot.
+  + the in-app Origin icon.
 - **`multica` stays for compatibility** — CLI binary name (`multica`),
   Go module path (`github.com/multica-ai/multica/server`), npm package
   namespace (`@multica/*`), daemon/runtime protocol fields (`provider`,
@@ -35,10 +35,12 @@ Origin's branding split is structural, not transitional. **Don't try to
 Known cosmetic mismatches (don't touch unless explicitly refactoring):
 
 - `packages/ui/components/common/multica-icon.tsx` exports `MulticaIcon`
-  but renders the Origin Lorelei mascot inline. The export name has 5+
+  but renders the Origin app icon inline. The export name has 5+
   import sites; the visual identity is the substance.
-- `apps/desktop/build/origin-logo.svg` is the source of truth for the
-  mascot. Re-render PNG/.icns from there if the mascot ever changes.
+- `apps/desktop/build/icon.png` is the source raster for the desktop icon set.
+  Keep `apps/desktop/build/icon.icns`, `apps/desktop/build/icon.ico`,
+  `apps/desktop/resources/icon.png`, `apps/desktop/src/renderer/public/icon.png`,
+  and `packages/ui/components/common/origin-icon-data.ts` in sync when it changes.
 
 ## Versioning
 
