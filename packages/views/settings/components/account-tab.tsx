@@ -13,6 +13,10 @@ import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import { useLogout } from "../../auth";
 import { resolveUserAvatarUrl } from "../../common/default-avatar";
 
+export function normalizeProfileName(value: string) {
+  return value.trim();
+}
+
 export function AccountTab() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -44,10 +48,17 @@ export function AccountTab() {
   };
 
   const handleProfileSave = async () => {
+    const normalizedName = normalizeProfileName(profileName);
+    if (!normalizedName) {
+      toast.error("姓名不能为空");
+      return;
+    }
+
     setProfileSaving(true);
     try {
-      const updated = await api.updateMe({ name: profileName });
+      const updated = await api.updateMe({ name: normalizedName });
       setUser(updated);
+      setProfileName(updated.name ?? normalizedName);
       toast.success("个人资料已更新");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "更新个人资料失败");
@@ -109,7 +120,7 @@ export function AccountTab() {
               <Button
                 size="sm"
                 onClick={handleProfileSave}
-                disabled={profileSaving || !profileName.trim()}
+                disabled={profileSaving || !normalizeProfileName(profileName)}
               >
                 <Save className="h-3 w-3" />
                 {profileSaving ? "更新中..." : "更新个人资料"}

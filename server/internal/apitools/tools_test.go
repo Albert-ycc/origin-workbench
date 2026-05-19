@@ -63,6 +63,15 @@ func TestLocalExecutorRejectsOutsideRootAndSecrets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("TOKEN=secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".npmrc"), []byte("//registry.example.test/:_authToken=needle-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".aws"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".aws", "credentials"), []byte("aws_access_key_id=needle-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	executor, err := NewLocalExecutor(Config{Roots: []string{root}})
 	if err != nil {
@@ -87,6 +96,69 @@ func TestLocalExecutorRejectsOutsideRootAndSecrets(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "sensitive file") {
 		t.Fatalf("secret path err = %v", err)
+	}
+
+	for _, path := range []string{".npmrc", ".aws/credentials"} {
+		_, err = executor.Execute(context.Background(), modelapi.ToolCall{
+			Function: modelapi.ToolCallFunction{
+				Name:      "read_text_file",
+				Arguments: `{"path":"` + path + `"}`,
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "sensitive file") {
+			t.Fatalf("sensitive path %s err = %v", path, err)
+		}
+	}
+
+	search := executeTool(t, executor, "search_text", `{"query":"needle-secret","path":"."}`)
+	if rawMatches, ok := search["matches"]; ok && rawMatches != nil {
+		matches, ok := rawMatches.([]any)
+		if !ok {
+			t.Fatalf("search matches = %+v", rawMatches)
+		}
+		if len(matches) != 0 {
+			t.Fatalf("sensitive files should be excluded from search, got %+v", matches)
+		}
+	}
+}
+
+func TestLocalExecutorDefaultsToWorkspaceRoot(t *testing.T) {
+	temp := t.TempDir()
+	repoRoot := filepath.Join(temp, "repo")
+	serverDir := filepath.Join(repoRoot, "server")
+	if err := os.MkdirAll(serverDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "pnpm-workspace.yaml"), []byte("packages: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(serverDir, "go.mod"), []byte("module example.test/server\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantRoot, err := resolveExistingPath(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(serverDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(originalWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	executor, err := NewLocalExecutor(Config{})
+	if err != nil {
+		t.Fatalf("executor: %v", err)
+	}
+	if len(executor.roots) != 1 || executor.roots[0] != wantRoot {
+		t.Fatalf("roots = %+v, want [%s]", executor.roots, wantRoot)
 	}
 }
 

@@ -62,5 +62,6 @@ data/
 # Origin fork additions
 docs-private/
 _temp/
+graphify-out/
 apps/desktop/dist-local/
 apps/desktop/index-*.js

@@ -3,8 +3,15 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+const autoUpdateBuildFlag =
+  process.env.ORIGIN_ENABLE_AUTO_UPDATE === "1" ? "1" : "";
+
 export default defineConfig({
   main: {
+    define: {
+      "process.env.ORIGIN_ENABLE_AUTO_UPDATE":
+        JSON.stringify(autoUpdateBuildFlag),
+    },
     plugins: [externalizeDepsPlugin()],
   },
   preload: {

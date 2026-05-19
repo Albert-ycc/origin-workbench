@@ -51,6 +51,58 @@ func (q *Queries) ArchiveMeetingSession(ctx context.Context, arg ArchiveMeetingS
 	return i, err
 }
 
+const getMeetingSummary = `-- name: GetMeetingSummary :one
+SELECT
+    meeting_id,
+    workspace_id,
+    project_id,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    source_seq_start,
+    source_seq_end,
+    generated_by,
+    created_at,
+    updated_at
+FROM meeting_summary
+WHERE meeting_id = $1
+  AND workspace_id = $2
+`
+
+type GetMeetingSummaryParams struct {
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetMeetingSummary(ctx context.Context, arg GetMeetingSummaryParams) (MeetingSummary, error) {
+	row := q.db.QueryRow(ctx, getMeetingSummary, arg.MeetingID, arg.WorkspaceID)
+	var i MeetingSummary
+	err := row.Scan(
+		&i.MeetingID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.SummaryMd,
+		&i.Decisions,
+		&i.Questions,
+		&i.Risks,
+		&i.Feedback,
+		&i.Tensions,
+		&i.ActionItems,
+		&i.MemoryCandidates,
+		&i.SourceSeqStart,
+		&i.SourceSeqEnd,
+		&i.GeneratedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createMeetingInsightCard = `-- name: CreateMeetingInsightCard :one
 INSERT INTO meeting_insight_card (
     workspace_id,
@@ -629,6 +681,114 @@ func (q *Queries) StopMeetingSession(ctx context.Context, arg StopMeetingSession
 	return i, err
 }
 
+const upsertMeetingSummary = `-- name: UpsertMeetingSummary :one
+INSERT INTO meeting_summary (
+    meeting_id,
+    workspace_id,
+    project_id,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    source_seq_start,
+    source_seq_end,
+    generated_by
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+)
+ON CONFLICT (meeting_id) DO UPDATE SET
+    summary_md = EXCLUDED.summary_md,
+    decisions = EXCLUDED.decisions,
+    questions = EXCLUDED.questions,
+    risks = EXCLUDED.risks,
+    feedback = EXCLUDED.feedback,
+    tensions = EXCLUDED.tensions,
+    action_items = EXCLUDED.action_items,
+    memory_candidates = EXCLUDED.memory_candidates,
+    source_seq_start = EXCLUDED.source_seq_start,
+    source_seq_end = EXCLUDED.source_seq_end,
+    generated_by = EXCLUDED.generated_by,
+    updated_at = now()
+RETURNING
+    meeting_id,
+    workspace_id,
+    project_id,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    source_seq_start,
+    source_seq_end,
+    generated_by,
+    created_at,
+    updated_at
+`
+
+type UpsertMeetingSummaryParams struct {
+	MeetingID        pgtype.UUID `json:"meeting_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ProjectID        pgtype.UUID `json:"project_id"`
+	SummaryMd        string      `json:"summary_md"`
+	Decisions        []byte      `json:"decisions"`
+	Questions        []byte      `json:"questions"`
+	Risks            []byte      `json:"risks"`
+	Feedback         []byte      `json:"feedback"`
+	Tensions         []byte      `json:"tensions"`
+	ActionItems      []byte      `json:"action_items"`
+	MemoryCandidates []byte      `json:"memory_candidates"`
+	SourceSeqStart   pgtype.Int4 `json:"source_seq_start"`
+	SourceSeqEnd     pgtype.Int4 `json:"source_seq_end"`
+	GeneratedBy      string      `json:"generated_by"`
+}
+
+func (q *Queries) UpsertMeetingSummary(ctx context.Context, arg UpsertMeetingSummaryParams) (MeetingSummary, error) {
+	row := q.db.QueryRow(ctx, upsertMeetingSummary,
+		arg.MeetingID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.SummaryMd,
+		arg.Decisions,
+		arg.Questions,
+		arg.Risks,
+		arg.Feedback,
+		arg.Tensions,
+		arg.ActionItems,
+		arg.MemoryCandidates,
+		arg.SourceSeqStart,
+		arg.SourceSeqEnd,
+		arg.GeneratedBy,
+	)
+	var i MeetingSummary
+	err := row.Scan(
+		&i.MeetingID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.SummaryMd,
+		&i.Decisions,
+		&i.Questions,
+		&i.Risks,
+		&i.Feedback,
+		&i.Tensions,
+		&i.ActionItems,
+		&i.MemoryCandidates,
+		&i.SourceSeqStart,
+		&i.SourceSeqEnd,
+		&i.GeneratedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateMeetingInsightStatus = `-- name: UpdateMeetingInsightStatus :one
 UPDATE meeting_insight_card SET
     status = $3,
@@ -681,8 +841,9 @@ UPDATE meeting_session SET
     reminder_mode = COALESCE($7, reminder_mode),
     reminder_intensity = COALESCE($8, reminder_intensity),
     sound_enabled = COALESCE($9, sound_enabled),
-    model_source = COALESCE($10, model_source),
-    analysis_status = COALESCE($11, analysis_status),
+    asr_provider = COALESCE($10, asr_provider),
+    model_source = COALESCE($11, model_source),
+    analysis_status = COALESCE($12, analysis_status),
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
 RETURNING id, workspace_id, project_id, title, goal, user_role, strategy, reminder_mode, reminder_intensity, sound_enabled, asr_provider, model_source, analysis_status, status, created_by_user_id, started_at, stopped_at, created_at, updated_at
@@ -698,6 +859,7 @@ type UpdateMeetingSessionParams struct {
 	ReminderMode      pgtype.Text `json:"reminder_mode"`
 	ReminderIntensity pgtype.Text `json:"reminder_intensity"`
 	SoundEnabled      pgtype.Bool `json:"sound_enabled"`
+	AsrProvider       pgtype.Text `json:"asr_provider"`
 	ModelSource       pgtype.Text `json:"model_source"`
 	AnalysisStatus    pgtype.Text `json:"analysis_status"`
 }
@@ -713,6 +875,7 @@ func (q *Queries) UpdateMeetingSession(ctx context.Context, arg UpdateMeetingSes
 		arg.ReminderMode,
 		arg.ReminderIntensity,
 		arg.SoundEnabled,
+		arg.AsrProvider,
 		arg.ModelSource,
 		arg.AnalysisStatus,
 	)

@@ -185,6 +185,13 @@ function commandValue(
   return quoteShellValue(trimmed.length > 0 ? trimmed : placeholder, options);
 }
 
+function maskApiKeyForDisplay(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return "";
+  if (trimmed.length <= 8) return "********";
+  return `${trimmed.slice(0, 4)}********${trimmed.slice(-4)}`;
+}
+
 export function buildGuidedSetupSnippets(form: GuidedSetupForm) {
   const info = modeInfo(form.mode);
   const modelName = form.modelName.trim() || MODEL_PLACEHOLDER;
@@ -253,6 +260,13 @@ export function buildGuidedSetupSnippets(form: GuidedSetupForm) {
   ].join("\n");
 
   return { launchctl, shell };
+}
+
+export function buildGuidedSetupDisplaySnippets(form: GuidedSetupForm) {
+  return buildGuidedSetupSnippets({
+    ...form,
+    apiKey: maskApiKeyForDisplay(form.apiKey),
+  });
 }
 
 function FieldRow({
@@ -338,12 +352,14 @@ function CopyBlock({
   title,
   description,
   value,
+  displayValue,
   primary,
   onCopy,
 }: {
   title: string;
   description: string;
   value: string;
+  displayValue?: string;
   primary?: boolean;
   onCopy: () => void;
 }) {
@@ -360,7 +376,7 @@ function CopyBlock({
         </Button>
       </div>
       <pre className="max-h-72 overflow-auto p-4 text-xs leading-relaxed">
-        <code>{value}</code>
+        <code>{displayValue ?? value}</code>
       </pre>
     </div>
   );
@@ -398,6 +414,7 @@ export function ModelApiSettingsTab() {
   const configured = Boolean(apiRuntime && metadata.api_key_configured);
   const ready = Boolean(configured && apiRuntime?.status === "online" && models.length > 0);
   const snippets = useMemo(() => buildGuidedSetupSnippets(form), [form]);
+  const displaySnippets = useMemo(() => buildGuidedSetupDisplaySnippets(form), [form]);
   const hasMinimumFields = Boolean(
     form.apiKey.trim() && form.baseUrl.trim() && form.modelName.trim(),
   );
@@ -634,6 +651,7 @@ export function ModelApiSettingsTab() {
             title="Mac mini 本地 App"
             description="适合从 Dock、Finder 或 /Users/albert/Applications/Origin.app 打开的 Origin。"
             value={snippets.launchctl}
+            displayValue={displaySnippets.launchctl}
             primary
             onCopy={() => void copyText(snippets.launchctl, "Mac App 配置命令已复制")}
           />
@@ -641,6 +659,7 @@ export function ModelApiSettingsTab() {
             title="终端 / daemon"
             description="只在你从终端启动 Origin 后端或调试进程时使用。"
             value={snippets.shell}
+            displayValue={displaySnippets.shell}
             onCopy={() => void copyText(snippets.shell, "终端配置片段已复制")}
           />
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/15 px-4 py-3">

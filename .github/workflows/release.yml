@@ -263,4 +263,5 @@ jobs:
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ORIGIN_ENABLE_AUTO_UPDATE: "1"
         run: node scripts/package.mjs ${{ matrix.package_args }}

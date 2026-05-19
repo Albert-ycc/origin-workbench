@@ -25,12 +25,14 @@
 // version-derivation logic without shelling out.
 
 import { execFileSync, spawnSync, execSync } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
 const bundleCliScript = resolve(here, "bundle-cli.mjs");
+const DEFAULT_OUTPUT_DIR = "dist-local";
 
 const PLATFORM_CONFIG = {
   mac: {
@@ -265,6 +267,27 @@ function formatTarget(target) {
   return `${PLATFORM_CONFIG[target.platform].label} ${target.arch}`;
 }
 
+function scopedOutputDirForTarget(target) {
+  return `dist/${target.platform}-${target.arch}`;
+}
+
+export function outputDirForTarget(
+  target,
+  { root = desktopRoot, useScopedOutputDir = false } = {},
+) {
+  return resolve(
+    root,
+    useScopedOutputDir ? scopedOutputDirForTarget(target) : DEFAULT_OUTPUT_DIR,
+  );
+}
+
+export function cleanOutputDirForTarget(target, options = {}) {
+  const outputDir = outputDirForTarget(target, options);
+  rmSync(outputDir, { recursive: true, force: true });
+  mkdirSync(outputDir, { recursive: true });
+  return outputDir;
+}
+
 export function builderArgsForTarget(
   target,
   parsed,
@@ -295,9 +318,7 @@ export function builderArgsForTarget(
   builderArgs.push(`--${target.arch}`);
   builderArgs.push(...parsed.sharedArgs);
   if (useScopedOutputDir) {
-    builderArgs.push(
-      `-c.directories.output=dist/${target.platform}-${target.arch}`,
-    );
+    builderArgs.push(`-c.directories.output=${scopedOutputDirForTarget(target)}`);
   }
   // electron-builder's update metadata file is `latest.yml` for Windows
   // regardless of arch (only Linux gets an arch suffix automatically — see
@@ -391,6 +412,9 @@ function main() {
         cwd: desktopRoot,
       },
     );
+
+    const outputDir = cleanOutputDirForTarget(target, { useScopedOutputDir });
+    console.log(`[package] cleaned output → ${outputDir}`);
 
     const builderArgs = builderArgsForTarget(target, parsed, version, {
       disableMacNotarize,

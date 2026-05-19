@@ -379,6 +379,7 @@ export function useRealtimeSync(
       if (!wsId || !meeting_id) return;
       qc.invalidateQueries({ queryKey: meetingKeys.detail(wsId, meeting_id) });
       qc.invalidateQueries({ queryKey: meetingKeys.insights(wsId, meeting_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.summary(wsId, meeting_id) });
     });
     const unsubMeetingAnalysisStatusUpdated = ws.on("meeting:analysis_status_updated", handleMeetingChanged);
 

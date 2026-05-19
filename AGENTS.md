@@ -38,6 +38,13 @@ pnpm --filter @multica/core typecheck
 cd server && go test ./...
 ```
 
+## Build/Storage Hygiene
+
+- Never include build artifacts in Desktop packages.
+- Clean the target output directory before each Desktop build.
+- Keep `apps/desktop/electron-builder.yml` exclusions for `dist-local`,
+  `dist`, and `node_modules/.cache` explicit.
+
 ## Safety
 
 - Keep diffs small and scoped.

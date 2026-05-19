@@ -8,6 +8,12 @@ import { setupDaemonManager } from "./daemon-manager";
 import { openExternalSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
 import { getAppVersion } from "./app-version";
+import {
+  DEV_WEBSOCKET_ORIGIN_BYPASS_ENV,
+  getMainWindowWebPreferences,
+  isLocalDevelopmentWebSocketOriginBypassEnabled,
+  stripWebSocketOriginForLocalDev,
+} from "./window-security";
 
 // Bundled icon used for dev-mode dock/taskbar branding and native
 // notifications. In production the app bundle icon from electron-builder wins.
@@ -84,22 +90,25 @@ function createWindow(): void {
     // Windows/Linux pick up the window/taskbar icon from this option in
     // dev — on macOS it's ignored (dock comes from app.dock.setIcon below).
     ...(is.dev ? { icon: DEV_ICON_PATH } : {}),
-    webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
-      sandbox: false,
-      webSecurity: false,
-    },
+    webPreferences: getMainWindowWebPreferences(
+      join(__dirname, "../preload/index.js"),
+    ),
   });
 
-  // Strip Origin header from WebSocket upgrade requests so the server's
-  // origin whitelist doesn't reject connections from localhost dev origins.
-  mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
-    { urls: ["wss://*/*", "ws://*/*"] },
-    (details, callback) => {
-      delete details.requestHeaders["Origin"];
-      callback({ requestHeaders: details.requestHeaders });
-    },
-  );
+  if (isLocalDevelopmentWebSocketOriginBypassEnabled()) {
+    console.warn(
+      `[security] ${DEV_WEBSOCKET_ORIGIN_BYPASS_ENV}=1: stripping local dev WebSocket Origin headers`,
+    );
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+      {
+        urls: ["ws://*/*", "wss://*/*"],
+        types: ["webSocket"],
+      },
+      (details, callback) => {
+        stripWebSocketOriginForLocalDev(details, callback);
+      },
+    );
+  }
 
   mainWindow.on("ready-to-show", () => {
     mainWindow?.show();
@@ -245,8 +254,7 @@ if (!gotTheLock) {
     // IPC: open URL in default browser (used by renderer for Google login).
     // All scheme-allowlist enforcement lives in openExternalSafely — this
     // is the single audit point for renderer-controlled URLs reaching the
-    // OS shell under the app's intentional webSecurity: false + sandbox:
-    // false configuration.
+    // OS shell while the renderer stays sandboxed with webSecurity enabled.
     ipcMain.handle("shell:openExternal", (_event, url: string) => {
       return openExternalSafely(url);
     });

@@ -1,5 +1,14 @@
-import { delimiter, resolve } from "node:path";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
+import * as packageScript from "./package.mjs";
 import {
   builderArgsForTarget,
   envWithLocalBins,
@@ -155,6 +164,34 @@ describe("resolveBuildMatrix", () => {
         "arm64",
       ),
     ).toThrow(/unsupported Desktop CLI architecture/);
+  });
+});
+
+describe("cleanOutputDirForTarget", () => {
+  it("empties the current target output directory before electron-builder runs", () => {
+    expect(packageScript.outputDirForTarget).toBeTypeOf("function");
+    expect(packageScript.cleanOutputDirForTarget).toBeTypeOf("function");
+
+    const root = mkdtempSync(join(tmpdir(), "origin-package-output-"));
+    try {
+      const target = { platform: "mac", arch: "arm64" };
+      const outputDir = packageScript.outputDirForTarget(target, {
+        root,
+        useScopedOutputDir: true,
+      });
+
+      mkdirSync(join(outputDir, "Origin.app"), { recursive: true });
+      writeFileSync(join(outputDir, "old.dmg"), "stale build artifact");
+
+      packageScript.cleanOutputDirForTarget(target, {
+        root,
+        useScopedOutputDir: true,
+      });
+
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

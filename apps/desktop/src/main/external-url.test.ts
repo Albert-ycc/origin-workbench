@@ -15,9 +15,10 @@ describe("isSafeExternalHttpUrl", () => {
     expect(isSafeExternalHttpUrl("http://localhost:3000/auth")).toBe(true);
   });
 
-  it("allows https URLs with embedded credentials", () => {
-    // WHATWG URL parses these as https; OS-level handling is the shell's concern.
-    expect(isSafeExternalHttpUrl("https://user:pass@example.com")).toBe(true);
+  it("rejects http/https URLs with embedded credentials", () => {
+    expect(isSafeExternalHttpUrl("https://user:pass@example.com")).toBe(false);
+    expect(isSafeExternalHttpUrl("https://user@example.com")).toBe(false);
+    expect(isSafeExternalHttpUrl("http://:pass@example.com")).toBe(false);
   });
 
   it("normalizes scheme casing so uppercase variants can't bypass", () => {
@@ -68,10 +69,16 @@ describe("openExternalSafely", () => {
     );
   });
 
+  it("canonicalizes accepted URLs before handing them to the OS shell", () => {
+    openExternalSafely(" HTTPS://EXAMPLE.com/auth ");
+    expect(shell.openExternal).toHaveBeenCalledWith("https://example.com/auth");
+  });
+
   it("does not call shell.openExternal for rejected schemes", () => {
     openExternalSafely("file:///etc/passwd");
     openExternalSafely("javascript:alert(1)");
     openExternalSafely("not a url");
+    openExternalSafely("https://user:pass@example.com");
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 });

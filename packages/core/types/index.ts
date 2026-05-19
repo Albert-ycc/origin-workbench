@@ -222,6 +222,7 @@ export type {
   MeetingSession,
   MeetingStatus,
   MeetingStrategy,
+  MeetingSummary,
   MeetingTranscriptSegment,
   CreateMeetingSessionRequest,
   CreateMeetingTranscriptSegmentRequest,

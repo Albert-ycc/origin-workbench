@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildGuidedSetupSnippets, type GuidedSetupForm } from "./model-api-settings-tab";
+import {
+  buildGuidedSetupDisplaySnippets,
+  buildGuidedSetupSnippets,
+  type GuidedSetupForm,
+} from "./model-api-settings-tab";
 
 function form(overrides: Partial<GuidedSetupForm> = {}): GuidedSetupForm {
   return {
@@ -77,5 +81,21 @@ describe("buildGuidedSetupSnippets", () => {
     );
 
     expect(snippets.launchctl).toContain('launchctl setenv OPENAI_API_KEY "sk-\\"\\$test\\`"');
+  });
+
+  it("masks API keys in display snippets without changing copyable commands", () => {
+    const input = form({
+      apiKey: "sk-super-secret-key",
+      baseUrl: "http://127.0.0.1:3456/v1",
+      modelName: "gpt-4.1-mini",
+    });
+
+    const copyable = buildGuidedSetupSnippets(input);
+    const display = buildGuidedSetupDisplaySnippets(input);
+
+    expect(copyable.launchctl).toContain("sk-super-secret-key");
+    expect(display.launchctl).not.toContain("sk-super-secret-key");
+    expect(display.shell).not.toContain("sk-super-secret-key");
+    expect(display.launchctl).toContain("sk-s********-key");
   });
 });

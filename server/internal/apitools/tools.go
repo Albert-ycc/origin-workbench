@@ -52,23 +52,17 @@ type searchMatch struct {
 }
 
 func ConfigFromEnv() Config {
-	var roots []string
-	for _, part := range strings.Split(os.Getenv(runtimeconfig.EnvToolRoots), ",") {
-		if root := strings.TrimSpace(part); root != "" {
-			roots = append(roots, root)
-		}
-	}
-	return Config{Roots: roots}
+	return Config{Roots: runtimeconfig.ConfiguredToolRoots(os.Getenv)}
 }
 
 func NewLocalExecutor(cfg Config) (*LocalExecutor, error) {
 	roots := cfg.Roots
 	if len(roots) == 0 {
-		wd, err := os.Getwd()
+		defaultRoot, err := defaultToolRoot()
 		if err != nil {
-			return nil, fmt.Errorf("resolve working directory: %w", err)
+			return nil, err
 		}
-		roots = []string{wd}
+		roots = []string{defaultRoot}
 	}
 
 	resolved := make([]string, 0, len(roots))
@@ -378,6 +372,51 @@ func resolveExistingPath(path string) (string, error) {
 	return filepath.EvalSymlinks(abs)
 }
 
+func defaultToolRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	root, err := discoverWorkspaceRoot(wd)
+	if err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+func discoverWorkspaceRoot(start string) (string, error) {
+	current, err := resolveExistingPath(start)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+
+	var goModRoot string
+	for {
+		if pathExists(filepath.Join(current, "pnpm-workspace.yaml")) || pathExists(filepath.Join(current, ".git")) {
+			return current, nil
+		}
+		if goModRoot == "" && pathExists(filepath.Join(current, "go.mod")) {
+			goModRoot = current
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+
+	if goModRoot != "" {
+		return goModRoot, nil
+	}
+	return resolveExistingPath(start)
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func pathInsideRoot(path, root string) bool {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -414,11 +453,13 @@ func isSensitivePath(path string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
 		name := strings.ToLower(part)
 		switch {
-		case name == ".ssh":
+		case name == ".ssh" || name == ".aws" || name == ".azure" || name == ".docker" || name == ".gnupg" || name == ".kube":
 			return true
 		case name == ".env" || strings.HasPrefix(name, ".env."):
 			return true
-		case name == "id_rsa" || name == "id_ed25519" || name == "known_hosts":
+		case name == ".npmrc" || name == ".pypirc" || name == ".netrc" || name == ".pgpass":
+			return true
+		case name == "id_rsa" || name == "id_ed25519" || name == "id_ecdsa" || name == "id_dsa" || name == "known_hosts":
 			return true
 		case strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".key") || strings.HasSuffix(name, ".p12") || strings.HasSuffix(name, ".pfx"):
 			return true

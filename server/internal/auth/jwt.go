@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -18,14 +19,51 @@ var (
 
 func JWTSecret() []byte {
 	jwtSecretOnce.Do(func() {
-		secret := os.Getenv("JWT_SECRET")
-		if secret == "" {
-			secret = defaultJWTSecret
+		secret, err := ResolveJWTSecretForEnvironment(os.Getenv("JWT_SECRET"), os.Getenv("APP_ENV"))
+		if err != nil {
+			panic(err)
 		}
 		jwtSecret = []byte(secret)
 	})
 
 	return jwtSecret
+}
+
+func ResolveJWTSecretForEnvironment(secret, env string) (string, error) {
+	if err := ValidateJWTSecretForEnvironment(secret, env); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(secret) == "" {
+		return defaultJWTSecret, nil
+	}
+	return secret, nil
+}
+
+func ValidateJWTSecretFromEnv() error {
+	return ValidateJWTSecretForEnvironment(os.Getenv("JWT_SECRET"), os.Getenv("APP_ENV"))
+}
+
+func ValidateJWTSecretForEnvironment(secret, env string) error {
+	if isDevelopmentLikeEnvironment(env) {
+		return nil
+	}
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return fmt.Errorf("JWT_SECRET must be set outside development/test environments")
+	}
+	if secret == defaultJWTSecret {
+		return fmt.Errorf("JWT_SECRET must not use the default development secret outside development/test environments")
+	}
+	return nil
+}
+
+func isDevelopmentLikeEnvironment(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "", "dev", "development", "local", "test", "testing":
+		return true
+	default:
+		return false
+	}
 }
 
 // GeneratePATToken creates a new personal access token: "mul_" + 40 random hex chars.

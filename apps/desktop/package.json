@@ -25,8 +25,9 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "preview": "electron-vite preview",
-    "package": "node scripts/package.mjs",
+    "package": "node scripts/package.mjs --publish never",
     "package:all": "node scripts/package.mjs --all-platforms --publish never",
+    "package:publish": "node scripts/package.mjs --publish always",
     "lint": "eslint .",
     "test": "vitest run",
     "postinstall": "electron-builder install-app-deps"

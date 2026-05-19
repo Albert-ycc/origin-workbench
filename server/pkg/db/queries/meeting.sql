@@ -47,6 +47,7 @@ UPDATE meeting_session SET
     reminder_mode = COALESCE(sqlc.narg('reminder_mode'), reminder_mode),
     reminder_intensity = COALESCE(sqlc.narg('reminder_intensity'), reminder_intensity),
     sound_enabled = COALESCE(sqlc.narg('sound_enabled'), sound_enabled),
+    asr_provider = COALESCE(sqlc.narg('asr_provider'), asr_provider),
     model_source = COALESCE(sqlc.narg('model_source'), model_source),
     analysis_status = COALESCE(sqlc.narg('analysis_status'), analysis_status),
     updated_at = now()
@@ -84,6 +85,79 @@ UPDATE meeting_session SET
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
+
+-- name: GetMeetingSummary :one
+SELECT
+    meeting_id,
+    workspace_id,
+    project_id,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    source_seq_start,
+    source_seq_end,
+    generated_by,
+    created_at,
+    updated_at
+FROM meeting_summary
+WHERE meeting_id = $1
+  AND workspace_id = $2;
+
+-- name: UpsertMeetingSummary :one
+INSERT INTO meeting_summary (
+    meeting_id,
+    workspace_id,
+    project_id,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    source_seq_start,
+    source_seq_end,
+    generated_by
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+)
+ON CONFLICT (meeting_id) DO UPDATE SET
+    summary_md = EXCLUDED.summary_md,
+    decisions = EXCLUDED.decisions,
+    questions = EXCLUDED.questions,
+    risks = EXCLUDED.risks,
+    feedback = EXCLUDED.feedback,
+    tensions = EXCLUDED.tensions,
+    action_items = EXCLUDED.action_items,
+    memory_candidates = EXCLUDED.memory_candidates,
+    source_seq_start = EXCLUDED.source_seq_start,
+    source_seq_end = EXCLUDED.source_seq_end,
+    generated_by = EXCLUDED.generated_by,
+    updated_at = now()
+RETURNING
+    meeting_id,
+    workspace_id,
+    project_id,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    source_seq_start,
+    source_seq_end,
+    generated_by,
+    created_at,
+    updated_at;
 
 -- name: CreateMeetingTranscriptSegment :one
 INSERT INTO meeting_transcript_segment (

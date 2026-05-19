@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Save, Sparkles } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Save, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@multica/ui/components/ui/card";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
@@ -23,6 +23,9 @@ export function PreferencesTab() {
   const [roleCard, setRoleCard] = useState("");
   const [communicationStyle, setCommunicationStyle] = useState("");
   const profile = profileQuery.data;
+  const loadFailed = profileQuery.isError;
+  const loadErrorMessage =
+    profileQuery.error instanceof Error ? profileQuery.error.message : "请稍后重试";
 
   // Sync local form state when the server profile loads or refetches.
   // Only resync when not currently editing — comparing against the persisted
@@ -35,9 +38,10 @@ export function PreferencesTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, profile?.updated_at]);
 
-  const dirty =
-    !!profile &&
-    (profile.role_card !== roleCard || profile.communication_style !== communicationStyle);
+  const dirty = loadFailed
+    ? roleCard.trim().length > 0 || communicationStyle.trim().length > 0
+    : !!profile &&
+      (profile.role_card !== roleCard || profile.communication_style !== communicationStyle);
 
   const handleSave = async () => {
     if (roleCard.length > ROLE_CARD_MAX) {
@@ -82,6 +86,35 @@ export function PreferencesTab() {
           智能体每次回话之前都会先读一遍这段。
         </p>
       </div>
+
+      {loadFailed ? (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <div>
+                <p className="text-sm font-medium">偏好加载失败</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  当前以空白偏好继续编辑，保存时会保留默认在线状态。{loadErrorMessage}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => void profileQuery.refetch()}
+              disabled={profileQuery.isFetching}
+            >
+              <RefreshCw
+                className={`size-3.5 ${profileQuery.isFetching ? "animate-spin" : ""}`}
+              />
+              重试
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

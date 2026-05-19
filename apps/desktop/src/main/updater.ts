@@ -16,6 +16,9 @@ if (process.platform === "win32" && process.arch === "arm64") {
 
 const STARTUP_CHECK_DELAY_MS = 5_000;
 const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+export const AUTO_UPDATE_ENABLE_ENV = "ORIGIN_ENABLE_AUTO_UPDATE";
+export const UPDATE_CHECKS_DISABLED_MESSAGE = `GitHub update checks are disabled. Set ${AUTO_UPDATE_ENABLE_ENV}=1 before packaging or launching an official release build.`;
+const AUTO_UPDATE_BUILD_FLAG = process.env.ORIGIN_ENABLE_AUTO_UPDATE === "1";
 
 export type ManualUpdateCheckResult =
   | {
@@ -25,6 +28,12 @@ export type ManualUpdateCheckResult =
       available: boolean;
     }
   | { ok: false; error: string };
+
+export function areUpdateChecksEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return AUTO_UPDATE_BUILD_FLAG || env[AUTO_UPDATE_ENABLE_ENV] === "1";
+}
 
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
   autoUpdater.on("update-available", (info) => {
@@ -52,14 +61,23 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   });
 
   ipcMain.handle("updater:download", () => {
+    assertUpdateChecksEnabled();
     return autoUpdater.downloadUpdate();
   });
 
   ipcMain.handle("updater:install", () => {
+    assertUpdateChecksEnabled();
     autoUpdater.quitAndInstall(false, true);
   });
 
   ipcMain.handle("updater:check", async (): Promise<ManualUpdateCheckResult> => {
+    if (!areUpdateChecksEnabled()) {
+      return {
+        ok: false,
+        error: UPDATE_CHECKS_DISABLED_MESSAGE,
+      };
+    }
+
     try {
       const result = await autoUpdater.checkForUpdates();
       const currentVersion = app.getVersion();
@@ -83,6 +101,13 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
     }
   });
 
+  if (!areUpdateChecksEnabled()) {
+    console.info(
+      `[updater] GitHub update checks disabled. Set ${AUTO_UPDATE_ENABLE_ENV}=1 before packaging or launching to enable.`,
+    );
+    return;
+  }
+
   // Initial check shortly after startup so we don't block boot.
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
@@ -97,4 +122,10 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
       console.error("Periodic update check failed:", err);
     });
   }, PERIODIC_CHECK_INTERVAL_MS);
+}
+
+function assertUpdateChecksEnabled(): void {
+  if (!areUpdateChecksEnabled()) {
+    throw new Error(UPDATE_CHECKS_DISABLED_MESSAGE);
+  }
 }

@@ -156,6 +156,7 @@ import type {
   MeetingInsightCard,
   MeetingInsightStatus,
   MeetingSession,
+  MeetingSummary,
   MeetingTranscriptSegment,
   UpdateMeetingSessionRequest,
 } from "../types";
@@ -1778,6 +1779,18 @@ export class ApiClient {
 
   async stopMeeting(id: string): Promise<MeetingSession> {
     return this.fetch(`/api/v13/meetings/${id}/stop`, { method: "POST" });
+  }
+
+  async archiveMeeting(id: string): Promise<MeetingSession> {
+    return this.fetch(`/api/v13/meetings/${id}/archive`, { method: "POST" });
+  }
+
+  async getMeetingSummary(id: string): Promise<MeetingSummary> {
+    return this.fetch(`/api/v13/meetings/${id}/summary`);
+  }
+
+  async generateMeetingSummary(id: string): Promise<MeetingSummary> {
+    return this.fetch(`/api/v13/meetings/${id}/summary`, { method: "POST" });
   }
 
   async listMeetingTranscriptSegments(

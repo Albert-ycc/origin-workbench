@@ -27,6 +27,7 @@ import {
   FolderKanban,
   X,
   Brain,
+  Mic,
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@multica/ui/components/ui/collapsible";
@@ -85,6 +86,7 @@ type NavKey =
   | "explorations"
   | "projects"
   | "projectWorkspaces"
+  | "meetings"
   | "autopilots"
   | "agents"
   | "teams"
@@ -98,6 +100,7 @@ const productNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
   // 集合相同的项目自动归到同一个 team_id）。"团队" 不再是用户级可创建实
   // 体，所以从 sidebar 撤掉了。
   { key: "projectWorkspaces", label: "项目工作区", icon: FolderKanban },
+  { key: "meetings", label: "会议 Copilot", icon: Mic },
   { key: "ideas", label: "想法池", icon: Lightbulb },
   { key: "agents", label: "智能体", icon: Bot },
   { key: "councils", label: "会议室", icon: Users },

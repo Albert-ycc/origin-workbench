@@ -38,6 +38,7 @@ type APIRuntimeConfig struct {
 	BaseURL           string
 	ModelIDs          []string
 	DefaultModel      string
+	ToolRoots         []string
 	APIKeyConfigured  bool
 	BaseURLConfigured bool
 }
@@ -79,6 +80,7 @@ func LoadAPIRuntimeConfig(getenv func(string) string) (APIRuntimeConfig, bool) {
 	apiKeyConfigured := apiKey != ""
 	baseURLConfigured := baseURL != ""
 	modelIDs := configuredModelIDs(getenv)
+	toolRoots := ConfiguredToolRoots(getenv)
 	runtimeName := strings.TrimSpace(getenv(EnvRuntimeName))
 	if runtimeName == "" {
 		runtimeName = DefaultRuntimeName
@@ -106,6 +108,7 @@ func LoadAPIRuntimeConfig(getenv func(string) string) (APIRuntimeConfig, bool) {
 		BaseURL:           baseURL,
 		ModelIDs:          modelIDs,
 		DefaultModel:      defaultModel,
+		ToolRoots:         toolRoots,
 		APIKeyConfigured:  apiKeyConfigured,
 		BaseURLConfigured: baseURLConfigured,
 	}, true
@@ -219,6 +222,23 @@ func configuredModelIDs(getenv func(string) string) []string {
 	add(getenv(EnvOpenAIModelName))
 	for _, part := range strings.Split(getenv(EnvOpenAIModels), ",") {
 		add(part)
+	}
+	return out
+}
+
+func ConfiguredToolRoots(getenv func(string) string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, part := range strings.Split(getenv(EnvToolRoots), ",") {
+		root := strings.TrimSpace(part)
+		if root == "" {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		out = append(out, root)
 	}
 	return out
 }

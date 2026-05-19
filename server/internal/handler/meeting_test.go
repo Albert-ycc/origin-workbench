@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -184,6 +185,54 @@ func TestMeetingLifecycleAcceptsTranscriptSegments(t *testing.T) {
 	}
 }
 
+func TestUpdateMeetingSessionCanSwitchASRProviderToManual(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	fixture := createMeetingProjectFixture(t, "asr-fallback")
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/v13/meetings?workspace_id="+testWorkspaceID, map[string]any{
+		"project_id":       fixture.ProjectID,
+		"title":            "实时转写降级测试",
+		"analysis_enabled": false,
+		"asr_provider":     "renderer",
+	})
+	testHandler.CreateMeetingSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateMeetingSession: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		ID          string `json:"id"`
+		ASRProvider string `json:"asr_provider"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created meeting: %v", err)
+	}
+	if created.ASRProvider != "renderer" {
+		t.Fatalf("created asr_provider: got %q want renderer", created.ASRProvider)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPatch, "/api/v13/meetings/"+created.ID+"?workspace_id="+testWorkspaceID, map[string]any{
+		"asr_provider": "manual",
+	})
+	req = withURLParam(req, "id", created.ID)
+	testHandler.UpdateMeetingSession(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("UpdateMeetingSession: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var updated struct {
+		ASRProvider string `json:"asr_provider"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated meeting: %v", err)
+	}
+	if updated.ASRProvider != "manual" {
+		t.Fatalf("updated asr_provider: got %q want manual", updated.ASRProvider)
+	}
+}
+
 func TestMeetingTranscriptCreatesStrongAlertWhenAnalysisEnabled(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -263,5 +312,168 @@ func TestMeetingTranscriptCreatesStrongAlertWhenAnalysisEnabled(t *testing.T) {
 	}
 	if insights.Cards[0].EvidenceQuote == "" {
 		t.Fatalf("expected evidence quote")
+	}
+}
+
+func TestArchiveMeetingSessionRemovesMeetingFromActiveList(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	fixture := createMeetingProjectFixture(t, "archive")
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/v13/meetings?workspace_id="+testWorkspaceID, map[string]any{
+		"project_id":       fixture.ProjectID,
+		"title":            "待归档会议",
+		"analysis_enabled": false,
+	})
+	testHandler.CreateMeetingSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateMeetingSession: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created meeting: %v", err)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/v13/meetings/"+created.ID+"/archive?workspace_id="+testWorkspaceID, nil)
+	req = withURLParam(req, "id", created.ID)
+	testHandler.ArchiveMeetingSession(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ArchiveMeetingSession: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var archived struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&archived); err != nil {
+		t.Fatalf("decode archived meeting: %v", err)
+	}
+	if archived.Status != "archived" {
+		t.Fatalf("archived status: got %q want archived", archived.Status)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodGet, "/api/v13/meetings?workspace_id="+testWorkspaceID, nil)
+	testHandler.ListMeetingSessions(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListMeetingSessions: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var list struct {
+		Meetings []struct {
+			ID string `json:"id"`
+		} `json:"meetings"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&list); err != nil {
+		t.Fatalf("decode meeting list: %v", err)
+	}
+	for _, meeting := range list.Meetings {
+		if meeting.ID == created.ID {
+			t.Fatalf("archived meeting still appeared in active list")
+		}
+	}
+}
+
+func TestGenerateMeetingSummaryPersistsTranscriptDigest(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	fixture := createMeetingProjectFixture(t, "summary")
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/v13/meetings?workspace_id="+testWorkspaceID, map[string]any{
+		"project_id":       fixture.ProjectID,
+		"title":            "会议纪要生成测试",
+		"goal":             "沉淀决策、风险和行动项",
+		"analysis_enabled": true,
+		"model_source":     "local",
+	})
+	testHandler.CreateMeetingSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateMeetingSession: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created meeting: %v", err)
+	}
+
+	segments := []string{
+		"决定：本期只上线实时转写和旁听 Agent。",
+		"风险：麦克风权限可能阻塞首轮使用，需要产品提前验收。",
+		"问题：文件转文字后是否要自动进入项目记录？",
+		"行动项：产品今天补充会议纪要验收标准。",
+	}
+	for i, text := range segments {
+		w = httptest.NewRecorder()
+		req = newRequest(http.MethodPost, "/api/v13/meetings/"+created.ID+"/transcript-segments?workspace_id="+testWorkspaceID, map[string]any{
+			"seq":           i + 1,
+			"speaker_label": "现场",
+			"text":          text,
+			"confidence":    1,
+			"source":        "manual",
+		})
+		req = withURLParam(req, "id", created.ID)
+		testHandler.CreateMeetingTranscriptSegment(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("CreateMeetingTranscriptSegment %d: expected 201, got %d: %s", i+1, w.Code, w.Body.String())
+		}
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodPost, "/api/v13/meetings/"+created.ID+"/summary?workspace_id="+testWorkspaceID, nil)
+	req = withURLParam(req, "id", created.ID)
+	testHandler.GenerateMeetingSummary(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GenerateMeetingSummary: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var generated struct {
+		MeetingID      string   `json:"meeting_id"`
+		SummaryMd      string   `json:"summary_md"`
+		Decisions      []string `json:"decisions"`
+		Questions      []string `json:"questions"`
+		Risks          []string `json:"risks"`
+		ActionItems    []string `json:"action_items"`
+		SourceSeqStart *int32   `json:"source_seq_start"`
+		SourceSeqEnd   *int32   `json:"source_seq_end"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&generated); err != nil {
+		t.Fatalf("decode generated summary: %v", err)
+	}
+	if generated.MeetingID != created.ID {
+		t.Fatalf("summary meeting_id: got %s want %s", generated.MeetingID, created.ID)
+	}
+	if generated.SourceSeqStart == nil || *generated.SourceSeqStart != 1 {
+		t.Fatalf("source_seq_start: got %+v want 1", generated.SourceSeqStart)
+	}
+	if generated.SourceSeqEnd == nil || *generated.SourceSeqEnd != 4 {
+		t.Fatalf("source_seq_end: got %+v want 4", generated.SourceSeqEnd)
+	}
+	if !strings.Contains(generated.SummaryMd, "会议纪要生成测试") {
+		t.Fatalf("summary_md should include meeting title: %s", generated.SummaryMd)
+	}
+	if len(generated.Decisions) == 0 || len(generated.Risks) == 0 || len(generated.Questions) == 0 || len(generated.ActionItems) == 0 {
+		t.Fatalf("expected structured summary buckets, got decisions=%v risks=%v questions=%v actions=%v", generated.Decisions, generated.Risks, generated.Questions, generated.ActionItems)
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodGet, "/api/v13/meetings/"+created.ID+"/summary?workspace_id="+testWorkspaceID, nil)
+	req = withURLParam(req, "id", created.ID)
+	testHandler.GetMeetingSummary(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GetMeetingSummary: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var persisted struct {
+		MeetingID string `json:"meeting_id"`
+		SummaryMd string `json:"summary_md"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&persisted); err != nil {
+		t.Fatalf("decode persisted summary: %v", err)
+	}
+	if persisted.MeetingID != created.ID || persisted.SummaryMd != generated.SummaryMd {
+		t.Fatalf("persisted summary mismatch: %+v vs %+v", persisted, generated)
 	}
 }

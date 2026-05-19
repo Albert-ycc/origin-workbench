@@ -11,6 +11,8 @@ export const meetingKeys = {
     [...meetingKeys.all(wsId), "transcript", meetingId] as const,
   insights: (wsId: string, meetingId: string) =>
     [...meetingKeys.all(wsId), "insights", meetingId] as const,
+  summary: (wsId: string, meetingId: string) =>
+    [...meetingKeys.all(wsId), "summary", meetingId] as const,
 };
 
 export function meetingListOptions(wsId: string, projectId?: string | null) {
@@ -41,5 +43,14 @@ export function meetingInsightOptions(wsId: string, meetingId: string) {
     queryKey: meetingKeys.insights(wsId, meetingId),
     queryFn: () => api.listMeetingInsightCards(meetingId),
     enabled: !!meetingId,
+  });
+}
+
+export function meetingSummaryOptions(wsId: string, meetingId: string) {
+  return queryOptions({
+    queryKey: meetingKeys.summary(wsId, meetingId),
+    queryFn: () => api.getMeetingSummary(meetingId),
+    enabled: !!meetingId,
+    retry: false,
   });
 }

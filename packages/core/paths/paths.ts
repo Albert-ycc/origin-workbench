@@ -38,6 +38,8 @@ function workspaceScoped(slug: string) {
       `${ws}/workspaces/${encode(projectId)}/meetings`,
     projectMeetingDetail: (projectId: string, meetingId: string) =>
       `${ws}/workspaces/${encode(projectId)}/meetings/${encode(meetingId)}`,
+    meetings: () => `${ws}/meetings`,
+    meetingDetail: (meetingId: string) => `${ws}/meetings/${encode(meetingId)}`,
     autopilots: () => `${ws}/autopilots`,
     autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     agents: () => `${ws}/agents`,

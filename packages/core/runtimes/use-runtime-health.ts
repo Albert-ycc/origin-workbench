@@ -10,13 +10,13 @@ import type { RuntimeHealth } from "./types";
 // happens at the 5-minute mark with no new data) reflect in the UI.
 const HEALTH_TICK_MS = 30_000;
 
-function useHealthTick(): number {
-  const [tick, setTick] = useState(0);
+function useHealthNow(): number {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), HEALTH_TICK_MS);
+    const id = setInterval(() => setNow(Date.now()), HEALTH_TICK_MS);
     return () => clearInterval(id);
   }, []);
-  return tick;
+  return now;
 }
 
 /**
@@ -33,14 +33,13 @@ export function useRuntimeHealth(
     ...runtimeListOptions(wsId ?? ""),
     enabled: !!wsId,
   });
-  const tick = useHealthTick();
+  const now = useHealthNow();
 
   return useMemo<RuntimeHealth | "loading">(() => {
     if (!wsId || !runtimeId) return "loading";
     if (!runtimes) return "loading";
     const runtime = runtimes.find((r) => r.id === runtimeId);
     if (!runtime) return "loading";
-    return deriveRuntimeHealth(runtime, Date.now());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsId, runtimeId, runtimes, tick]);
+    return deriveRuntimeHealth(runtime, now);
+  }, [wsId, runtimeId, runtimes, now]);
 }

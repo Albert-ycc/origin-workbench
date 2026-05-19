@@ -5,22 +5,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { clearWorkspaceStorage, defaultStorage } from "@multica/core/platform";
-import { paths } from "@multica/core/paths";
 import type { Workspace } from "@multica/core/types";
 import { useNavigation } from "../navigation";
 
 /**
  * Performs a complete logout: clears per-workspace client storage, legacy
  * cookies, the desktop tab state, the entire React Query cache, the
- * in-memory auth store, and finally navigates to /login. Wraps what was
+ * in-memory auth store, and finally navigates to the app entry route. Wraps what was
  * previously duplicated in app-sidebar's logout handler so NoAccessPage's
  * "Sign in as a different user" and any future entry point can use the
  * same flow.
  *
- * Without a unified logout, callers that only do `navigate('/login')`
+ * Without a unified logout, callers that only change the URL
  * leave the auth cookie + React Query cache + local storage intact —
- * AuthInitializer then silently re-authenticates the user on the login
- * page and redirects them back where they came from.
+ * AuthInitializer then silently re-authenticates the user and redirects
+ * them back where they came from.
  */
 export function useLogout() {
   const queryClient = useQueryClient();
@@ -54,10 +53,10 @@ export function useLogout() {
     queryClient.clear();
     authLogout();
 
-    // Navigate to /login explicitly. authLogout() clears state but doesn't
+    // Navigate to the existing app entry route. authLogout() clears state but doesn't
     // move the URL — without this the caller might be on a workspace URL
     // which renders null (layout gates on user) and leaves the user
     // stuck on a blank page.
-    push(paths.login());
+    push("/");
   }, [queryClient, authLogout, push]);
 }

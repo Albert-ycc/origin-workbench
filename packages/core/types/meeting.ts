@@ -77,6 +77,7 @@ export interface UpdateMeetingSessionRequest {
   reminder_mode?: MeetingReminderMode;
   reminder_intensity?: MeetingReminderIntensity;
   sound_enabled?: boolean;
+  asr_provider?: MeetingASRProvider;
   model_source?: MeetingModelSource;
   analysis_enabled?: boolean;
 }
@@ -137,4 +138,24 @@ export interface MeetingInsightCard {
 export interface ListMeetingInsightCardsResponse {
   cards: MeetingInsightCard[];
   total: number;
+}
+
+export interface MeetingSummary {
+  meeting_id: string;
+  workspace_id: string;
+  project_id: string;
+  summary_md: string;
+  decisions: string[];
+  questions: string[];
+  risks: string[];
+  feedback: string[];
+  tensions: string[];
+  action_items: string[];
+  memory_candidates: string[];
+  source_seq_start: number | null;
+  source_seq_end: number | null;
+  generated_by: string;
+  duration_seconds: number;
+  created_at: string;
+  updated_at: string;
 }

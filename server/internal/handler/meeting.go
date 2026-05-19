@@ -96,6 +96,26 @@ type ListMeetingInsightCardsResponse struct {
 	Total int                          `json:"total"`
 }
 
+type MeetingSummaryResponse struct {
+	MeetingID        string   `json:"meeting_id"`
+	WorkspaceID      string   `json:"workspace_id"`
+	ProjectID        string   `json:"project_id"`
+	SummaryMd        string   `json:"summary_md"`
+	Decisions        []string `json:"decisions"`
+	Questions        []string `json:"questions"`
+	Risks            []string `json:"risks"`
+	Feedback         []string `json:"feedback"`
+	Tensions         []string `json:"tensions"`
+	ActionItems      []string `json:"action_items"`
+	MemoryCandidates []string `json:"memory_candidates"`
+	SourceSeqStart   *int32   `json:"source_seq_start"`
+	SourceSeqEnd     *int32   `json:"source_seq_end"`
+	GeneratedBy      string   `json:"generated_by"`
+	DurationSeconds  int64    `json:"duration_seconds"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
+}
+
 type CreateMeetingSessionRequest struct {
 	ProjectID         string          `json:"project_id"`
 	Title             string          `json:"title"`
@@ -118,6 +138,7 @@ type UpdateMeetingSessionRequest struct {
 	ReminderMode      *string         `json:"reminder_mode"`
 	ReminderIntensity *string         `json:"reminder_intensity"`
 	SoundEnabled      *bool           `json:"sound_enabled"`
+	ASRProvider       *string         `json:"asr_provider"`
 	ModelSource       *string         `json:"model_source"`
 	AnalysisEnabled   *bool           `json:"analysis_enabled"`
 }
@@ -206,6 +227,35 @@ func meetingInsightCardToResponse(c db.MeetingInsightCard) MeetingInsightCardRes
 	}
 }
 
+func meetingSummaryToResponse(s db.MeetingSummary, meeting db.MeetingSession) MeetingSummaryResponse {
+	durationSeconds := int64(0)
+	if meeting.StartedAt.Valid && meeting.StoppedAt.Valid {
+		duration := meeting.StoppedAt.Time.Sub(meeting.StartedAt.Time)
+		if duration > 0 {
+			durationSeconds = int64(duration.Seconds())
+		}
+	}
+	return MeetingSummaryResponse{
+		MeetingID:        uuidToString(s.MeetingID),
+		WorkspaceID:      uuidToString(s.WorkspaceID),
+		ProjectID:        uuidToString(s.ProjectID),
+		SummaryMd:        s.SummaryMd,
+		Decisions:        meetingJSONStringList(s.Decisions),
+		Questions:        meetingJSONStringList(s.Questions),
+		Risks:            meetingJSONStringList(s.Risks),
+		Feedback:         meetingJSONStringList(s.Feedback),
+		Tensions:         meetingJSONStringList(s.Tensions),
+		ActionItems:      meetingJSONStringList(s.ActionItems),
+		MemoryCandidates: meetingJSONStringList(s.MemoryCandidates),
+		SourceSeqStart:   int4ToPtr(s.SourceSeqStart),
+		SourceSeqEnd:     int4ToPtr(s.SourceSeqEnd),
+		GeneratedBy:      s.GeneratedBy,
+		DurationSeconds:  durationSeconds,
+		CreatedAt:        timestampToString(s.CreatedAt),
+		UpdatedAt:        timestampToString(s.UpdatedAt),
+	}
+}
+
 func int4ToPtr(v pgtype.Int4) *int32 {
 	if !v.Valid {
 		return nil
@@ -245,6 +295,39 @@ func meetingAnalysisConfig(enabled bool, modelSource string) (string, string, bo
 		return source, "idle", true
 	}
 	return source, "paused", true
+}
+
+func meetingJSONStringList(raw []byte) []string {
+	if len(raw) == 0 {
+		return []string{}
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return []string{}
+	}
+	return cleanMeetingStringList(values)
+}
+
+func meetingJSONList(values []string) []byte {
+	payload, err := json.Marshal(cleanMeetingStringList(values))
+	if err != nil {
+		return []byte(`[]`)
+	}
+	return payload
+}
+
+func cleanMeetingStringList(values []string) []string {
+	cleaned := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		item := strings.TrimSpace(value)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		cleaned = append(cleaned, item)
+	}
+	return cleaned
 }
 
 func (h *Handler) ListMeetingSessions(w http.ResponseWriter, r *http.Request) {
@@ -454,6 +537,19 @@ func (h *Handler) UpdateMeetingSession(w http.ResponseWriter, r *http.Request) {
 	if req.SoundEnabled != nil {
 		params.SoundEnabled = pgtype.Bool{Bool: *req.SoundEnabled, Valid: true}
 	}
+	if req.ASRProvider != nil {
+		value, ok := normalizeMeetingChoice(*req.ASRProvider, "", map[string]bool{
+			"renderer": true,
+			"local":    true,
+			"external": true,
+			"manual":   true,
+		})
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid asr_provider")
+			return
+		}
+		params.AsrProvider = pgtype.Text{String: value, Valid: true}
+	}
 	if req.ModelSource != nil || req.AnalysisEnabled != nil {
 		modelSource := meeting.ModelSource
 		if req.ModelSource != nil {
@@ -515,6 +611,100 @@ func (h *Handler) StopMeetingSession(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := meetingSessionToResponse(stopped)
 	h.publish(protocol.EventMeetingStopped, resp.WorkspaceID, "member", requestUserID(r), map[string]any{"meeting": resp})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) ArchiveMeetingSession(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	archived, err := h.Queries.ArchiveMeetingSession(r.Context(), db.ArchiveMeetingSessionParams{
+		ID:          meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to archive meeting")
+		return
+	}
+	resp := meetingSessionToResponse(archived)
+	h.publish(protocol.EventMeetingUpdated, resp.WorkspaceID, "member", requestUserID(r), map[string]any{"meeting": resp})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) GetMeetingSummary(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	summary, err := h.Queries.GetMeetingSummary(r.Context(), db.GetMeetingSummaryParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+	})
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "meeting summary not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get meeting summary")
+		return
+	}
+	writeJSON(w, http.StatusOK, meetingSummaryToResponse(summary, meeting))
+}
+
+func (h *Handler) GenerateMeetingSummary(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	segments, err := h.Queries.ListMeetingTranscriptSegments(r.Context(), db.ListMeetingTranscriptSegmentsParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		Seq:         0,
+		Limit:       1000,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list transcript segments")
+		return
+	}
+	if len(segments) == 0 {
+		writeError(w, http.StatusBadRequest, "transcript is required before summary")
+		return
+	}
+	cards, err := h.Queries.ListMeetingInsightCards(r.Context(), db.ListMeetingInsightCardsParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list insight cards")
+		return
+	}
+	draft := buildMeetingSummaryDraft(meeting, segments, cards)
+	summary, err := h.Queries.UpsertMeetingSummary(r.Context(), db.UpsertMeetingSummaryParams{
+		MeetingID:        meeting.ID,
+		WorkspaceID:      meeting.WorkspaceID,
+		ProjectID:        meeting.ProjectID,
+		SummaryMd:        draft.SummaryMd,
+		Decisions:        meetingJSONList(draft.Decisions),
+		Questions:        meetingJSONList(draft.Questions),
+		Risks:            meetingJSONList(draft.Risks),
+		Feedback:         meetingJSONList(draft.Feedback),
+		Tensions:         meetingJSONList(draft.Tensions),
+		ActionItems:      meetingJSONList(draft.ActionItems),
+		MemoryCandidates: meetingJSONList(draft.MemoryCandidates),
+		SourceSeqStart:   pgtype.Int4{Int32: segments[0].Seq, Valid: true},
+		SourceSeqEnd:     pgtype.Int4{Int32: segments[len(segments)-1].Seq, Valid: true},
+		GeneratedBy:      "origin-rule-summarizer",
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate meeting summary")
+		return
+	}
+	resp := meetingSummaryToResponse(summary, meeting)
+	h.publish(protocol.EventMeetingSummaryCreated, resp.WorkspaceID, "system", "", map[string]any{
+		"meeting_id": resp.MeetingID,
+		"summary":    resp,
+	})
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -697,6 +887,163 @@ func (h *Handler) meetingFromURL(w http.ResponseWriter, r *http.Request) (db.Mee
 		return db.MeetingSession{}, false
 	}
 	return meeting, true
+}
+
+type meetingSummaryDraft struct {
+	SummaryMd        string
+	Decisions        []string
+	Questions        []string
+	Risks            []string
+	Feedback         []string
+	Tensions         []string
+	ActionItems      []string
+	MemoryCandidates []string
+}
+
+func buildMeetingSummaryDraft(meeting db.MeetingSession, segments []db.MeetingTranscriptSegment, cards []db.MeetingInsightCard) meetingSummaryDraft {
+	draft := meetingSummaryDraft{}
+	for _, segment := range segments {
+		text := meetingSegmentText(segment)
+		lower := strings.ToLower(text)
+		switch {
+		case strings.Contains(text, "决定") || strings.Contains(text, "结论") || strings.Contains(text, "确认") || strings.Contains(text, "确定"):
+			draft.Decisions = appendMeetingSummaryItem(draft.Decisions, text)
+		}
+		if strings.Contains(text, "风险") || strings.Contains(text, "延期") || strings.Contains(text, "阻塞") || strings.Contains(text, "卡住") || strings.Contains(lower, "block") {
+			draft.Risks = appendMeetingSummaryItem(draft.Risks, text)
+		}
+		if strings.Contains(text, "问题") || strings.Contains(text, "？") || strings.Contains(text, "?") || strings.Contains(text, "是否") {
+			draft.Questions = appendMeetingSummaryItem(draft.Questions, text)
+		}
+		if strings.Contains(text, "反馈") || strings.Contains(text, "客户说") || strings.Contains(text, "用户说") || strings.Contains(text, "客户") || strings.Contains(text, "用户") {
+			draft.Feedback = appendMeetingSummaryItem(draft.Feedback, text)
+		}
+		if strings.Contains(text, "既要") || (strings.Contains(text, "又要") && strings.Count(text, "要") >= 2) {
+			draft.Tensions = appendMeetingSummaryItem(draft.Tensions, text)
+		}
+		if strings.Contains(text, "行动项") || strings.Contains(text, "待办") || strings.Contains(text, "负责") || strings.Contains(text, "今天") || strings.Contains(text, "明天") || strings.Contains(text, "下周") {
+			draft.ActionItems = appendMeetingSummaryItem(draft.ActionItems, text)
+		}
+		if strings.Contains(text, "记住") || strings.Contains(text, "沉淀") || strings.Contains(text, "归档") || strings.Contains(text, "项目记录") {
+			draft.MemoryCandidates = appendMeetingSummaryItem(draft.MemoryCandidates, text)
+		}
+	}
+	for _, card := range cards {
+		item := meetingInsightSummaryText(card)
+		switch card.Type {
+		case "risk":
+			draft.Risks = appendMeetingSummaryItem(draft.Risks, item)
+		case "question":
+			draft.Questions = appendMeetingSummaryItem(draft.Questions, item)
+		case "feedback":
+			draft.Feedback = appendMeetingSummaryItem(draft.Feedback, item)
+			draft.MemoryCandidates = appendMeetingSummaryItem(draft.MemoryCandidates, item)
+		case "tension":
+			draft.Tensions = appendMeetingSummaryItem(draft.Tensions, item)
+		}
+	}
+	if len(draft.Decisions) == 0 && len(segments) > 0 {
+		draft.Decisions = appendMeetingSummaryItem(draft.Decisions, "本次会议已沉淀转写记录，待会后补充明确结论。")
+	}
+	draft.SummaryMd = renderMeetingSummaryMarkdown(meeting, segments, draft)
+	return draft
+}
+
+func meetingSegmentText(segment db.MeetingTranscriptSegment) string {
+	text := strings.TrimSpace(segment.Text)
+	if text == "" {
+		return ""
+	}
+	speaker := strings.TrimSpace(segment.SpeakerLabel)
+	if speaker == "" {
+		return text
+	}
+	return speaker + "：" + text
+}
+
+func meetingInsightSummaryText(card db.MeetingInsightCard) string {
+	title := strings.TrimSpace(card.Title)
+	if title == "" {
+		title = strings.TrimSpace(card.Type)
+	}
+	evidence := strings.TrimSpace(card.EvidenceQuote)
+	if evidence != "" {
+		return title + "：" + evidence
+	}
+	reason := strings.TrimSpace(card.Reason)
+	if reason != "" {
+		return title + "：" + reason
+	}
+	return title
+}
+
+func appendMeetingSummaryItem(items []string, item string) []string {
+	value := strings.Trim(strings.TrimSpace(item), "-• ")
+	if value == "" {
+		return items
+	}
+	for _, existing := range items {
+		if existing == value {
+			return items
+		}
+	}
+	if len(items) >= 8 {
+		return items
+	}
+	return append(items, value)
+}
+
+func renderMeetingSummaryMarkdown(meeting db.MeetingSession, segments []db.MeetingTranscriptSegment, draft meetingSummaryDraft) string {
+	title := strings.TrimSpace(meeting.Title)
+	if title == "" {
+		title = "未命名会议"
+	}
+	var b strings.Builder
+	b.WriteString("# ")
+	b.WriteString(title)
+	b.WriteString("\n\n")
+	if goal := strings.TrimSpace(meeting.Goal); goal != "" {
+		b.WriteString("## 会议目标\n")
+		b.WriteString(goal)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("## 核心结论\n")
+	writeMeetingMarkdownList(&b, draft.Decisions)
+	b.WriteString("\n## 风险与阻塞\n")
+	writeMeetingMarkdownList(&b, draft.Risks)
+	b.WriteString("\n## 待澄清问题\n")
+	writeMeetingMarkdownList(&b, draft.Questions)
+	b.WriteString("\n## 行动项\n")
+	writeMeetingMarkdownList(&b, draft.ActionItems)
+	b.WriteString("\n## 用户反馈\n")
+	writeMeetingMarkdownList(&b, draft.Feedback)
+	b.WriteString("\n## 约束冲突\n")
+	writeMeetingMarkdownList(&b, draft.Tensions)
+	b.WriteString("\n## 项目记忆候选\n")
+	writeMeetingMarkdownList(&b, draft.MemoryCandidates)
+	b.WriteString("\n## 原始转写范围\n")
+	if len(segments) == 0 {
+		b.WriteString("- 暂无转写记录\n")
+	} else {
+		b.WriteString("- 第 ")
+		b.WriteString(strconv.Itoa(int(segments[0].Seq)))
+		b.WriteString(" 到第 ")
+		b.WriteString(strconv.Itoa(int(segments[len(segments)-1].Seq)))
+		b.WriteString(" 段\n")
+	}
+	return b.String()
+}
+
+func writeMeetingMarkdownList(b *strings.Builder, items []string) {
+	if len(items) == 0 {
+		b.WriteString("- 暂无明确记录\n")
+		return
+	}
+	for _, item := range items {
+		b.WriteString("- ")
+		b.WriteString(item)
+		b.WriteString("\n")
+	}
 }
 
 type meetingQuickInsight struct {

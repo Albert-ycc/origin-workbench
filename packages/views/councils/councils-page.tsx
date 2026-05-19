@@ -5,16 +5,20 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Archive,
+  ChevronLeft,
   ChevronRight,
   CircleDot,
   Gavel,
   Loader2,
+  MessageSquareText,
   Plus,
+  Send,
   Trash2,
   UserMinus,
   UserPlus,
   Users,
 } from "lucide-react";
+import { DRAFT_NEW_SESSION, useChatStore } from "@multica/core/chat";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { agentListOptions } from "@multica/core/workspace/queries";
@@ -48,7 +52,7 @@ export function CouncilsPage() {
 
   const sessionsQuery = useQuery(councilListOptions(wsId, "active"));
   const agentsQuery = useQuery(agentListOptions(wsId));
-  const sessions = sessionsQuery.data ?? [];
+  const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
   const agents = useMemo(
     () => (agentsQuery.data ?? []).filter((a) => !a.archived_at),
     [agentsQuery.data],
@@ -56,7 +60,7 @@ export function CouncilsPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedSession = useMemo(
-    () => sessions.find((s) => s.id === selectedId) ?? sessions[0] ?? null,
+    () => (selectedId ? sessions.find((s) => s.id === selectedId) ?? null : null),
     [sessions, selectedId],
   );
 
@@ -64,6 +68,7 @@ export function CouncilsPage() {
     ...councilDetailOptions(wsId, selectedSession?.id ?? ""),
     enabled: !!selectedSession,
   });
+  const participants = detailQuery.data?.participants ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -72,28 +77,74 @@ export function CouncilsPage() {
         <span className="text-sm text-muted-foreground">Origin</span>
         <ChevronRight className="size-3 text-muted-foreground" />
         <span className="text-sm font-medium">会议室</span>
+        {selectedSession ? (
+          <>
+            <ChevronRight className="size-3 text-muted-foreground" />
+            <span className="text-sm font-medium">会议详情</span>
+          </>
+        ) : null}
       </PageHeader>
       <main className="min-h-0 flex-1 overflow-y-auto p-5">
-        <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
-          <section className="flex flex-col gap-4">
-            <ConveneSession agents={agents} />
-            <SessionsList
-              sessions={sessions}
-              loading={sessionsQuery.isLoading}
-              selectedId={selectedSession?.id ?? null}
-              onSelect={setSelectedId}
-            />
-          </section>
+        {selectedSession ? (
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setSelectedId(null)}>
+                  <ChevronLeft className="size-4" />
+                  返回会议列表
+                </Button>
+                <h1 className="mt-1 line-clamp-2 text-lg font-semibold">{selectedSession.topic}</h1>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant={selectedSession.status === "running" ? "default" : "secondary"}>
+                  {labelForStatus(selectedSession.status)}
+                </Badge>
+                <Badge variant="outline">{labelForActivity(selectedSession.activity_level)}</Badge>
+              </div>
+            </div>
 
-          <aside className="space-y-4">
-            <SessionDetailPanel
-              session={selectedSession}
-              participants={detailQuery.data?.participants ?? []}
-              agents={agents}
-              loading={detailQuery.isLoading}
-            />
-          </aside>
-        </div>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
+              <section className="flex flex-col gap-4">
+                <SessionInteractionPanel
+                  session={selectedSession}
+                  participants={participants}
+                  agents={agents}
+                  loading={detailQuery.isLoading}
+                />
+              </section>
+
+              <aside className="space-y-4">
+                <SessionDetailPanel
+                  session={selectedSession}
+                  participants={participants}
+                  agents={agents}
+                  loading={detailQuery.isLoading}
+                />
+              </aside>
+            </div>
+          </div>
+        ) : (
+          <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
+            <section className="flex flex-col gap-4">
+              <div>
+                <h1 className="text-lg font-semibold">会议室</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  从列表进入会议后，再发言、追问、加人和散会。
+                </p>
+              </div>
+              <SessionsList
+                sessions={sessions}
+                loading={sessionsQuery.isLoading}
+                selectedId={null}
+                onSelect={setSelectedId}
+              />
+            </section>
+
+            <aside className="order-first space-y-4 lg:order-none">
+              <ConveneSession agents={agents} onCreated={setSelectedId} />
+            </aside>
+          </div>
+        )}
       </main>
     </div>
   );
@@ -103,7 +154,13 @@ export function CouncilsPage() {
 // Convene
 // ────────────────────────────────────────────────────────────────────────
 
-function ConveneSession({ agents }: { agents: Agent[] }) {
+function ConveneSession({
+  agents,
+  onCreated,
+}: {
+  agents: Agent[];
+  onCreated?: (sessionId: string) => void;
+}) {
   const [topic, setTopic] = useState("");
   const [activityLevel, setActivityLevel] = useState<CouncilActivityLevel>("concise");
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
@@ -113,13 +170,14 @@ function ConveneSession({ agents }: { agents: Agent[] }) {
     const trimmed = topic.trim();
     if (!trimmed) return;
     try {
-      await create.mutateAsync({
+      const created = await create.mutateAsync({
         topic: trimmed,
         activity_level: activityLevel,
         participant_agent_ids: selectedAgentIds,
       });
       setTopic("");
       setSelectedAgentIds([]);
+      onCreated?.(created.session.id);
       toast.success("会议室已开");
     } catch (err) {
       toast.error("召开失败", { description: err instanceof Error ? err.message : String(err) });
@@ -140,8 +198,8 @@ function ConveneSession({ agents }: { agents: Agent[] }) {
             <Users className="size-4" />
           </div>
           <div>
-            <h1 className="text-base font-semibold">会议室</h1>
-            <p className="text-sm text-muted-foreground">临时召集多个 Agent，对线、决策、形成结论。</p>
+            <h2 className="text-base font-semibold">新建会议</h2>
+            <p className="text-sm text-muted-foreground">填写议题，选择参会 Agent。</p>
           </div>
         </div>
       </div>
@@ -226,7 +284,7 @@ function SessionsList({
       <section className="rounded-lg border bg-card p-8 text-center">
         <Users className="mx-auto size-6 text-muted-foreground" />
         <p className="mt-3 text-sm text-muted-foreground">
-          还没有进行中的会议室。在上面写一个议题、选几个 Agent 就能开。
+          还没有会议。写一个议题、选几个 Agent 就能开。
         </p>
       </section>
     );
@@ -234,7 +292,7 @@ function SessionsList({
   return (
     <section className="rounded-lg border bg-card">
       <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">进行中 / 已散会</h2>
+        <h2 className="text-sm font-semibold">会议列表</h2>
         <Badge variant="outline">{sessions.length}</Badge>
       </div>
       <ul className="divide-y">
@@ -263,10 +321,106 @@ function SessionsList({
                   <span className="ml-auto">{formatRelativeTime(s.updated_at)}</span>
                 </div>
               </div>
+              <div className="flex shrink-0 items-center gap-1 pt-0.5 text-xs font-medium text-muted-foreground">
+                进入会议
+                <ChevronRight className="size-3" />
+              </div>
             </div>
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Interaction
+// ────────────────────────────────────────────────────────────────────────
+
+function SessionInteractionPanel({
+  session,
+  participants,
+  agents,
+  loading,
+}: {
+  session: CouncilSession | null;
+  participants: CouncilSessionParticipant[];
+  agents: Agent[];
+  loading: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+
+  if (!session) {
+    return (
+      <section className="rounded-lg border bg-card p-6 text-center">
+        <MessageSquareText className="mx-auto size-7 text-muted-foreground" />
+        <h2 className="mt-3 text-sm font-semibold">发言 / 追问</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          先召开一个会议，然后在这里选择参会 Agent 发言。
+        </p>
+      </section>
+    );
+  }
+
+  const activeParticipants = participants.filter((p) => !p.left_at);
+  const canSpeak = session.status === "running" && activeParticipants.length > 0;
+  const openAgentChat = (agentId: string) => {
+    const name = agentNameById(agents, agentId);
+    openCouncilAgentChat(session, agentId, name, draft);
+    setDraft("");
+  };
+
+  return (
+    <section className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between gap-3 border-b p-4">
+        <div>
+          <h2 className="text-sm font-semibold">发言 / 追问</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            写一句要带进会议的话，再选择一个参会 Agent。消息会在 Direct Chat 中打开，带上当前会议上下文。
+          </p>
+        </div>
+        <Badge variant={session.status === "running" ? "default" : "secondary"}>
+          {labelForStatus(session.status)}
+        </Badge>
+      </div>
+      <div className="space-y-3 p-4">
+        {loading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : activeParticipants.length === 0 ? (
+          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            还没有参会 Agent。先在右侧加人，再开始发言。
+          </div>
+        ) : (
+          <>
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="例如：请从产品、前端、测试三个角度判断这个方案有什么风险？"
+              rows={3}
+              disabled={!canSpeak}
+            />
+            <div className="flex flex-wrap gap-2">
+              {activeParticipants.map((p) => (
+                <Button
+                  key={p.id}
+                  size="sm"
+                  variant="outline"
+                  disabled={!canSpeak}
+                  onClick={() => openAgentChat(p.agent_id)}
+                >
+                  <Send className="size-3.5" />
+                  向 {agentNameById(agents, p.agent_id)} 发言
+                </Button>
+              ))}
+            </div>
+          </>
+        )}
+        {session.status !== "running" ? (
+          <p className="text-xs text-muted-foreground">
+            会议已散会，只保留归档、删除和结论查看。
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -297,12 +451,11 @@ function SessionDetailPanel({
   if (!session) {
     return (
       <section className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        选一个会议室，这里看议题、参会角色、散会写结论。
+        选一个会议室，这里看议题、参会角色和散会结论。
       </section>
     );
   }
 
-  const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id.slice(0, 8);
   const activeParticipants = participants.filter((p) => !p.left_at);
   const availableAgents = agents.filter((a) => !activeParticipants.some((p) => p.agent_id === a.id));
 
@@ -341,23 +494,39 @@ function SessionDetailPanel({
               <li key={p.id} className="flex items-center justify-between rounded-md border bg-background p-2 text-xs">
                 <span className="flex items-center gap-2">
                   <CircleDot className="size-3" />
-                  {agentName(p.agent_id)}
+                  {agentNameById(agents, p.agent_id)}
                   {p.role === "convener" ? <Badge variant="outline" className="text-[10px]">召集人</Badge> : null}
                 </span>
                 {session.status === "running" ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={async () => {
-                      try {
-                        await removeParticipant.mutateAsync({ sessionId: session.id, agentId: p.agent_id });
-                      } catch (err) {
-                        toast.error("移除失败", { description: err instanceof Error ? err.message : String(err) });
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        openCouncilAgentChat(
+                          session,
+                          p.agent_id,
+                          agentNameById(agents, p.agent_id),
+                        )
                       }
-                    }}
-                  >
-                    <UserMinus className="size-3" />
-                  </Button>
+                    >
+                      <MessageSquareText className="size-3" />
+                      发言
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        try {
+                          await removeParticipant.mutateAsync({ sessionId: session.id, agentId: p.agent_id });
+                        } catch (err) {
+                          toast.error("移除失败", { description: err instanceof Error ? err.message : String(err) });
+                        }
+                      }}
+                    >
+                      <UserMinus className="size-3" />
+                    </Button>
+                  </div>
                 ) : null}
               </li>
             ))}
@@ -499,4 +668,32 @@ function formatRelativeTime(iso: string | null | undefined): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} 天前`;
   return new Date(iso).toLocaleDateString();
+}
+
+function agentNameById(agents: Agent[], id: string): string {
+  return agents.find((a) => a.id === id)?.name ?? id.slice(0, 8);
+}
+
+function openCouncilAgentChat(
+  session: CouncilSession,
+  agentId: string,
+  agentName: string,
+  userDraft = "",
+) {
+  const trimmedDraft = userDraft.trim();
+  const prompt = [
+    `会议室议题：${session.topic}`,
+    "",
+    `请以「${agentName}」身份参与这场会议。`,
+    trimmedDraft
+      ? `我的发言：${trimmedDraft}`
+      : "请先围绕这个议题给出你的判断、主要风险和下一步建议。",
+  ].join("\n");
+
+  const chat = useChatStore.getState();
+  chat.setSelectedAgentId(agentId);
+  chat.setActiveSession(null);
+  chat.setInputDraft(DRAFT_NEW_SESSION, prompt);
+  chat.setOpen(true);
+  toast.success(`已打开 ${agentName} 的 Direct Chat`);
 }

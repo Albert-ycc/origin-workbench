@@ -77,6 +77,11 @@ function ProjectMeetingsRoute() {
   return <MeetingsPage projectId={id} meetingId={meetingId} />;
 }
 
+function MeetingsRoute() {
+  const { meetingId } = useParams<{ meetingId?: string }>();
+  return <MeetingsPage meetingId={meetingId} />;
+}
+
 /**
  * Route definitions shared by all tabs.
  *
@@ -145,6 +150,16 @@ export const appRoutes: RouteObject[] = [
           {
             path: "workspaces/:id/meetings/:meetingId",
             element: <ProjectMeetingsRoute />,
+            handle: { title: "会议 Copilot" },
+          },
+          {
+            path: "meetings",
+            element: <MeetingsRoute />,
+            handle: { title: "会议 Copilot" },
+          },
+          {
+            path: "meetings/:meetingId",
+            element: <MeetingsRoute />,
             handle: { title: "会议 Copilot" },
           },
           {

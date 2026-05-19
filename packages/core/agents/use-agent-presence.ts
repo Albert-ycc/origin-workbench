@@ -19,13 +19,13 @@ import type { AgentPresenceDetail } from "./types";
 // became sticky; this one re-introduces ticking with a different motivation.
 const PRESENCE_TICK_MS = 30_000;
 
-function usePresenceTick(): number {
-  const [tick, setTick] = useState(0);
+function usePresenceNow(): number {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), PRESENCE_TICK_MS);
+    const id = setInterval(() => setNow(Date.now()), PRESENCE_TICK_MS);
     return () => clearInterval(id);
   }, []);
-  return tick;
+  return now;
 }
 
 /**
@@ -62,7 +62,7 @@ export function useWorkspacePresenceMap(wsId: string | undefined): {
     ...agentTaskSnapshotOptions(wsId ?? ""),
     enabled: !!wsId,
   });
-  const tick = usePresenceTick();
+  const now = usePresenceNow();
 
   const byAgent = useMemo(() => {
     // Treat errored queries as empty so the map still builds — a 404 on
@@ -77,10 +77,9 @@ export function useWorkspacePresenceMap(wsId: string | undefined): {
       agents: safeAgents,
       runtimes: safeRuntimes,
       snapshot: safeSnapshot,
-      now: Date.now(),
+      now,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents, runtimes, snapshot, agentsErr, runtimesErr, snapshotErr, tick]);
+  }, [agents, runtimes, snapshot, agentsErr, runtimesErr, snapshotErr, now]);
 
   return {
     byAgent,
@@ -132,7 +131,7 @@ export function useAgentPresenceDetail(
     ...agentTaskSnapshotOptions(wsId ?? ""),
     enabled: !!wsId,
   });
-  const tick = usePresenceTick();
+  const now = usePresenceNow();
 
   return useMemo<AgentPresenceDetail | "loading">(() => {
     if (!wsId || !agentId) return "loading";
@@ -156,7 +155,6 @@ export function useAgentPresenceDetail(
     const runtime = safeRuntimes.find((r) => r.id === agent.runtime_id) ?? null;
 
     const tasks = safeSnapshot.filter((t) => t.agent_id === agentId);
-    return deriveAgentPresenceDetail({ agent, runtime, tasks, now: Date.now() });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsId, agentId, agents, runtimes, snapshot, agentsErr, runtimesErr, snapshotErr, tick]);
+    return deriveAgentPresenceDetail({ agent, runtime, tasks, now });
+  }, [wsId, agentId, agents, runtimes, snapshot, agentsErr, runtimesErr, snapshotErr, now]);
 }

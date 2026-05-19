@@ -127,6 +127,23 @@ func TestLoadAPIRuntimeConfigPrefersOriginEnvOverOpenAICompatibleAliases(t *test
 	}
 }
 
+func TestLoadAPIRuntimeConfigParsesToolRoots(t *testing.T) {
+	env := map[string]string{
+		EnvAPIKey:      "sk-origin",
+		EnvModelName:   "origin-model",
+		EnvToolRoots:   " /workspace ,/workspace,/tmp/project ",
+		EnvRuntimeName: "External Model API",
+	}
+
+	cfg, ok := LoadAPIRuntimeConfig(func(key string) string { return env[key] })
+	if !ok {
+		t.Fatal("expected API runtime config")
+	}
+	if len(cfg.ToolRoots) != 2 || cfg.ToolRoots[0] != "/workspace" || cfg.ToolRoots[1] != "/tmp/project" {
+		t.Fatalf("tool roots = %+v", cfg.ToolRoots)
+	}
+}
+
 func contains(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {

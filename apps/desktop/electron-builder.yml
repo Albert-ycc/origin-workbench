@@ -5,6 +5,9 @@ directories:
   output: dist-local
 files:
   - "!**/.vscode/*"
+  - "!dist-local{,/**/*}"
+  - "!dist{,/**/*}"
+  - "!node_modules/.cache{,/**/*}"
   - "!src/*"
   - "!electron.vite.config.*"
   - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"

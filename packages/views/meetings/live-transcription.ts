@@ -53,15 +53,34 @@ export type LiveTranscriptionStatus =
   | "unsupported"
   | "error";
 
-export function collectFinalTranscript(event: SpeechRecognitionEventLike): string {
-  const parts: string[] = [];
+export type SpeechRecognitionTranscript = {
+  finalText: string;
+  interimText: string;
+};
+
+export function collectSpeechRecognitionTranscript(
+  event: SpeechRecognitionEventLike,
+): SpeechRecognitionTranscript {
+  const finalParts: string[] = [];
+  const interimParts: string[] = [];
   for (let index = event.resultIndex; index < event.results.length; index += 1) {
     const result = event.results[index];
-    if (!result?.isFinal) continue;
-    const text = result[0]?.transcript?.trim();
-    if (text) parts.push(text);
+    const text = result?.[0]?.transcript?.trim();
+    if (!text) continue;
+    if (result?.isFinal) {
+      finalParts.push(text);
+    } else {
+      interimParts.push(text);
+    }
   }
-  return parts.join(" ").trim();
+  return {
+    finalText: finalParts.join(" ").trim(),
+    interimText: interimParts.join(" ").trim(),
+  };
+}
+
+export function collectFinalTranscript(event: SpeechRecognitionEventLike): string {
+  return collectSpeechRecognitionTranscript(event).finalText;
 }
 
 function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null {
@@ -99,6 +118,7 @@ export function useLiveTranscription({
     getSpeechRecognitionConstructor() ? "idle" : "unsupported",
   );
   const [error, setError] = useState<string | null>(null);
+  const [interimTranscript, setInterimTranscript] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const shouldListenRef = useRef(false);
   const onFinalTranscriptRef = useRef(onFinalTranscript);
@@ -106,6 +126,7 @@ export function useLiveTranscription({
 
   const stop = useCallback(() => {
     shouldListenRef.current = false;
+    setInterimTranscript("");
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) {
@@ -117,8 +138,24 @@ export function useLiveTranscription({
     setStatus((current) => (current === "unsupported" ? current : "idle"));
   }, []);
 
+  const reset = useCallback(() => {
+    shouldListenRef.current = false;
+    setInterimTranscript("");
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onresult = null;
+      recognition.abort();
+    }
+    setError(null);
+    setStatus(getSpeechRecognitionConstructor() ? "idle" : "unsupported");
+  }, []);
+
   const start = useCallback(async (): Promise<boolean> => {
     const Recognition = getSpeechRecognitionConstructor();
+    setInterimTranscript("");
     if (!Recognition) {
       setStatus("unsupported");
       setError("当前运行环境不支持实时语音转写");
@@ -144,8 +181,9 @@ export function useLiveTranscription({
     recognition.interimResults = true;
     recognition.lang = lang;
     recognition.onresult = (event) => {
-      const text = collectFinalTranscript(event);
-      if (text) void onFinalTranscriptRef.current(text);
+      const { finalText, interimText } = collectSpeechRecognitionTranscript(event);
+      setInterimTranscript(interimText);
+      if (finalText) void onFinalTranscriptRef.current(finalText);
     };
     recognition.onerror = (event) => {
       setError(event.error ? `语音转写失败：${event.error}` : "语音转写失败");
@@ -192,9 +230,11 @@ export function useLiveTranscription({
   return {
     status,
     error,
+    interimTranscript,
     isListening: status === "listening",
     isSupported: status !== "unsupported",
     start,
     stop,
+    reset,
   };
 }

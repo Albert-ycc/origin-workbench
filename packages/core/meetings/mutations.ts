@@ -27,6 +27,7 @@ export function useUpdateMeetingSession(wsId: string) {
     onSuccess: (meeting) => {
       qc.setQueryData(meetingKeys.detail(wsId, meeting.id), meeting);
       qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, meeting.project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, null) });
     },
   });
 }
@@ -38,6 +39,7 @@ export function useStartMeetingSession(wsId: string) {
     onSuccess: (meeting) => {
       qc.setQueryData(meetingKeys.detail(wsId, meeting.id), meeting);
       qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, meeting.project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, null) });
     },
   });
 }
@@ -49,6 +51,35 @@ export function useStopMeetingSession(wsId: string) {
     onSuccess: (meeting) => {
       qc.setQueryData(meetingKeys.detail(wsId, meeting.id), meeting);
       qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, meeting.project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, null) });
+    },
+  });
+}
+
+export function useArchiveMeetingSession(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.archiveMeeting(id),
+    onSuccess: (meeting) => {
+      qc.removeQueries({ queryKey: meetingKeys.detail(wsId, meeting.id) });
+      qc.removeQueries({ queryKey: meetingKeys.transcript(wsId, meeting.id) });
+      qc.removeQueries({ queryKey: meetingKeys.insights(wsId, meeting.id) });
+      qc.removeQueries({ queryKey: meetingKeys.summary(wsId, meeting.id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, meeting.project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, null) });
+    },
+  });
+}
+
+export function useGenerateMeetingSummary(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.generateMeetingSummary(id),
+    onSuccess: (summary) => {
+      qc.setQueryData(meetingKeys.summary(wsId, summary.meeting_id), summary);
+      qc.invalidateQueries({ queryKey: meetingKeys.detail(wsId, summary.meeting_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, summary.project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, null) });
     },
   });
 }
