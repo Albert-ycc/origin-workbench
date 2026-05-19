@@ -30,7 +30,7 @@ jobs:
         run: pnpm install
 
       - name: Build, type check, and test
-        run: pnpm exec turbo build typecheck test --filter='!@multica/docs'
+        run: pnpm exec turbo build typecheck test
 
   backend:
     runs-on: ubuntu-latest
@@ -162,9 +162,34 @@ jobs:
 
       - name: Start desktop renderer
         run: |
-          pnpm --filter @multica/desktop exec electron-vite --rendererOnly > /tmp/origin-e2e-renderer.log 2>&1 &
+          cd apps/desktop
+          cat > .origin-e2e-vite.config.mjs <<'EOF'
+          import { resolve } from "node:path";
+          import react from "@vitejs/plugin-react";
+          import tailwindcss from "@tailwindcss/vite";
+
+          const desktopRoot = process.cwd();
+          const port = Number(process.env.DESKTOP_RENDERER_PORT) || 5173;
+
+          export default {
+            root: resolve(desktopRoot, "src/renderer"),
+            server: {
+              host: "127.0.0.1",
+              port,
+              strictPort: true,
+            },
+            plugins: [react(), tailwindcss()],
+            resolve: {
+              alias: {
+                "@": resolve(desktopRoot, "src/renderer/src"),
+              },
+              dedupe: ["react", "react-dom"],
+            },
+          };
+          EOF
+          pnpm exec vite --config .origin-e2e-vite.config.mjs > /tmp/origin-e2e-renderer.log 2>&1 &
           for i in {1..120}; do
-            if curl -sf http://localhost:5173 >/dev/null; then
+            if curl -sf "http://127.0.0.1:${DESKTOP_RENDERER_PORT}" >/dev/null; then
               exit 0
             fi
             sleep 1
