@@ -9,6 +9,8 @@
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "test:e2e": "playwright test e2e/origin-smoke.spec.ts",
+    "test:e2e:all": "playwright test",
     "lint": "turbo lint",
     "clean": "turbo clean && rm -rf node_modules",
     "ui:add": "cd packages/ui && npx shadcn@latest add"

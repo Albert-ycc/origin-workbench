@@ -1,7 +1,12 @@
+/**
+ * SKIPPED — upstream Web/英文 UI 设置用例（workspace dropdown / Save 按钮）。
+ * 对应 AUDIT-T2: Playwright 用例仍按 upstream Web/英文 UI 写。
+ * Origin 设置页路由和中文化已变更，需单独验证。
+ */
 import { test, expect } from "@playwright/test";
 import { loginAsDefault, openWorkspaceMenu } from "./helpers";
 
-test.describe("Settings", () => {
+test.describe.skip("Settings", () => {
   test("updating workspace name reflects in sidebar immediately", async ({
     page,
   }) => {

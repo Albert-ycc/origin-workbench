@@ -1,8 +1,13 @@
+/**
+ * SKIPPED — upstream Web 评论用例（/issues/ URL 路由 + "Leave a comment..." 英文占位符）。
+ * 对应 AUDIT-T2: Playwright 用例仍按 upstream Web/英文 UI 写。
+ * 评论功能已在 origin-smoke.spec.ts S4 中覆盖（任务卡抽屉评论）。
+ */
 import { test, expect } from "@playwright/test";
 import { createTestApi, loginAsDefault } from "./helpers";
 import type { TestApiClient } from "./fixtures";
 
-test.describe("Comments", () => {
+test.describe.skip("Comments", () => {
   let api: TestApiClient;
 
   test.beforeEach(async ({ page }) => {

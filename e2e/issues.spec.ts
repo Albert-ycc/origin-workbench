@@ -1,8 +1,13 @@
+/**
+ * SKIPPED — upstream Web/英文 UI 用例（Backlog/Todo/In Progress/New Issue）。
+ * 对应 AUDIT-T2: Playwright 用例仍按 upstream Web/英文 UI 写。
+ * Origin 不使用 /issues 看板作为主路径，主路径是项目工作区 /workspaces。
+ */
 import { test, expect } from "@playwright/test";
 import { loginAsDefault, createTestApi } from "./helpers";
 import type { TestApiClient } from "./fixtures";
 
-test.describe("Issues", () => {
+test.describe.skip("Issues", () => {
   let api: TestApiClient;
 
   test.beforeEach(async ({ page }) => {

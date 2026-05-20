@@ -1,7 +1,12 @@
+/**
+ * SKIPPED — upstream Web/英文 UI 用例，与 Origin 桌面中文 UI 不兼容。
+ * 对应 AUDIT-T2: Playwright 用例仍按 upstream Web/英文 UI 写。
+ * 替代：e2e/origin-smoke.spec.ts S1（登录路径）。
+ */
 import { test, expect } from "@playwright/test";
 import { loginAsDefault, openWorkspaceMenu } from "./helpers";
 
-test.describe("Authentication", () => {
+test.describe.skip("Authentication", () => {
   test("login page renders correctly", async ({ page }) => {
     await page.goto("/login");
 

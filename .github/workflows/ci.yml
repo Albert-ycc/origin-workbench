@@ -86,6 +86,10 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
+    # Wait for backend tests to pass before spending CI minutes on E2E.
+    # This also serialises DB migration: backend runs migrations on multica DB,
+    # E2E runs its own migrations on multica_e2e DB — no port conflicts.
+    needs: [backend]
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -119,6 +123,11 @@ jobs:
       DESKTOP_RENDERER_PORT: "5173"
       VITE_API_URL: http://localhost:8080
       VITE_WS_URL: ws://localhost:8080/ws
+      # Fixed verification code so E2E can bypass email delivery.
+      # Only effective when APP_ENV != production (default for this job).
+      MULTICA_DEV_VERIFICATION_CODE: "888888"
+      APP_ENV: development
+      JWT_SECRET: "e2e-ci-jwt-secret-not-for-production"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -151,51 +160,87 @@ jobs:
         run: |
           cd server
           go run ./cmd/server > /tmp/origin-e2e-backend.log 2>&1 &
+          echo "Waiting for backend /health..."
           for i in {1..90}; do
             if curl -sf http://localhost:8080/health >/dev/null; then
+              echo "Backend ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          cat /tmp/origin-e2e-backend.log
+          echo "=== Backend startup log ===" && cat /tmp/origin-e2e-backend.log
           exit 1
 
-      - name: Start desktop renderer
+      - name: Start desktop renderer (web mode)
         run: |
-          cd apps/desktop
-          cat > .origin-e2e-vite.config.mjs <<'EOF'
+          # Write a standalone Vite config that boots the desktop renderer in
+          # browser/web mode without the Electron main/preload setup.
+          # @multica/* workspace packages resolve via pnpm node_modules symlinks
+          # (exports map points to .ts source files, vite + react plugin handles them).
+          # The config is written to the desktop package dir so relative paths work.
+          REPO_ROOT=$(pwd)
+          DESKTOP_ROOT="${REPO_ROOT}/apps/desktop"
+
+          cat > "${DESKTOP_ROOT}/.origin-e2e-vite.config.mjs" <<'VITEEOF'
           import { resolve } from "node:path";
+          import { fileURLToPath } from "node:url";
           import react from "@vitejs/plugin-react";
           import tailwindcss from "@tailwindcss/vite";
 
-          const desktopRoot = process.cwd();
+          const desktopRoot = fileURLToPath(new URL(".", import.meta.url));
           const port = Number(process.env.DESKTOP_RENDERER_PORT) || 5173;
 
           export default {
             root: resolve(desktopRoot, "src/renderer"),
             server: {
-              host: "127.0.0.1",
+              // Use "localhost" so the browser Origin header matches the backend
+              // CORS allowlist entry ("http://localhost:5173").
+              // "127.0.0.1" is a different origin in browser CORS rules.
+              host: "localhost",
               port,
               strictPort: true,
             },
             plugins: [react(), tailwindcss()],
             resolve: {
               alias: {
+                // Desktop renderer src shorthand
                 "@": resolve(desktopRoot, "src/renderer/src"),
               },
               dedupe: ["react", "react-dom"],
+              // Allow vite to resolve workspace packages via pnpm symlinks
+              preserveSymlinks: false,
+            },
+            // E2E does not need pre-bundling optimisation; skip to avoid cold-start delay
+            optimizeDeps: {
+              exclude: ["@multica/core", "@multica/ui", "@multica/views"],
             },
           };
-          EOF
-          pnpm exec vite --config .origin-e2e-vite.config.mjs > /tmp/origin-e2e-renderer.log 2>&1 &
+          VITEEOF
+
+          pnpm exec vite --config "${DESKTOP_ROOT}/.origin-e2e-vite.config.mjs" \
+            > /tmp/origin-e2e-renderer.log 2>&1 &
+
+          echo "Waiting for renderer on port ${DESKTOP_RENDERER_PORT}..."
           for i in {1..120}; do
-            if curl -sf "http://127.0.0.1:${DESKTOP_RENDERER_PORT}" >/dev/null; then
+            if curl -sf "http://localhost:${DESKTOP_RENDERER_PORT}" >/dev/null; then
+              echo "Renderer ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          cat /tmp/origin-e2e-renderer.log
+          echo "=== Renderer startup log ===" && cat /tmp/origin-e2e-renderer.log
           exit 1
 
       - name: Run Origin smoke
         run: pnpm exec playwright test e2e/origin-smoke.spec.ts
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            /tmp/origin-e2e-backend.log
+            /tmp/origin-e2e-renderer.log
+          retention-days: 7
