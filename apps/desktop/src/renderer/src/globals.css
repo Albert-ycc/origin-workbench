@@ -6,19 +6,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Font stack: Noto Sans SC 统一无衬线字体（陪伴型客厅 brand-spec v2）。
-   Electron 打包环境无法请求 Google Fonts，所以 Noto Sans SC 只靠系统回退
-   PingFang SC（macOS）/ Microsoft YaHei（Windows）/ Noto Sans CJK SC（Linux）。
-   三个平台都是无衬线黑体，视觉一致性满足 brand-spec 要求。
-   如果后续需要内嵌字体，走 @fontsource/noto-sans-sc 打包（约 4MB subset）。
-
-   Mono 字体保留原栈，CJK chars 在 code blocks 走 browser default。 */
 :root {
-  /* brand-spec v2：Noto Sans SC 无衬线，PingFang SC fallback */
-  --font-sans: "Noto Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont,
-               "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
-  --font-serif: "PingFang SC", -apple-system, BlinkMacSystemFont,
-                "Microsoft YaHei", sans-serif;
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
+               "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-serif: "Georgia", "Times New Roman", "PingFang SC", -apple-system,
+                BlinkMacSystemFont, "Microsoft YaHei", serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
                monospace;
 }
@@ -67,14 +59,20 @@
   100% { background-position: -200% 0; }
 }
 
-/* 侧栏收窄 20%：通过 CSS 变量覆盖 shadcn sidebar width */
-:root {
-  --sidebar-width: 192px;       /* 原始约 240px，收窄 20% */
-  --sidebar-width-mobile: 288px;
-}
-
 /* agent 人格抽屉滑入动效 */
 @keyframes living-drawer-in {
   from { transform: translateX(100%); opacity: 0.6; }
   to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* 客厅模块 brand-spec v2 namespace — 只作用于 .living-room-scope 内部 */
+.living-room-scope {
+  font-family: "Noto Sans SC", "PingFang SC", sans-serif;
+  background: #FFFFFF;
+}
+
+.living-room-scope .room-message-bubble {
+  background: #FFFFFF;
+  border: 1px solid var(--living-border-line, #E8E8E8);
+  border-radius: 8px;
 }

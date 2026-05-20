@@ -153,3 +153,18 @@ type DaemonHeartbeatPendingLocalSkillImport struct {
 	ID       string `json:"id"`
 	SkillKey string `json:"skill_key"`
 }
+
+// RoomMessagePayload 是客厅新消息的 WS 广播 payload（事件类型 room:message）。
+// 扁平结构，前端按 room_id 路由到对应客厅渲染。
+// agent 流式回复的 token 增量仍走 task:message_chunk / task:message_complete，
+// 前端通过 message_id 匹配客厅消息占位气泡后替换内容。
+type RoomMessagePayload struct {
+	RoomID       string `json:"room_id"`
+	MessageID    string `json:"message_id"`
+	SenderType   string `json:"sender_type"`
+	SenderID     string `json:"sender_id"`
+	SenderName   string `json:"sender_name,omitempty"`
+	Content      string `json:"content"`
+	IsAutonomous bool   `json:"is_autonomous"`
+	CreatedAt    string `json:"created_at"`
+}

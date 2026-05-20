@@ -192,4 +192,9 @@ const (
 	EventDaemonHeartbeatAck  = "daemon:heartbeat_ack"
 	EventDaemonRegister      = "daemon:register"
 	EventDaemonTaskAvailable = "daemon:task_available"
+
+	// Room events (客厅模块 v1.0.14)
+	// EventRoomMessage 是客厅收到新消息时推送给所有 workspace 订阅者的事件。
+	// payload: RoomMessagePayload。复用 task:message_chunk / task:message_complete 承载流式 token。
+	EventRoomMessage = "room:message"
 )

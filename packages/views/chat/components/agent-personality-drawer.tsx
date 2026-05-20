@@ -30,12 +30,15 @@ interface AgentPersonalityDrawerProps {
   agent: Agent;
   wsId: string | undefined;
   onClose: () => void;
+  /** When set, "永远告别" removes from this room instead of globally archiving the agent */
+  roomId?: string;
 }
 
 export function AgentPersonalityDrawer({
   agent,
   wsId,
   onClose,
+  roomId,
 }: AgentPersonalityDrawerProps) {
   const qc = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -52,8 +55,13 @@ export function AgentPersonalityDrawer({
     if (!wsId) return;
     setDeleting(true);
     try {
-      await api.archiveAgent(agent.id);
-      qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+      if (roomId) {
+        await api.removeRoomMember(roomId, agent.id);
+        qc.invalidateQueries({ queryKey: ["room-members", roomId] });
+      } else {
+        await api.archiveAgent(agent.id);
+        qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+      }
       onClose();
     } catch {
       // ignore, agent will stay

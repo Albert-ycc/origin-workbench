@@ -414,6 +414,33 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
+			// Rooms (客厅模块 v1.0.14 — 陪伴型多 agent 群聊空间)
+			r.Route("/api/rooms", func(r chi.Router) {
+				r.Get("/", h.ListRooms)
+				r.Post("/", h.CreateRoom)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetRoom)
+					r.Patch("/", h.UpdateRoom)
+					r.Put("/", h.UpdateRoom)
+					r.Post("/archive", h.ArchiveRoom)
+					r.Delete("/", h.DeleteRoom)
+					r.Get("/messages", h.ListRoomMessages)
+					r.Post("/messages", h.SendRoomMessage)
+					r.Post("/members", h.AddRoomMember)
+					r.Delete("/members/{memberId}", h.RemoveRoomMember)
+					r.Route("/agents/{agentId}/persona", func(r chi.Router) {
+						r.Get("/", h.GetRoomAgentPersona)
+						r.Patch("/", h.UpsertRoomAgentPersona)
+						r.Put("/", h.UpsertRoomAgentPersona)
+					})
+					r.Route("/members/{agentId}/persona", func(r chi.Router) {
+						r.Get("/", h.GetRoomAgentPersona)
+						r.Patch("/", h.UpsertRoomAgentPersona)
+						r.Put("/", h.UpsertRoomAgentPersona)
+					})
+				})
+			})
+
 			// Ideas (Origin idea pool — lightweight pre-Mission incubation layer)
 			r.Route("/api/ideas", func(r chi.Router) {
 				r.Get("/", h.ListIdeas)

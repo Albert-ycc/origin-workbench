@@ -87,7 +87,7 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 const createChatSession = `-- name: CreateChatSession :one
 INSERT INTO chat_session (workspace_id, agent_id, creator_id, title)
 VALUES ($1, $2, $3, $4)
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal
 `
 
 type CreateChatSessionParams struct {
@@ -121,6 +121,8 @@ func (q *Queries) CreateChatSession(ctx context.Context, arg CreateChatSessionPa
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }
@@ -178,6 +180,52 @@ func (q *Queries) CreateChatTask(ctx context.Context, arg CreateChatTaskParams) 
 	return i, err
 }
 
+const createRoomInternalChatSession = `-- name: CreateRoomInternalChatSession :one
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, room_id, is_room_internal)
+VALUES ($1, $2, $3, $4, $5, TRUE)
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal
+`
+
+type CreateRoomInternalChatSessionParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	AgentID     pgtype.UUID `json:"agent_id"`
+	CreatorID   pgtype.UUID `json:"creator_id"`
+	Title       string      `json:"title"`
+	RoomID      pgtype.UUID `json:"room_id"`
+}
+
+// 创建客厅内部 ephemeral session。is_room_internal=TRUE，不出现在 sidebar 列表。
+func (q *Queries) CreateRoomInternalChatSession(ctx context.Context, arg CreateRoomInternalChatSessionParams) (ChatSession, error) {
+	row := q.db.QueryRow(ctx, createRoomInternalChatSession,
+		arg.WorkspaceID,
+		arg.AgentID,
+		arg.CreatorID,
+		arg.Title,
+		arg.RoomID,
+	)
+	var i ChatSession
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatorID,
+		&i.Title,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnreadSince,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.LastCompactedAt,
+		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
+	)
+	return i, err
+}
+
 const getChatMessage = `-- name: GetChatMessage :one
 SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, sender_agent_id FROM chat_message
 WHERE id = $1
@@ -201,7 +249,7 @@ func (q *Queries) GetChatMessage(ctx context.Context, id pgtype.UUID) (ChatMessa
 }
 
 const getChatSession = `-- name: GetChatSession :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal FROM chat_session
 WHERE id = $1
 `
 
@@ -224,12 +272,14 @@ func (q *Queries) GetChatSession(ctx context.Context, id pgtype.UUID) (ChatSessi
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }
 
 const getChatSessionInWorkspace = `-- name: GetChatSessionInWorkspace :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal FROM chat_session
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -257,6 +307,8 @@ func (q *Queries) GetChatSessionInWorkspace(ctx context.Context, arg GetChatSess
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }
@@ -340,12 +392,51 @@ func (q *Queries) GetPendingChatTask(ctx context.Context, chatSessionID pgtype.U
 	return i, err
 }
 
+const getRoomInternalChatSession = `-- name: GetRoomInternalChatSession :one
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal FROM chat_session
+WHERE room_id = $1 AND agent_id = $2 AND is_room_internal = TRUE AND status = 'active'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetRoomInternalChatSessionParams struct {
+	RoomID  pgtype.UUID `json:"room_id"`
+	AgentID pgtype.UUID `json:"agent_id"`
+}
+
+// 通过 (room_id, agent_id) 找到已存在的客厅内部 active session
+func (q *Queries) GetRoomInternalChatSession(ctx context.Context, arg GetRoomInternalChatSessionParams) (ChatSession, error) {
+	row := q.db.QueryRow(ctx, getRoomInternalChatSession, arg.RoomID, arg.AgentID)
+	var i ChatSession
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatorID,
+		&i.Title,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnreadSince,
+		&i.TeamID,
+		&i.ProjectID,
+		&i.LastCompactedAt,
+		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
+	)
+	return i, err
+}
+
 const listAllChatSessionsByCreator = `-- name: ListAllChatSessionsByCreator :many
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.team_id, cs.project_id, cs.last_compacted_at, cs.compacted_into_session_id,
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.team_id, cs.project_id, cs.last_compacted_at, cs.compacted_into_session_id, cs.room_id, cs.is_room_internal,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2
   AND cs.team_id IS NULL
+  AND cs.is_room_internal = FALSE
 ORDER BY cs.updated_at DESC
 `
 
@@ -370,6 +461,8 @@ type ListAllChatSessionsByCreatorRow struct {
 	ProjectID              pgtype.UUID        `json:"project_id"`
 	LastCompactedAt        pgtype.Timestamptz `json:"last_compacted_at"`
 	CompactedIntoSessionID pgtype.UUID        `json:"compacted_into_session_id"`
+	RoomID                 pgtype.UUID        `json:"room_id"`
+	IsRoomInternal         bool               `json:"is_room_internal"`
 	HasUnread              bool               `json:"has_unread"`
 }
 
@@ -398,6 +491,8 @@ func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllC
 			&i.ProjectID,
 			&i.LastCompactedAt,
 			&i.CompactedIntoSessionID,
+			&i.RoomID,
+			&i.IsRoomInternal,
 			&i.HasUnread,
 		); err != nil {
 			return nil, err
@@ -411,7 +506,7 @@ func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllC
 }
 
 const listArchivedChatSessionsByProject = `-- name: ListArchivedChatSessionsByProject :many
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal FROM chat_session
 WHERE project_id = $1 AND status = 'archived'
 ORDER BY last_compacted_at DESC NULLS LAST, created_at DESC
 `
@@ -444,6 +539,8 @@ func (q *Queries) ListArchivedChatSessionsByProject(ctx context.Context, project
 			&i.ProjectID,
 			&i.LastCompactedAt,
 			&i.CompactedIntoSessionID,
+			&i.RoomID,
+			&i.IsRoomInternal,
 		); err != nil {
 			return nil, err
 		}
@@ -553,11 +650,12 @@ func (q *Queries) ListChatMessagesBySessionPage(ctx context.Context, arg ListCha
 }
 
 const listChatSessionsByCreator = `-- name: ListChatSessionsByCreator :many
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.team_id, cs.project_id, cs.last_compacted_at, cs.compacted_into_session_id,
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.team_id, cs.project_id, cs.last_compacted_at, cs.compacted_into_session_id, cs.room_id, cs.is_room_internal,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2 AND cs.status = 'active'
   AND cs.team_id IS NULL
+  AND cs.is_room_internal = FALSE
 ORDER BY cs.updated_at DESC
 `
 
@@ -582,12 +680,15 @@ type ListChatSessionsByCreatorRow struct {
 	ProjectID              pgtype.UUID        `json:"project_id"`
 	LastCompactedAt        pgtype.Timestamptz `json:"last_compacted_at"`
 	CompactedIntoSessionID pgtype.UUID        `json:"compacted_into_session_id"`
+	RoomID                 pgtype.UUID        `json:"room_id"`
+	IsRoomInternal         bool               `json:"is_room_internal"`
 	HasUnread              bool               `json:"has_unread"`
 }
 
 // Returns active sessions with a boolean unread flag. Unread is strictly
 // per-session: either the user has uncleared assistant replies in this
 // session or they don't. Counting messages would be misleading.
+// is_room_internal=TRUE の session は客厅内部仮想 session なので sidebar から除外。
 func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSessionsByCreatorParams) ([]ListChatSessionsByCreatorRow, error) {
 	rows, err := q.db.Query(ctx, listChatSessionsByCreator, arg.WorkspaceID, arg.CreatorID)
 	if err != nil {
@@ -613,6 +714,8 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 			&i.ProjectID,
 			&i.LastCompactedAt,
 			&i.CompactedIntoSessionID,
+			&i.RoomID,
+			&i.IsRoomInternal,
 			&i.HasUnread,
 		); err != nil {
 			return nil, err
@@ -632,6 +735,7 @@ JOIN chat_session cs ON cs.id = atq.chat_session_id
 WHERE cs.workspace_id = $1
   AND cs.creator_id = $2
   AND cs.team_id IS NULL
+  AND cs.is_room_internal = FALSE
   AND atq.status IN ('queued', 'dispatched', 'running')
 ORDER BY atq.created_at DESC
 `
@@ -650,6 +754,7 @@ type ListPendingChatTasksByCreatorRow struct {
 // Aggregate view of all in-flight chat tasks owned by a given creator in a
 // workspace. Drives the FAB's "running" indicator when the chat window is
 // closed and no single session's query is active.
+// 客厅内部虚拟 session 不纳入 FAB 指示器。
 func (q *Queries) ListPendingChatTasksByCreator(ctx context.Context, arg ListPendingChatTasksByCreatorParams) ([]ListPendingChatTasksByCreatorRow, error) {
 	rows, err := q.db.Query(ctx, listPendingChatTasksByCreator, arg.WorkspaceID, arg.CreatorID)
 	if err != nil {
@@ -731,7 +836,7 @@ func (q *Queries) UpdateChatSessionSession(ctx context.Context, arg UpdateChatSe
 const updateChatSessionTitle = `-- name: UpdateChatSessionTitle :one
 UPDATE chat_session SET title = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal
 `
 
 type UpdateChatSessionTitleParams struct {
@@ -758,6 +863,8 @@ func (q *Queries) UpdateChatSessionTitle(ctx context.Context, arg UpdateChatSess
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }

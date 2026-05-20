@@ -81,7 +81,12 @@ import type {
   MeetingSessionPayload,
   MeetingSummaryCreatedPayload,
   MeetingTranscriptSegmentCreatedPayload,
+  TaskMessageChunkPayload,
+  TaskMessageCompletePayload,
+  RoomMessagePayload,
 } from "../types";
+import { useRoomsStore } from "../rooms/store";
+import { roomKeys } from "../rooms/queries";
 
 const chatWsLogger = createLogger("chat.ws");
 
@@ -245,6 +250,12 @@ export function useRealtimeSync(
       // every message would flood the network. Specific chat handlers below
       // still receive it via ws.on() (a separate subscription channel).
       "task:message",
+      // task:message_chunk / task:message_complete are high-frequency streaming
+      // events — keeping them out of onAny prevents an invalidate storm.
+      "task:message_chunk",
+      "task:message_complete",
+      // room:message is handled by a specific handler below.
+      "room:message",
       "team:message_created",
       "meeting:created",
       "meeting:updated",
@@ -644,6 +655,35 @@ export function useRealtimeSync(
       });
     });
 
+    // v1.0.14 — streaming chunk for room messages. High-frequency: write into
+    // Zustand chunk buffer only, do NOT invalidate any query cache here.
+    const unsubTaskMessageChunk = ws.on("task:message_chunk", (p) => {
+      const payload = p as TaskMessageChunkPayload;
+      useRoomsStore.getState().appendChunk(payload.message_id, payload.chunk);
+    });
+
+    // v1.0.14 — stream complete: clear chunk buffer, invalidate room messages
+    // cache so persisted message shows up, and also invalidate task-messages
+    // cache using the same pattern as the existing task:message handler.
+    const unsubTaskMessageComplete = ws.on("task:message_complete", (p) => {
+      const payload = p as TaskMessageCompletePayload;
+      useRoomsStore.getState().completeMessage(payload.message_id, payload.content);
+      qc.invalidateQueries({ queryKey: ["task-messages", payload.task_id] });
+      chatWsLogger.debug("task:message_complete", {
+        task_id: payload.task_id,
+        message_id: payload.message_id,
+      });
+    });
+
+    // v1.0.14 — new room message: invalidate message list for that room.
+    const unsubRoomMessage = ws.on("room:message", (p) => {
+      const payload = p as RoomMessagePayload;
+      const wsId = getCurrentWsId();
+      if (wsId) {
+        qc.invalidateQueries({ queryKey: roomKeys.messages(payload.room_id) });
+      }
+    });
+
     // Helpers reused by chat lifecycle handlers.
     const invalidatePendingAggregate = () => {
       const id = getCurrentWsId();
@@ -926,6 +966,9 @@ export function useRealtimeSync(
       unsubInvitationDeclined();
       unsubInvitationRevoked();
       unsubTaskMessage();
+      unsubTaskMessageChunk();
+      unsubTaskMessageComplete();
+      unsubRoomMessage();
       unsubChatMessage();
       unsubChatDone();
       unsubTaskQueued();

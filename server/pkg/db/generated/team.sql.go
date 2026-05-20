@@ -182,7 +182,7 @@ INSERT INTO chat_session (workspace_id, team_id, project_id, agent_id, creator_i
 VALUES ($2, $1, $5, NULL, $3, $4)
 ON CONFLICT (team_id, project_id) WHERE team_id IS NOT NULL AND status = 'active' DO UPDATE
     SET updated_at = chat_session.updated_at
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal
 `
 
 type GetOrCreateTeamChatSessionParams struct {
@@ -226,12 +226,14 @@ func (q *Queries) GetOrCreateTeamChatSession(ctx context.Context, arg GetOrCreat
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }
 
 const getProjectMainChatSession = `-- name: GetProjectMainChatSession :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal FROM chat_session
 WHERE team_id = $1 AND project_id = $2
 `
 
@@ -261,6 +263,8 @@ func (q *Queries) GetProjectMainChatSession(ctx context.Context, arg GetProjectM
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }
@@ -288,7 +292,7 @@ func (q *Queries) GetTeam(ctx context.Context, id pgtype.UUID) (Team, error) {
 }
 
 const getTeamChatSession = `-- name: GetTeamChatSession :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, team_id, project_id, last_compacted_at, compacted_into_session_id, room_id, is_room_internal FROM chat_session
 WHERE team_id = $1 AND project_id IS NULL
 `
 
@@ -313,6 +317,8 @@ func (q *Queries) GetTeamChatSession(ctx context.Context, teamID pgtype.UUID) (C
 		&i.ProjectID,
 		&i.LastCompactedAt,
 		&i.CompactedIntoSessionID,
+		&i.RoomID,
+		&i.IsRoomInternal,
 	)
 	return i, err
 }

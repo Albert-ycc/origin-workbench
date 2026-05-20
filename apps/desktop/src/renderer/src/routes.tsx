@@ -35,6 +35,12 @@ import { BrainCircuit, Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { ModelApiSettingsTab } from "./components/model-api-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
+import { RoomsPage, RoomDetailPage } from "@multica/views/rooms";
+
+function RoomDetailRoute() {
+  const { id } = useParams<{ id: string }>();
+  return <RoomDetailPage roomId={id} />;
+}
 
 /**
  * Sets document.title from the deepest matched route's handle.title.
@@ -109,6 +115,8 @@ export const appRoutes: RouteObject[] = [
         element: <WorkspaceRouteLayout />,
         children: [
           { index: true, element: <Navigate to="workbench" replace /> },
+          { path: "rooms", element: <RoomsPage />, handle: { title: "客厅" } },
+          { path: "rooms/:id", element: <RoomDetailRoute />, handle: { title: "客厅" } },
           { path: "workbench", element: <WorkbenchPage />, handle: { title: "原点工作台" } },
           { path: "ideas", element: <IdeasPage />, handle: { title: "想法池" } },
           { path: "councils", element: <CouncilsPage />, handle: { title: "会议室" } },

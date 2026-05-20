@@ -159,6 +159,18 @@ import type {
   MeetingSummary,
   MeetingTranscriptSegment,
   UpdateMeetingSessionRequest,
+  Room,
+  RoomMember,
+  RoomMessage,
+  RoomAgentPersona,
+  CreateRoomRequest,
+  UpdateRoomRequest,
+  AddRoomMemberRequest,
+  SendRoomMessageRequest,
+  UpsertRoomAgentPersonaRequest,
+  ListRoomsResponse,
+  ListRoomMembersResponse,
+  ListRoomMessagesResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import { type Logger, noopLogger } from "../logger";
@@ -1916,5 +1928,77 @@ export class ApiClient {
 
   async listDelegationTaskCards(messageId: string): Promise<{ cards: DelegationTaskCard[]; total: number }> {
     return this.fetch(`/api/issues/by-team-message/${messageId}/cards`);
+  }
+
+  // Rooms (客厅) — v1.0.14
+  async listRooms(params?: { include_archived?: boolean }): Promise<ListRoomsResponse> {
+    const search = new URLSearchParams();
+    if (params?.include_archived) search.set("include_archived", "true");
+    return this.fetch(`/api/rooms?${search}`);
+  }
+
+  async getRoom(id: string): Promise<Room> {
+    return this.fetch(`/api/rooms/${id}`);
+  }
+
+  async createRoom(data: CreateRoomRequest): Promise<Room> {
+    return this.fetch("/api/rooms", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRoom(id: string, data: UpdateRoomRequest): Promise<Room> {
+    return this.fetch(`/api/rooms/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveRoom(id: string): Promise<void> {
+    await this.fetch(`/api/rooms/${id}/archive`, { method: "POST" });
+  }
+
+  async listRoomMembers(roomId: string): Promise<ListRoomMembersResponse> {
+    return this.fetch(`/api/rooms/${roomId}/members`);
+  }
+
+  async addRoomMember(roomId: string, data: AddRoomMemberRequest): Promise<RoomMember> {
+    return this.fetch(`/api/rooms/${roomId}/members`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeRoomMember(roomId: string, agentId: string): Promise<void> {
+    await this.fetch(`/api/rooms/${roomId}/members/${agentId}`, { method: "DELETE" });
+  }
+
+  async listRoomMessages(roomId: string, cursor?: string): Promise<ListRoomMessagesResponse> {
+    const search = new URLSearchParams();
+    if (cursor) search.set("cursor", cursor);
+    return this.fetch(`/api/rooms/${roomId}/messages?${search}`);
+  }
+
+  async sendRoomMessage(roomId: string, data: SendRoomMessageRequest): Promise<RoomMessage> {
+    return this.fetch(`/api/rooms/${roomId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getRoomAgentPersona(roomId: string, agentId: string): Promise<RoomAgentPersona> {
+    return this.fetch(`/api/rooms/${roomId}/members/${agentId}/persona`);
+  }
+
+  async upsertRoomAgentPersona(
+    roomId: string,
+    agentId: string,
+    data: UpsertRoomAgentPersonaRequest,
+  ): Promise<RoomAgentPersona> {
+    return this.fetch(`/api/rooms/${roomId}/members/${agentId}/persona`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
   }
 }

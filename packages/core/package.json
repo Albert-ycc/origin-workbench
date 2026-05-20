@@ -89,7 +89,11 @@
     "./utils": "./utils.ts",
     "./constants/*": "./constants/*.ts",
     "./platform": "./platform/index.ts",
-    "./analytics": "./analytics/index.ts"
+    "./analytics": "./analytics/index.ts",
+    "./rooms": "./rooms/index.ts",
+    "./rooms/queries": "./rooms/queries.ts",
+    "./rooms/mutations": "./rooms/mutations.ts",
+    "./rooms/store": "./rooms/store.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "catalog:",

@@ -94,7 +94,10 @@ export type WSEventType =
   | "team:deleted"
   | "team:member_added"
   | "team:member_removed"
-  | "team:message_created";
+  | "team:message_created"
+  | "room:message"
+  | "task:message_chunk"
+  | "task:message_complete";
 
 export interface WSMessage<T = unknown> {
   type: WSEventType;
@@ -391,4 +394,33 @@ export interface TeamMessageCreatedPayload {
   source_team_session_id?: string | null;
   issue_id?: string | null;
   message?: TeamMessage;
+}
+
+// v1.0.14 — streaming chunk events for room messages
+export interface TaskMessageChunkPayload {
+  task_id: string;
+  chat_session_id: string;
+  message_id: string;
+  chunk: string;
+}
+
+export interface TaskMessageCompletePayload {
+  task_id: string;
+  chat_session_id: string;
+  message_id: string;
+  content: string;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
+// v1.0.14 — flat room message event (扁平结构，不嵌套)
+export interface RoomMessagePayload {
+  room_id: string;
+  message_id: string;
+  sender_type: "user" | "agent" | "system";
+  sender_id: string;
+  sender_name?: string;
+  content: string;
+  is_autonomous: boolean;
+  created_at: string;
 }

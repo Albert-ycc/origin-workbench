@@ -210,6 +210,20 @@ export type {
   ArchivedChatSession,
 } from "./project-v12";
 export type {
+  Room,
+  RoomMember,
+  RoomMessage,
+  RoomAgentPersona,
+  CreateRoomRequest,
+  UpdateRoomRequest,
+  AddRoomMemberRequest,
+  SendRoomMessageRequest,
+  UpsertRoomAgentPersonaRequest,
+  ListRoomsResponse,
+  ListRoomMembersResponse,
+  ListRoomMessagesResponse,
+} from "./room";
+export type {
   MeetingASRProvider,
   MeetingAnalysisStatus,
   MeetingInsightCard,

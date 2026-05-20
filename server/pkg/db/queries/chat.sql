@@ -15,11 +15,13 @@ WHERE id = $1 AND workspace_id = $2;
 -- Returns active sessions with a boolean unread flag. Unread is strictly
 -- per-session: either the user has uncleared assistant replies in this
 -- session or they don't. Counting messages would be misleading.
+-- is_room_internal=TRUE の session は客厅内部仮想 session なので sidebar から除外。
 SELECT cs.*,
        (cs.unread_since IS NOT NULL)::bool AS has_unread
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2 AND cs.status = 'active'
   AND cs.team_id IS NULL
+  AND cs.is_room_internal = FALSE
 ORDER BY cs.updated_at DESC;
 
 -- name: ListAllChatSessionsByCreator :many
@@ -28,6 +30,7 @@ SELECT cs.*,
 FROM chat_session cs
 WHERE cs.workspace_id = $1 AND cs.creator_id = $2
   AND cs.team_id IS NULL
+  AND cs.is_room_internal = FALSE
 ORDER BY cs.updated_at DESC;
 
 -- name: UpdateChatSessionTitle :one
@@ -149,12 +152,14 @@ LIMIT 1;
 -- Aggregate view of all in-flight chat tasks owned by a given creator in a
 -- workspace. Drives the FAB's "running" indicator when the chat window is
 -- closed and no single session's query is active.
+-- 客厅内部虚拟 session 不纳入 FAB 指示器。
 SELECT atq.id AS task_id, atq.status, atq.chat_session_id
 FROM agent_task_queue atq
 JOIN chat_session cs ON cs.id = atq.chat_session_id
 WHERE cs.workspace_id = $1
   AND cs.creator_id = $2
   AND cs.team_id IS NULL
+  AND cs.is_room_internal = FALSE
   AND atq.status IN ('queued', 'dispatched', 'running')
 ORDER BY atq.created_at DESC;
 
@@ -169,3 +174,16 @@ WHERE id = $1;
 -- unread boundary stable across multiple incoming replies.
 UPDATE chat_session SET unread_since = now()
 WHERE id = $1 AND unread_since IS NULL;
+
+-- name: CreateRoomInternalChatSession :one
+-- 创建客厅内部 ephemeral session。is_room_internal=TRUE，不出现在 sidebar 列表。
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, room_id, is_room_internal)
+VALUES ($1, $2, $3, $4, $5, TRUE)
+RETURNING *;
+
+-- name: GetRoomInternalChatSession :one
+-- 通过 (room_id, agent_id) 找到已存在的客厅内部 active session
+SELECT * FROM chat_session
+WHERE room_id = $1 AND agent_id = $2 AND is_room_internal = TRUE AND status = 'active'
+ORDER BY created_at DESC
+LIMIT 1;

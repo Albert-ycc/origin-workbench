@@ -1306,6 +1306,8 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 					slog.Warn("failed to set unread_since", "chat_session_id", util.UUIDToString(task.ChatSessionID), "error", err)
 				}
 				s.handleTeamAssistantMessage(ctx, task, message)
+				// 客厅内部 session：agent 回复完成后同步写 room_message + 推 room:message 事件
+				s.maybeWriteRoomMessage(ctx, task, message)
 			}
 		}
 		s.broadcastChatDone(ctx, task)

@@ -241,6 +241,8 @@ type ChatSession struct {
 	ProjectID              pgtype.UUID        `json:"project_id"`
 	LastCompactedAt        pgtype.Timestamptz `json:"last_compacted_at"`
 	CompactedIntoSessionID pgtype.UUID        `json:"compacted_into_session_id"`
+	RoomID                 pgtype.UUID        `json:"room_id"`
+	IsRoomInternal         bool               `json:"is_room_internal"`
 }
 
 type Comment struct {
@@ -699,6 +701,70 @@ type ProjectResource struct {
 	Position     int32              `json:"position"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	CreatedBy    pgtype.UUID        `json:"created_by"`
+}
+
+type Room struct {
+	ID           pgtype.UUID        `json:"id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description"`
+	Theme        string             `json:"theme"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt   pgtype.Timestamptz `json:"archived_at"`
+	LastActiveAt pgtype.Timestamptz `json:"last_active_at"`
+}
+
+type RoomAgentPersona struct {
+	ID              pgtype.UUID        `json:"id"`
+	RoomID          pgtype.UUID        `json:"room_id"`
+	AgentID         pgtype.UUID        `json:"agent_id"`
+	PersonaOverride []byte             `json:"persona_override"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RoomAutonomousEvent struct {
+	ID        pgtype.UUID        `json:"id"`
+	RoomID    pgtype.UUID        `json:"room_id"`
+	AgentID   pgtype.UUID        `json:"agent_id"`
+	EventType string             `json:"event_type"`
+	Payload   []byte             `json:"payload"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type RoomMember struct {
+	ID         pgtype.UUID        `json:"id"`
+	RoomID     pgtype.UUID        `json:"room_id"`
+	MemberType string             `json:"member_type"`
+	MemberID   pgtype.UUID        `json:"member_id"`
+	Role       string             `json:"role"`
+	JoinedAt   pgtype.Timestamptz `json:"joined_at"`
+	LeftAt     pgtype.Timestamptz `json:"left_at"`
+}
+
+type RoomMessage struct {
+	ID               pgtype.UUID        `json:"id"`
+	RoomID           pgtype.UUID        `json:"room_id"`
+	SenderType       string             `json:"sender_type"`
+	SenderID         pgtype.UUID        `json:"sender_id"`
+	Content          string             `json:"content"`
+	ReplyToMessageID pgtype.UUID        `json:"reply_to_message_id"`
+	Mentions         []string           `json:"mentions"`
+	IsAutonomous     bool               `json:"is_autonomous"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type RoomRelationship struct {
+	ID             pgtype.UUID        `json:"id"`
+	RoomID         pgtype.UUID        `json:"room_id"`
+	FromMemberType string             `json:"from_member_type"`
+	FromMemberID   pgtype.UUID        `json:"from_member_id"`
+	ToMemberType   string             `json:"to_member_type"`
+	ToMemberID     pgtype.UUID        `json:"to_member_id"`
+	RelationType   string             `json:"relation_type"`
+	Strength       int16              `json:"strength"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Skill struct {
