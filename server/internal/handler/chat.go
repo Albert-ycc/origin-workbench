@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -263,55 +264,68 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Council @全体 fan-out: when this chat_session is borrowed by a running
-	// Council and the user message contains an @全体 mention, replace the
-	// default single-agent enqueue with a broadcast that spawns one chat task
-	// per active participant. This is what gives the room "8 short replies"
-	// instead of one captain trying to ventriloquize the whole roster.
+	// @全体 fan-out: when the user message contains an @全体 mention, replace
+	// the default single-agent enqueue with one chat task per active
+	// participant. Two roster sources are tried in order:
+	//   1. A running council_session whose source_chat_session_id points at
+	//      this chat (Council-room semantics; user explicitly "convened" it).
+	//   2. The team that owns this chat session (chat_session.team_id) — the
+	//      multi-agent group chat path that most users actually live in.
+	// This is what gives the room "N short replies" instead of one captain
+	// trying to ventriloquize the whole roster.
 	mentions := util.ParseMentions(req.Content)
 	if util.HasMentionAll(mentions) {
-		council, councilErr := h.Queries.GetRunningCouncilSessionBySourceChat(r.Context(), session.ID)
-		if councilErr == nil {
-			result, broadcastErr := h.TaskService.EnqueueCouncilBroadcastTasks(
-				r.Context(),
-				session,
-				council,
-				req.Content,
-				"user",
-				userID,
-				"",
+		var (
+			broadcastResult service.CouncilBroadcastResult
+			broadcastErr    error
+			broadcastKind   string
+		)
+		if council, councilErr := h.Queries.GetRunningCouncilSessionBySourceChat(r.Context(), session.ID); councilErr == nil {
+			broadcastKind = "council"
+			broadcastResult, broadcastErr = h.TaskService.EnqueueCouncilBroadcastTasks(
+				r.Context(), session, council, req.Content, "user", userID, "",
 			)
-			if broadcastErr == nil && len(result.Tasks) > 0 {
-				if err := h.Queries.TouchChatSession(r.Context(), session.ID); err != nil {
-					slog.Warn("failed to touch chat session after council broadcast", "session_id", sessionID, "error", err)
-				}
-				resolvedSessionID := uuidToString(session.ID)
-				h.publishChat(protocol.EventChatMessage, workspaceID, "member", userID, resolvedSessionID, protocol.ChatMessagePayload{
-					ChatSessionID: resolvedSessionID,
-					MessageID:     uuidToString(msg.ID),
-					Role:          "user",
-					Content:       req.Content,
-					TaskID:        uuidToString(result.Tasks[0].ID),
-					CreatedAt:     timestampToString(msg.CreatedAt),
-				})
-				writeJSON(w, http.StatusCreated, SendChatMessageResponse{
-					MessageID: uuidToString(msg.ID),
-					TaskID:    uuidToString(result.Tasks[0].ID),
-					CreatedAt: timestampToString(result.Tasks[0].CreatedAt),
-				})
-				slog.Info("council broadcast fan-out fired",
-					"chat_session_id", resolvedSessionID,
-					"council_session_id", result.CouncilSessionID,
-					"task_count", len(result.Tasks),
-				)
-				return
-			}
-			if broadcastErr != nil {
-				slog.Warn("council broadcast fan-out failed; falling back to default chat task",
-					"chat_session_id", uuidToString(session.ID),
-					"error", broadcastErr,
+		} else if session.TeamID.Valid {
+			if team, teamErr := h.Queries.GetTeam(r.Context(), session.TeamID); teamErr == nil {
+				broadcastKind = "team"
+				broadcastResult, broadcastErr = h.TaskService.EnqueueTeamBroadcastTasks(
+					r.Context(), session, team, req.Content, "user", userID, "",
 				)
 			}
+		}
+		if broadcastErr == nil && len(broadcastResult.Tasks) > 0 {
+			if err := h.Queries.TouchChatSession(r.Context(), session.ID); err != nil {
+				slog.Warn("failed to touch chat session after broadcast", "session_id", sessionID, "error", err)
+			}
+			resolvedSessionID := uuidToString(session.ID)
+			h.publishChat(protocol.EventChatMessage, workspaceID, "member", userID, resolvedSessionID, protocol.ChatMessagePayload{
+				ChatSessionID: resolvedSessionID,
+				MessageID:     uuidToString(msg.ID),
+				Role:          "user",
+				Content:       req.Content,
+				TaskID:        uuidToString(broadcastResult.Tasks[0].ID),
+				CreatedAt:     timestampToString(msg.CreatedAt),
+			})
+			writeJSON(w, http.StatusCreated, SendChatMessageResponse{
+				MessageID: uuidToString(msg.ID),
+				TaskID:    uuidToString(broadcastResult.Tasks[0].ID),
+				CreatedAt: timestampToString(broadcastResult.Tasks[0].CreatedAt),
+			})
+			slog.Info("@全体 broadcast fan-out fired",
+				"chat_session_id", resolvedSessionID,
+				"source_kind", broadcastKind,
+				"source_id", broadcastResult.CouncilSessionID,
+				"task_count", len(broadcastResult.Tasks),
+				"skipped_count", len(broadcastResult.SkippedAgentIDs),
+			)
+			return
+		}
+		if broadcastErr != nil {
+			slog.Warn("@全体 broadcast fan-out failed; falling back to default chat task",
+				"chat_session_id", uuidToString(session.ID),
+				"source_kind", broadcastKind,
+				"error", broadcastErr,
+			)
 		}
 	}
 	// Enqueue a chat task after the message exists.

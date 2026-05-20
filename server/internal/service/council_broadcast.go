@@ -51,6 +51,14 @@ type CouncilBroadcastResult struct {
 	SkippedAgentIDs  []string
 }
 
+// CouncilBroadcastSource identifies which roster supplied the fan-out targets.
+// Used to pick the right "topic" label and the right participant query.
+type CouncilBroadcastSource struct {
+	Kind  string // "council" or "team"
+	ID    pgtype.UUID
+	Topic string // council.topic or team.name
+}
+
 // EnqueueCouncilBroadcastTasks fans an incoming chat message out to every
 // active participant of a Council session. The chat message itself has
 // already been persisted by the caller — this method only enqueues one chat
@@ -74,31 +82,89 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 	broadcasterID string,
 	broadcasterName string,
 ) (CouncilBroadcastResult, error) {
-	result := CouncilBroadcastResult{
-		CouncilSessionID: util.UUIDToString(council.ID),
+	source := CouncilBroadcastSource{
+		Kind:  "council",
+		ID:    council.ID,
+		Topic: council.Topic,
 	}
-
-	participants, err := s.Queries.ListCouncilSessionParticipants(ctx, council.ID)
+	rosterInfo, rosterAgents, skipped, err := s.loadCouncilRoster(ctx, council.ID)
 	if err != nil {
-		return result, fmt.Errorf("list council participants: %w", err)
+		return CouncilBroadcastResult{CouncilSessionID: util.UUIDToString(council.ID)}, err
 	}
+	return s.enqueueBroadcastForRoster(
+		ctx,
+		chatSession,
+		source,
+		rosterInfo,
+		rosterAgents,
+		skipped,
+		userMessage,
+		broadcasterKind,
+		broadcasterID,
+		broadcasterName,
+	)
+}
 
+// EnqueueTeamBroadcastTasks fans an incoming chat message out to every
+// active member of a team chat session. Used when a user posts @全体 in a
+// team group chat (the actual user-visible "Council" room in v1.0.13 maps to
+// this — the explicit council_session table is reserved for ad-hoc convened
+// sessions). Behavior mirrors EnqueueCouncilBroadcastTasks except the roster
+// comes from team_member rather than council_session_participant.
+func (s *TaskService) EnqueueTeamBroadcastTasks(
+	ctx context.Context,
+	chatSession db.ChatSession,
+	team db.Team,
+	userMessage string,
+	broadcasterKind string,
+	broadcasterID string,
+	broadcasterName string,
+) (CouncilBroadcastResult, error) {
+	source := CouncilBroadcastSource{
+		Kind:  "team",
+		ID:    team.ID,
+		Topic: team.Name,
+	}
+	rosterInfo, rosterAgents, skipped, err := s.loadTeamRoster(ctx, team.ID)
+	if err != nil {
+		return CouncilBroadcastResult{}, err
+	}
+	return s.enqueueBroadcastForRoster(
+		ctx,
+		chatSession,
+		source,
+		rosterInfo,
+		rosterAgents,
+		skipped,
+		userMessage,
+		broadcasterKind,
+		broadcasterID,
+		broadcasterName,
+	)
+}
+
+func (s *TaskService) loadCouncilRoster(ctx context.Context, councilID pgtype.UUID) ([]CouncilBroadcastMemberInfo, map[string]db.Agent, []string, error) {
+	participants, err := s.Queries.ListCouncilSessionParticipants(ctx, councilID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("list council participants: %w", err)
+	}
 	rosterInfo := make([]CouncilBroadcastMemberInfo, 0, len(participants))
 	rosterAgents := make(map[string]db.Agent, len(participants))
+	skipped := []string{}
 	for _, p := range participants {
 		if p.LeftAt.Valid {
 			continue
 		}
 		agent, err := s.Queries.GetAgent(ctx, p.AgentID)
 		if err != nil {
-			slog.Warn("council broadcast: skip participant — agent load failed",
-				"council_session_id", util.UUIDToString(council.ID),
+			slog.Warn("broadcast: skip participant — agent load failed",
+				"council_session_id", util.UUIDToString(councilID),
 				"agent_id", util.UUIDToString(p.AgentID),
 				"error", err)
 			continue
 		}
 		if agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
-			result.SkippedAgentIDs = append(result.SkippedAgentIDs, util.UUIDToString(p.AgentID))
+			skipped = append(skipped, util.UUIDToString(p.AgentID))
 			continue
 		}
 		rosterAgents[util.UUIDToString(p.AgentID)] = agent
@@ -108,9 +174,63 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 			Role:    p.Role,
 		})
 	}
+	return rosterInfo, rosterAgents, skipped, nil
+}
+
+func (s *TaskService) loadTeamRoster(ctx context.Context, teamID pgtype.UUID) ([]CouncilBroadcastMemberInfo, map[string]db.Agent, []string, error) {
+	members, err := s.Queries.ListTeamMembers(ctx, teamID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("list team members: %w", err)
+	}
+	rosterInfo := make([]CouncilBroadcastMemberInfo, 0, len(members))
+	rosterAgents := make(map[string]db.Agent, len(members))
+	skipped := []string{}
+	for _, m := range members {
+		agent, err := s.Queries.GetAgent(ctx, m.AgentID)
+		if err != nil {
+			slog.Warn("broadcast: skip team member — agent load failed",
+				"team_id", util.UUIDToString(teamID),
+				"agent_id", util.UUIDToString(m.AgentID),
+				"error", err)
+			continue
+		}
+		if agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
+			skipped = append(skipped, util.UUIDToString(m.AgentID))
+			continue
+		}
+		role := m.Role
+		if role == "" {
+			role = "member"
+		}
+		rosterAgents[util.UUIDToString(m.AgentID)] = agent
+		rosterInfo = append(rosterInfo, CouncilBroadcastMemberInfo{
+			AgentID: util.UUIDToString(m.AgentID),
+			Name:    agent.Name,
+			Role:    role,
+		})
+	}
+	return rosterInfo, rosterAgents, skipped, nil
+}
+
+func (s *TaskService) enqueueBroadcastForRoster(
+	ctx context.Context,
+	chatSession db.ChatSession,
+	source CouncilBroadcastSource,
+	rosterInfo []CouncilBroadcastMemberInfo,
+	rosterAgents map[string]db.Agent,
+	skipped []string,
+	userMessage string,
+	broadcasterKind string,
+	broadcasterID string,
+	broadcasterName string,
+) (CouncilBroadcastResult, error) {
+	result := CouncilBroadcastResult{
+		CouncilSessionID: util.UUIDToString(source.ID),
+		SkippedAgentIDs:  append([]string{}, skipped...),
+	}
 
 	if len(rosterInfo) == 0 {
-		return result, fmt.Errorf("council has no eligible participants for broadcast")
+		return result, fmt.Errorf("%s has no eligible participants for broadcast", source.Kind)
 	}
 
 	broadcasterName = strings.TrimSpace(broadcasterName)
@@ -135,8 +255,8 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 
 		payload := CouncilBroadcastContext{
 			Type:             CouncilBroadcastContextType,
-			CouncilSessionID: util.UUIDToString(council.ID),
-			CouncilTopic:     council.Topic,
+			CouncilSessionID: util.UUIDToString(source.ID),
+			CouncilTopic:     source.Topic,
 			ChatSessionID:    util.UUIDToString(chatSession.ID),
 			BroadcasterKind:  broadcasterKind,
 			BroadcasterName:  broadcasterName,
@@ -147,8 +267,9 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 		}
 		contextJSON, err := json.Marshal(payload)
 		if err != nil {
-			slog.Warn("council broadcast: marshal context failed",
-				"council_session_id", util.UUIDToString(council.ID),
+			slog.Warn("broadcast: marshal context failed",
+				"source_kind", source.Kind,
+				"source_id", util.UUIDToString(source.ID),
 				"agent_id", member.AgentID,
 				"error", err)
 			continue
@@ -161,8 +282,9 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 			contextJSON,
 		)
 		if err != nil {
-			slog.Warn("council broadcast: enqueue task failed",
-				"council_session_id", util.UUIDToString(council.ID),
+			slog.Warn("broadcast: enqueue task failed",
+				"source_kind", source.Kind,
+				"source_id", util.UUIDToString(source.ID),
 				"agent_id", member.AgentID,
 				"error", err)
 			result.SkippedAgentIDs = append(result.SkippedAgentIDs, member.AgentID)
@@ -171,8 +293,9 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 		result.Tasks = append(result.Tasks, task)
 	}
 
-	slog.Info("council broadcast fan-out enqueued",
-		"council_session_id", util.UUIDToString(council.ID),
+	slog.Info("broadcast fan-out enqueued",
+		"source_kind", source.Kind,
+		"source_id", util.UUIDToString(source.ID),
 		"chat_session_id", util.UUIDToString(chatSession.ID),
 		"task_count", len(result.Tasks),
 		"skipped_count", len(result.SkippedAgentIDs),
