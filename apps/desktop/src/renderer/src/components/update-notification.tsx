@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowDownToLine, RefreshCw, X } from "lucide-react";
+import { toast } from "sonner";
 
 type UpdateState =
   | { status: "idle" }
   | { status: "available"; version: string }
   | { status: "downloading"; percent: number }
-  | { status: "ready" };
+  | { status: "ready" }
+  | { status: "installing" };
+
+function getUpdaterErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  return "请稍后重试，或手动重启 Origin。";
+}
 
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>({ status: "idle" });
@@ -36,16 +44,33 @@ export function UpdateNotification() {
     return () => cleanups.forEach((fn) => fn());
   }, []);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     // Prevent double-click: immediately transition to downloading state
     if (state.status !== "available") return;
+    const { version } = state;
     setState({ status: "downloading", percent: 0 });
-    window.updater.downloadUpdate();
-  }, [state.status]);
+    try {
+      await window.updater.downloadUpdate();
+    } catch (error) {
+      setState({ status: "available", version });
+      toast.error("下载更新失败", {
+        description: getUpdaterErrorMessage(error),
+      });
+    }
+  }, [state]);
 
-  const handleInstall = useCallback(() => {
-    window.updater.installUpdate();
-  }, []);
+  const handleInstall = useCallback(async () => {
+    if (state.status !== "ready") return;
+    setState({ status: "installing" });
+    try {
+      await window.updater.installUpdate();
+    } catch (error) {
+      setState({ status: "ready" });
+      toast.error("重启安装更新失败", {
+        description: getUpdaterErrorMessage(error),
+      });
+    }
+  }, [state.status]);
 
   // Only allow dismiss when update is available (not during download or ready)
   if (state.status === "idle") return null;
@@ -100,15 +125,19 @@ export function UpdateNotification() {
         </div>
       )}
 
-      {state.status === "ready" && (
+      {(state.status === "ready" || state.status === "installing") && (
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-md bg-success/10 p-1.5">
-            <RefreshCw className="size-4 text-success" />
+            <RefreshCw
+              className={`size-4 text-success ${state.status === "installing" ? "animate-spin" : ""}`}
+            />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">更新已准备好</p>
+            <p className="text-sm font-medium">
+              {state.status === "installing" ? "正在重启 Origin..." : "更新已准备好"}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              重启后应用更新
+              {state.status === "installing" ? "正在应用更新" : "重启后应用更新"}
             </p>
             <div className="mt-2 flex items-center gap-1.5">
               {/* Secondary "See changes" — gives the user a reason to
@@ -122,15 +151,17 @@ export function UpdateNotification() {
                     "https://github.com/Albert-ycc/origin-workbench/releases/latest",
                   )
                 }
-                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+                disabled={state.status === "installing"}
+                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               >
                 查看变更
               </button>
               <button
                 onClick={handleInstall}
-                className="inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                disabled={state.status === "installing"}
+                className="inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-70"
               >
-                立即重启
+                {state.status === "installing" ? "正在重启..." : "立即重启"}
               </button>
             </div>
           </div>
