@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -325,7 +326,7 @@ func createTestAgentForRoom(t *testing.T) string {
 		`INSERT INTO agent (workspace_id, runtime_id, name, description, work_mode)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id`,
-		testWorkspaceID, testRuntimeID, fmt.Sprintf("TestRoomAgent-%d", t.NowFunc().UnixNano()), "test agent for room", "live",
+		testWorkspaceID, testRuntimeID, fmt.Sprintf("TestRoomAgent-%d", time.Now().UnixNano()), "test agent for room", "live",
 	).Scan(&agentID)
 	if err != nil {
 		t.Fatalf("create test agent: %v", err)
@@ -333,8 +334,9 @@ func createTestAgentForRoom(t *testing.T) string {
 	return agentID
 }
 
-// withWorkspaceCtx 把 workspace_id 注入 request context（模拟 middleware）。
+// withWorkspaceCtx 把 workspace_id 注入 request（通过 X-Workspace-ID header，
+// resolveWorkspaceID 解析顺序：ctx → X-Workspace-Slug → X-Workspace-ID → query）
 func withWorkspaceCtx(r *http.Request, workspaceID string) *http.Request {
-	// 使用和 middleware 包相同的 ctx key 注入 workspace_id
-	return r.WithContext(withWorkspaceID(r.Context(), workspaceID))
+	r.Header.Set("X-Workspace-ID", workspaceID)
+	return r
 }
