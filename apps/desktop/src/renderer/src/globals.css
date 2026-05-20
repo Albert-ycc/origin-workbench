@@ -65,7 +65,7 @@
   to   { transform: translateX(0);    opacity: 1; }
 }
 
-/* 客厅模块 brand-spec v2 namespace — 只作用于 .living-room-scope 内部 */
+/* 茶水间模块 brand-spec v2 namespace — 只作用于 .living-room-scope 内部 */
 .living-room-scope {
   font-family: "Noto Sans SC", "PingFang SC", sans-serif;
   background: #FFFFFF;

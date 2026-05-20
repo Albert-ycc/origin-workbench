@@ -37,7 +37,7 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
         <AppLink
           href={p.rooms()}
           className="p-1 rounded hover:bg-gray-100 transition-colors shrink-0"
-          aria-label="返回客厅列表"
+          aria-label="返回茶水间列表"
         >
           <ChevronLeft className="size-4" style={{ color: "var(--living-text-secondary, #86909C)" }} />
         </AppLink>
@@ -46,7 +46,7 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
             className="text-sm font-semibold truncate"
             style={{ color: "var(--living-text-primary, #1F2329)" }}
           >
-            {isPending ? "加载中…" : (room?.name ?? "未知客厅")}
+            {isPending ? "加载中…" : (room?.name ?? "未知茶水间")}
           </div>
           {room?.description && (
             <div className="text-xs truncate" style={{ color: "var(--living-text-secondary, #86909C)" }}>

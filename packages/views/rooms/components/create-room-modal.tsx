@@ -67,7 +67,7 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
           style={{ borderColor: "#E8E8E8", flexShrink: 0 }}
         >
           <span className="text-sm font-semibold" style={{ color: "#1F2329" }}>
-            新建客厅
+            新建茶水间
           </span>
           <button
             type="button"
@@ -82,13 +82,13 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: "#1F2329" }}>
-              客厅名称
+              茶水间名称
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="给这个客厅起个名字"
+              placeholder="给这个茶水间起个名字"
               className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-shadow focus:border-[#1677FF] focus:shadow-[0_0_0_2px_rgba(22,119,255,0.1)]"
               style={{ borderColor: "#E8E8E8", color: "#1F2329" }}
               autoFocus
@@ -102,7 +102,7 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="这个客厅聊什么？"
+              placeholder="这个茶水间聊什么？"
               rows={2}
               className="w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none transition-shadow focus:border-[#1677FF] focus:shadow-[0_0_0_2px_rgba(22,119,255,0.1)]"
               style={{ borderColor: "#E8E8E8", color: "#1F2329" }}
@@ -161,7 +161,7 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
             onClick={handleCreate}
             className="text-sm h-8"
           >
-            {createRoom.isPending ? "创建中…" : "创建客厅"}
+            {createRoom.isPending ? "创建中…" : "创建茶水间"}
           </Button>
         </div>
       </div>

@@ -26,7 +26,7 @@ export function RoomsPage() {
       <div className="flex items-center justify-between px-8 py-5 border-b" style={{ borderColor: "var(--living-border-line, #E8E8E8)" }}>
         <div>
           <h1 className="text-lg font-semibold" style={{ color: "var(--living-text-primary, #1F2329)" }}>
-            客厅
+            茶水间
           </h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--living-text-secondary, #86909C)" }}>
             和你的 agent 朋友们一起聊天
@@ -38,7 +38,7 @@ export function RoomsPage() {
           className="text-sm px-4 py-1.5 rounded-lg transition-colors"
           style={{ background: "var(--living-accent-blue, #1677FF)", color: "#FFFFFF" }}
         >
-          + 新建客厅
+          + 新建茶水间
         </button>
       </div>
 
@@ -123,10 +123,10 @@ function RoomsEmptyState({ onCreate }: { onCreate: () => void }) {
         ☕
       </div>
       <h2 className="text-base font-semibold mb-1" style={{ color: "var(--living-text-primary, #1F2329)" }}>
-        还没有客厅
+        还没有茶水间
       </h2>
       <p className="text-sm mb-6" style={{ color: "var(--living-text-secondary, #86909C)" }}>
-        创建一个客厅，邀请你的 agent 朋友进来聊天
+        创建一个茶水间，邀请你的 agent 朋友进来聊天
       </p>
       <button
         type="button"
@@ -134,7 +134,7 @@ function RoomsEmptyState({ onCreate }: { onCreate: () => void }) {
         className="text-sm px-5 py-2 rounded-lg transition-colors"
         style={{ background: "var(--living-accent-blue, #1677FF)", color: "#FFFFFF" }}
       >
-        新建第一个客厅
+        新建第一个茶水间
       </button>
     </div>
   );

@@ -1930,7 +1930,7 @@ export class ApiClient {
     return this.fetch(`/api/issues/by-team-message/${messageId}/cards`);
   }
 
-  // Rooms (客厅) — v1.0.14
+  // Rooms (茶水间) — v1.0.14
   async listRooms(params?: { include_archived?: boolean }): Promise<ListRoomsResponse> {
     const search = new URLSearchParams();
     if (params?.include_archived) search.set("include_archived", "true");

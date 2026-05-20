@@ -431,7 +431,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
 
         {/* Navigation */}
         <SidebarContent>
-          {/* 客厅入口：独立 group，置顶，下方加分隔线 */}
+          {/* 茶水间入口：独立 group，置顶，下方加分隔线 */}
           <SidebarGroup className="pb-0">
             <SidebarGroupContent>
               <SidebarMenu>
@@ -442,7 +442,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                     className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
                   >
                     <LivingRoomIcon className="size-4" />
-                    <span>客厅</span>
+                    <span>茶水间</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

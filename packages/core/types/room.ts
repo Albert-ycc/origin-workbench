@@ -1,5 +1,5 @@
 /**
- * Room (客厅) types — wire shape mirrors server/internal/handler/room.go
+ * Room (茶水间) types — wire shape mirrors server/internal/handler/room.go
  * v1.0.14: backend to implement corresponding endpoints.
  */
 

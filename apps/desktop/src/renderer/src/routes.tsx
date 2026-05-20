@@ -115,8 +115,8 @@ export const appRoutes: RouteObject[] = [
         element: <WorkspaceRouteLayout />,
         children: [
           { index: true, element: <Navigate to="workbench" replace /> },
-          { path: "rooms", element: <RoomsPage />, handle: { title: "客厅" } },
-          { path: "rooms/:id", element: <RoomDetailRoute />, handle: { title: "客厅" } },
+          { path: "rooms", element: <RoomsPage />, handle: { title: "茶水间" } },
+          { path: "rooms/:id", element: <RoomDetailRoute />, handle: { title: "茶水间" } },
           { path: "workbench", element: <WorkbenchPage />, handle: { title: "原点工作台" } },
           { path: "ideas", element: <IdeasPage />, handle: { title: "想法池" } },
           { path: "councils", element: <CouncilsPage />, handle: { title: "会议室" } },

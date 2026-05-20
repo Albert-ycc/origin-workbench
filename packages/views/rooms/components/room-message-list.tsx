@@ -47,7 +47,7 @@ export function RoomMessageList({ roomId }: RoomMessageListProps) {
           className="text-sm text-center"
           style={{ color: "var(--living-text-secondary, #86909C)" }}
         >
-          客厅里还很安静，发一条消息开始聊吧
+          茶水间里还很安静，发一条消息开始聊吧
         </p>
       </div>
     );
