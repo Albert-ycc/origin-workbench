@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { roomMembersOptions } from "@multica/core/rooms";
 import { ActorAvatar } from "@multica/views/common/actor-avatar";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { Button } from "@multica/ui/components/ui/button";
 import { Users } from "lucide-react";
 
 interface RoomMemberSidebarProps {
@@ -34,14 +35,9 @@ export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProp
           </span>
         </div>
         {onAddMember && (
-          <button
-            type="button"
-            onClick={onAddMember}
-            className="text-xs px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
-            style={{ color: "var(--living-accent-blue, #1677FF)" }}
-          >
+          <Button variant="ghost" size="xs" onClick={onAddMember}>
             + 邀请
-          </button>
+          </Button>
         )}
       </div>
 
@@ -61,7 +57,7 @@ export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProp
           </p>
         ) : (
           members.map((member) => (
-            <div key={member.agent_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 transition-colors cursor-default">
+            <div key={member.agent_id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-default">
               <ActorAvatar
                 actorType="agent"
                 actorId={member.agent_id}

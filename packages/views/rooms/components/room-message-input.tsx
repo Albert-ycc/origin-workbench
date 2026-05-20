@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { cn } from "@multica/ui/lib/utils";
+import { Button } from "@multica/ui/components/ui/button";
 import { useSendRoomMessage } from "@multica/core/rooms";
 
 interface RoomMessageInputProps {
@@ -31,12 +32,11 @@ export function RoomMessageInput({ roomId }: RoomMessageInputProps) {
   return (
     <div
       className={cn(
-        "mx-5 mb-4 rounded-xl border transition-shadow",
+        "mx-5 mb-4 rounded-lg border bg-card transition-shadow",
         isFocused
-          ? "border-[var(--living-accent-blue,#1677FF)] shadow-[0_0_0_2px_rgba(22,119,255,0.1)]"
-          : "border-[var(--living-border-line,#E8E8E8)]",
+          ? "border-ring shadow-[0_0_0_2px_hsl(var(--ring)/0.15)]"
+          : "border-border",
       )}
-      style={{ background: "#FFFFFF" }}
     >
       <textarea
         ref={textareaRef}
@@ -47,30 +47,20 @@ export function RoomMessageInput({ roomId }: RoomMessageInputProps) {
         onBlur={() => setIsFocused(false)}
         placeholder="说点什么…"
         rows={isFocused || value ? 3 : 1}
-        className="w-full resize-none rounded-t-xl px-4 py-3 text-sm outline-none"
-        style={{
-          fontFamily: '"Noto Sans SC", "PingFang SC", sans-serif',
-          color: "var(--living-text-primary, #1F2329)",
-          background: "transparent",
-        }}
+        className="w-full resize-none rounded-t-lg px-4 py-3 text-sm outline-none bg-transparent text-foreground placeholder:text-muted-foreground"
       />
       {(isFocused || value) && (
         <div className="flex items-center justify-end px-3 pb-2.5 gap-2">
-          <span className="text-[11px]" style={{ color: "var(--living-text-secondary, #86909C)" }}>
+          <span className="text-[11px] text-muted-foreground">
             ⏎ 发送 · ⇧⏎ 换行
           </span>
-          <button
-            type="button"
+          <Button
+            size="xs"
             onClick={handleSend}
             disabled={!value.trim() || sendMessage.isPending}
-            className="text-xs px-3 py-1 rounded-lg transition-colors disabled:opacity-40"
-            style={{
-              background: "var(--living-accent-blue, #1677FF)",
-              color: "#FFFFFF",
-            }}
           >
             {sendMessage.isPending ? "发送中…" : "发送"}
-          </button>
+          </Button>
         </div>
       )}
     </div>

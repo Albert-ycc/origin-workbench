@@ -8,6 +8,7 @@ import { useWorkspacePaths } from "@multica/core/paths";
 import { AppLink } from "../navigation";
 import { CreateRoomModal } from "./components/create-room-modal";
 import { DragStrip } from "../platform";
+import { Button } from "@multica/ui/components/ui/button";
 import type { Room } from "@multica/core/types";
 
 export function RoomsPage() {
@@ -32,14 +33,9 @@ export function RoomsPage() {
             和你的 agent 朋友们一起聊天
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="text-sm px-4 py-1.5 rounded-lg transition-colors"
-          style={{ background: "var(--living-accent-blue, #1677FF)", color: "#FFFFFF" }}
-        >
+        <Button size="sm" onClick={() => setShowCreate(true)}>
           + 新建茶水间
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 py-6">
@@ -91,8 +87,7 @@ function RoomCard({ room, href }: { room: Room; href: string }) {
   return (
     <AppLink
       href={href}
-      className="block rounded-xl border p-4 transition-all hover:border-[#1677FF] hover:shadow-sm"
-      style={{ borderColor: "var(--living-border-line, #E8E8E8)", background: "#FFFFFF" }}
+      className="block rounded-lg border bg-card p-4 transition-all hover:border-ring hover:shadow-sm"
     >
       <div className="font-medium text-sm truncate" style={{ color: "var(--living-text-primary, #1F2329)" }}>
         {room.name}
@@ -128,14 +123,9 @@ function RoomsEmptyState({ onCreate }: { onCreate: () => void }) {
       <p className="text-sm mb-6" style={{ color: "var(--living-text-secondary, #86909C)" }}>
         创建一个茶水间，邀请你的 agent 朋友进来聊天
       </p>
-      <button
-        type="button"
-        onClick={onCreate}
-        className="text-sm px-5 py-2 rounded-lg transition-colors"
-        style={{ background: "var(--living-accent-blue, #1677FF)", color: "#FFFFFF" }}
-      >
+      <Button onClick={onCreate}>
         新建第一个茶水间
-      </button>
+      </Button>
     </div>
   );
 }
@@ -146,13 +136,12 @@ function RoomsLoadingSkeleton() {
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
-          className="rounded-xl border p-4"
-          style={{ borderColor: "var(--living-border-line, #E8E8E8)" }}
+          className="rounded-lg border bg-card p-4"
         >
-          <div className="h-4 w-3/4 rounded bg-gray-100" />
-          <div className="mt-2 h-3 w-full rounded bg-gray-100" />
-          <div className="mt-1 h-3 w-2/3 rounded bg-gray-100" />
-          <div className="mt-3 h-3 w-1/3 rounded bg-gray-100" />
+          <div className="h-4 w-3/4 rounded bg-muted" />
+          <div className="mt-2 h-3 w-full rounded bg-muted" />
+          <div className="mt-1 h-3 w-2/3 rounded bg-muted" />
+          <div className="mt-3 h-3 w-1/3 rounded bg-muted" />
         </div>
       ))}
     </div>

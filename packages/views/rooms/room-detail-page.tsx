@@ -10,6 +10,7 @@ import { RoomMessageInput } from "./components/room-message-input";
 import { ChevronLeft, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { AppLink } from "../navigation";
+import { Button } from "@multica/ui/components/ui/button";
 
 interface RoomDetailPageProps {
   roomId?: string;
@@ -34,13 +35,15 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
         className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
         style={{ borderColor: "var(--living-border-line, #E8E8E8)" }}
       >
-        <AppLink
-          href={p.rooms()}
-          className="p-1 rounded hover:bg-gray-100 transition-colors shrink-0"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
           aria-label="返回茶水间列表"
+          render={<AppLink href={p.rooms()} />}
         >
-          <ChevronLeft className="size-4" style={{ color: "var(--living-text-secondary, #86909C)" }} />
-        </AppLink>
+          <ChevronLeft className="size-4" />
+        </Button>
         <div className="flex-1 min-w-0">
           <div
             className="text-sm font-semibold truncate"
@@ -54,17 +57,18 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
             </div>
           )}
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
           onClick={() => setMemberSidebarOpen(!memberSidebarOpen)}
-          className="p-1.5 rounded hover:bg-gray-100 transition-colors shrink-0"
           aria-label={memberSidebarOpen ? "收起成员栏" : "展开成员栏"}
         >
           {memberSidebarOpen
-            ? <PanelLeftClose className="size-4" style={{ color: "var(--living-text-secondary, #86909C)" }} />
-            : <PanelLeftOpen className="size-4" style={{ color: "var(--living-text-secondary, #86909C)" }} />
+            ? <PanelLeftClose className="size-4" />
+            : <PanelLeftOpen className="size-4" />
           }
-        </button>
+        </Button>
       </div>
 
       {/* Three-column body: left gutter (80px) + main + right gutter (80px, hidden) */}

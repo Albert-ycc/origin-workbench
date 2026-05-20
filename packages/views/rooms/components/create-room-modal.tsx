@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
+import { cn } from "@multica/ui/lib/utils";
 import { useCreateRoom } from "@multica/core/rooms";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { agentListOptions } from "@multica/core/workspace/queries";
@@ -58,30 +59,23 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
       }}
     >
       <div
-        className="relative w-[440px] rounded-2xl shadow-xl flex flex-col"
-        style={{ background: "#FFFFFF", border: "1px solid #E8E8E8", maxHeight: "80vh" }}
+        className="relative w-[440px] rounded-lg border bg-card shadow-xl flex flex-col"
+        style={{ maxHeight: "80vh" }}
       >
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 py-4 border-b"
-          style={{ borderColor: "#E8E8E8", flexShrink: 0 }}
-        >
-          <span className="text-sm font-semibold" style={{ color: "#1F2329" }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+          <span className="text-sm font-semibold">
             新建茶水间
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"
-          >
-            <X className="size-4" style={{ color: "#86909C" }} />
-          </button>
+          <Button variant="ghost" size="icon-sm" onClick={onClose}>
+            <X className="size-4" />
+          </Button>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: "#1F2329" }}>
+            <label className="text-xs font-medium text-foreground">
               茶水间名称
             </label>
             <input
@@ -89,29 +83,27 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="给这个茶水间起个名字"
-              className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-shadow focus:border-[#1677FF] focus:shadow-[0_0_0_2px_rgba(22,119,255,0.1)]"
-              style={{ borderColor: "#E8E8E8", color: "#1F2329" }}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/20"
               autoFocus
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: "#1F2329" }}>
-              描述 <span style={{ color: "#C0C4CC", fontWeight: 400 }}>（可选）</span>
+            <label className="text-xs font-medium text-foreground">
+              描述 <span className="text-muted-foreground font-normal">（可选）</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="这个茶水间聊什么？"
               rows={2}
-              className="w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none transition-shadow focus:border-[#1677FF] focus:shadow-[0_0_0_2px_rgba(22,119,255,0.1)]"
-              style={{ borderColor: "#E8E8E8", color: "#1F2329" }}
+              className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
           </div>
 
           {agents.length > 0 && (
             <div className="space-y-2">
-              <label className="text-xs font-medium" style={{ color: "#1F2329" }}>
+              <label className="text-xs font-medium text-foreground">
                 邀请谁进来
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -122,17 +114,15 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
                       key={agent.id}
                       type="button"
                       onClick={() => toggleAgent(agent.id)}
-                      className="flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all"
-                      style={{
-                        borderColor: selected ? "#1677FF" : "#E8E8E8",
-                        background: selected ? "#F0F5FF" : "#FFFFFF",
-                      }}
+                      className={cn(
+                        "flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-all text-sm",
+                        selected
+                          ? "border-ring bg-muted"
+                          : "border-border bg-background hover:bg-muted",
+                      )}
                     >
                       <ActorAvatar actorType="agent" actorId={agent.id} size={24} />
-                      <span
-                        className="text-xs truncate flex-1"
-                        style={{ color: "#1F2329" }}
-                      >
+                      <span className="text-xs truncate flex-1 text-foreground">
                         {agent.name}
                       </span>
                     </button>
@@ -144,22 +134,13 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
         </div>
 
         {/* Footer */}
-        <div
-          className="px-6 py-4 border-t flex items-center justify-end gap-2"
-          style={{ borderColor: "#E8E8E8", flexShrink: 0 }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm px-4 py-1.5 rounded-lg border transition-colors hover:bg-gray-50"
-            style={{ color: "#86909C", borderColor: "#E8E8E8" }}
-          >
+        <div className="px-6 py-4 border-t flex items-center justify-end gap-2 shrink-0">
+          <Button variant="outline" onClick={onClose}>
             取消
-          </button>
+          </Button>
           <Button
             disabled={!name.trim() || createRoom.isPending}
             onClick={handleCreate}
-            className="text-sm h-8"
           >
             {createRoom.isPending ? "创建中…" : "创建茶水间"}
           </Button>
