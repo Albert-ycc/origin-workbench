@@ -3,6 +3,8 @@ package modelapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -156,5 +158,147 @@ func TestClientChatSurfacesAPIError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "bad model") {
 		t.Fatalf("expected API error, got %v", err)
+	}
+}
+
+// SSE 响应构建辅助
+func sseLines(chunks ...string) string {
+	var b strings.Builder
+	for _, c := range chunks {
+		b.WriteString(c)
+		b.WriteString("\n")
+	}
+	b.WriteString("data: [DONE]\n")
+	return b.String()
+}
+
+func sseChunk(content string) string {
+	return fmt.Sprintf(`data: {"choices":[{"delta":{"content":%s}}]}`, jsonStr(content))
+}
+
+func sseUsageChunk(prompt, completion int64) string {
+	return fmt.Sprintf(`data: {"choices":[],"usage":{"prompt_tokens":%d,"completion_tokens":%d}}`, prompt, completion)
+}
+
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func TestClientChatStreamBasicCase(t *testing.T) {
+	var gotStreamParam bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		gotStreamParam, _ = req["stream"].(bool)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		body := sseLines(
+			sseChunk("Hello"),
+			sseChunk(", world"),
+			sseChunk("!"),
+			sseUsageChunk(10, 5),
+		)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := NewClient("sk-test", server.URL, server.Client())
+
+	var got []string
+	res, err := client.ChatStream(context.Background(), ChatRequest{
+		Model:    "model-a",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}, func(chunk string) error {
+		got = append(got, chunk)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	if !gotStreamParam {
+		t.Fatal("expected stream=true in request body")
+	}
+	if res.Content != "Hello, world!" {
+		t.Fatalf("content = %q", res.Content)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 chunks, got %v", got)
+	}
+	if res.InputTokens != 10 || res.OutputTokens != 5 {
+		t.Fatalf("usage mismatch: %+v", res)
+	}
+}
+
+func TestClientChatStreamCtxCancel(t *testing.T) {
+	// 服务端先发一个 chunk，然后阻塞（模拟长流）
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("ResponseWriter is not a Flusher")
+			return
+		}
+		_, _ = fmt.Fprint(w, sseChunk("first")+"\n")
+		flusher.Flush()
+		close(started)
+		// 阻塞直到请求断开
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := NewClient("sk-test", server.URL, server.Client())
+
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	_, err := client.ChatStream(ctx, ChatRequest{
+		Model:    "model-a",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error on ctx cancel, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestClientChatStreamOnChunkError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		body := sseLines(sseChunk("tok1"), sseChunk("tok2"), sseChunk("tok3"))
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := NewClient("sk-test", server.URL, server.Client())
+
+	callCount := 0
+	wantErr := errors.New("downstream closed")
+	_, err := client.ChatStream(context.Background(), ChatRequest{
+		Model:    "model-a",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}, func(chunk string) error {
+		callCount++
+		if callCount == 2 {
+			return wantErr
+		}
+		return nil
+	})
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected wantErr, got %v", err)
+	}
+	// 第 2 次 callback 返回错误后必须立即中止，不再调用第 3 次
+	if callCount != 2 {
+		t.Fatalf("expected 2 callback calls, got %d", callCount)
 	}
 }

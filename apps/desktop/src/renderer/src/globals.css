@@ -6,26 +6,33 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Font stack: Inter for Latin UI text + system Chinese fonts for zh content.
-   Desktop uses fontsource's "Inter Variable" so the app can run without a
-   remote font dependency. Currently covers English + Simplified Chinese.
-   When ja/ko i18n lands, extend
-   the tail with Hiragino Kaku Gothic ProN / Yu Gothic / Apple SD Gothic Neo / Malgun Gothic.
-   Per-character fallback: Latin chars render with Inter, Chinese chars with
-   PingFang SC (macOS) / Microsoft YaHei (Windows) / Noto Sans CJK SC (Linux).
+/* Font stack: Noto Sans SC 统一无衬线字体（陪伴型客厅 brand-spec v2）。
+   Electron 打包环境无法请求 Google Fonts，所以 Noto Sans SC 只靠系统回退
+   PingFang SC（macOS）/ Microsoft YaHei（Windows）/ Noto Sans CJK SC（Linux）。
+   三个平台都是无衬线黑体，视觉一致性满足 brand-spec 要求。
+   如果后续需要内嵌字体，走 @fontsource/noto-sans-sc 打包（约 4MB subset）。
 
-   Mono font has no explicit CJK fallback: CJK chars in code blocks are inherently
-   non-aligned with a mono grid (Chinese is proportional), so listing CJK fonts
-   would falsely signal alignment guarantees. Browser default fallback handles
-   the rare mixed case correctly. */
+   Mono 字体保留原栈，CJK chars 在 code blocks 走 browser default。 */
 :root {
-  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
-               "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
-               sans-serif;
-  --font-serif: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style",
-                "Apple Garamond", Baskerville, "Times New Roman", serif;
+  /* brand-spec v2：Noto Sans SC 无衬线，PingFang SC fallback */
+  --font-sans: "Noto Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont,
+               "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+  --font-serif: "PingFang SC", -apple-system, BlinkMacSystemFont,
+                "Microsoft YaHei", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
                monospace;
+}
+
+/* brand-spec v2 design tokens — 聊天区/气泡/心境点颜色 */
+:root {
+  --living-accent-blue:   #1677FF;   /* Ant Design 蓝，active 状态 */
+  --living-accent-orange: #F59E0B;   /* 自发发言 / 橙标 */
+  --living-text-primary:  #1F2329;   /* 主文字 */
+  --living-text-secondary:#86909C;   /* 次文字/时间戳 */
+  --living-border-line:   #E8E8E8;   /* 1px 气泡描边 */
+  --living-dot-active:    #6BBF8A;   /* 心境活跃绿 */
+  --living-dot-quiet:     #D4AE5E;   /* 心境安静黄 */
+  --living-dot-away:      #C0C4CC;   /* 心境离开灰 */
 }
 
 @source "../../../../../packages/ui/**/*.tsx";
@@ -36,4 +43,38 @@
 /* Desktop-specific: override sidebar container padding for traffic light layout */
 [data-slot="sidebar-container"] {
   padding: 0 !important;
+}
+
+/* 自发发言气泡呼吸光晕 3.2s */
+@keyframes living-breath {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.0);
+    border-left-color: rgba(245, 158, 11, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+    border-left-color: rgba(245, 158, 11, 0.75);
+  }
+}
+
+.autonomous-bubble {
+  animation: living-breath 3.2s cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
+}
+
+/* typing shimmer */
+@keyframes living-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 侧栏收窄 20%：通过 CSS 变量覆盖 shadcn sidebar width */
+:root {
+  --sidebar-width: 192px;       /* 原始约 240px，收窄 20% */
+  --sidebar-width-mobile: 288px;
+}
+
+/* agent 人格抽屉滑入动效 */
+@keyframes living-drawer-in {
+  from { transform: translateX(100%); opacity: 0.6; }
+  to   { transform: translateX(0);    opacity: 1; }
 }

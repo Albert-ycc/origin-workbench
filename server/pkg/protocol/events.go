@@ -40,6 +40,14 @@ const (
 	EventTaskCompleted = "task:completed" // running → completed
 	EventTaskFailed    = "task:failed"    // running → failed
 	EventTaskMessage   = "task:message"
+	// EventTaskMessageChunk 是流式输出期间逐 token 推送的增量事件。
+	// payload 字段：task_id, message_id, chunk（本次 delta 文本）。
+	// 同一条消息的所有 chunk 共享相同 message_id，前端按 message_id 累加。
+	EventTaskMessageChunk = "task:message_chunk"
+	// EventTaskMessageComplete 在流式输出全部 token 推送完毕后发送一次。
+	// payload 字段：task_id, message_id, content（完整消息文本），input_tokens, output_tokens。
+	// 前端收到此事件后可将累加缓冲区替换为最终权威内容。
+	EventTaskMessageComplete = "task:message_complete"
 	EventTaskCancelled = "task:cancelled" // * → cancelled
 
 	// Inbox events

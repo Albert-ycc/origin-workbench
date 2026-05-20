@@ -1101,6 +1101,17 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 						resp.ChatMessage = delegation.Instruction
 					}
 				}
+				// Council @全体 fan-out: each participant gets a chat task tagged
+				// with this context so the daemon prompt builder can switch into
+				// "broadcast reply" mode instead of falling back to either the
+				// solo Direct Chat prompt or the team captain delegation prompt.
+				var broadcast service.CouncilBroadcastContext
+				if json.Unmarshal(task.Context, &broadcast) == nil && broadcast.Type == service.CouncilBroadcastContextType {
+					resp.CouncilBroadcast = &broadcast
+					if strings.TrimSpace(broadcast.UserMessage) != "" {
+						resp.ChatMessage = broadcast.UserMessage
+					}
+				}
 			}
 		}
 	}

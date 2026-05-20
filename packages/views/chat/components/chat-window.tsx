@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Minus, Maximize2, Minimize2, ChevronDown, Plus, Check } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
@@ -34,6 +34,7 @@ import {
 import { useCreateChatSession, useMarkChatSessionRead } from "@multica/core/chat/mutations";
 import { useChatStore } from "@multica/core/chat";
 import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
+import { AgentPersonalityDrawer } from "./agent-personality-drawer";
 import { ChatInput } from "./chat-input";
 import {
   ContextAnchorButton,
@@ -336,6 +337,16 @@ export function ChatWindow() {
     setOpen(false);
   }, [activeSessionId, pendingTaskId, setOpen]);
 
+  // agent 人格抽屉状态
+  const [drawerAgentId, setDrawerAgentId] = useState<string | null>(null);
+  const handleOpenAgentDrawer = useCallback((agentId: string) => {
+    setDrawerAgentId(agentId);
+  }, []);
+  const handleCloseAgentDrawer = useCallback(() => {
+    setDrawerAgentId(null);
+  }, []);
+  const drawerAgent = drawerAgentId ? agents.find((a) => a.id === drawerAgentId) ?? null : null;
+
   const windowRef = useRef<HTMLDivElement>(null);
   const { renderWidth, renderHeight, isAtMax, boundsReady, isDragging, toggleExpand, startDrag } = useChatResize(windowRef);
 
@@ -432,6 +443,8 @@ export function ChatWindow() {
           messages={messages}
           pendingTask={pendingTask}
           availability={availability}
+          agent={activeAgent}
+          onOpenAgentDrawer={handleOpenAgentDrawer}
         />
       ) : (
         <EmptyState
@@ -476,6 +489,15 @@ export function ChatWindow() {
         }
         rightAdornment={<ContextAnchorButton />}
       />
+
+      {/* agent 人格抽屉 — 绝对定位 overlay，不被 flex layout 重排 */}
+      {drawerAgent && (
+        <AgentPersonalityDrawer
+          agent={drawerAgent}
+          wsId={wsId}
+          onClose={handleCloseAgentDrawer}
+        />
+      )}
     </div>
   );
 }

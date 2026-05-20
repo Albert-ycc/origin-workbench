@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-
+	"os"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/apitools"
@@ -48,6 +49,9 @@ type TaskWakeupNotifier interface {
 
 type apiRuntimeChatClient interface {
 	Chat(ctx context.Context, req modelapi.ChatRequest) (modelapi.ChatResult, error)
+	// ChatStream 流式调用 LLM，每个 chunk 通过 onChunk 回调推出。
+	// 参见 modelapi.Client.ChatStream 的文档。
+	ChatStream(ctx context.Context, req modelapi.ChatRequest, onChunk func(string) error) (modelapi.ChatResult, error)
 }
 
 type apiRuntimeToolExecutor interface {
@@ -561,7 +565,16 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 	if err != nil {
 		return fail(err.Error())
 	}
-	res, err := runAPIRuntimeChatLoop(ctx, s.apiRuntimeChatClient(cfg), toolExecutor, model, messages)
+
+	chatClient := s.apiRuntimeChatClient(cfg)
+	workspaceID := s.ResolveTaskWorkspaceID(ctx, task)
+
+	var res modelapi.ChatResult
+	if apiRuntimeStreamEnabled() {
+		res, err = s.runAPIRuntimeChatLoopStream(ctx, chatClient, toolExecutor, model, messages, task, workspaceID)
+	} else {
+		res, err = runAPIRuntimeChatLoop(ctx, chatClient, toolExecutor, model, messages)
+	}
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -588,6 +601,136 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 		return err
 	}
 	return nil
+}
+
+// apiRuntimeStreamEnabled 读取环境变量 ORIGIN_MODELAPI_STREAM_ENABLED。
+// 默认为 true；显式设置为 "false" 时回退到非流式调用。
+func apiRuntimeStreamEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("ORIGIN_MODELAPI_STREAM_ENABLED")))
+	return v != "false"
+}
+
+// runAPIRuntimeChatLoopStream 是流式版本的 chat loop。
+// 第一轮调用 ChatStream，将每个 delta 通过 task:message_chunk 事件实时推送到总线；
+// 如果模型请求 tool calls（不支持流式中途决策），对该轮 fallback 到 Chat；
+// 最后一轮完成后推送 task:message_complete 事件（但不写 DB——由 CompleteTask 路径写）。
+func (s *TaskService) runAPIRuntimeChatLoopStream(
+	ctx context.Context,
+	client apiRuntimeChatClient,
+	toolExecutor apiRuntimeToolExecutor,
+	model string,
+	messages []modelapi.Message,
+	task db.AgentTaskQueue,
+	workspaceID string,
+) (modelapi.ChatResult, error) {
+	var total modelapi.ChatResult
+	tools := []modelapi.Tool(nil)
+	if toolExecutor != nil {
+		tools = toolExecutor.Tools()
+	}
+
+	// 为本次 assistant 回复预先生成 message_id，所有 chunk/complete 共享
+	messageID := uuid.New().String()
+	chatSessionID := util.UUIDToString(task.ChatSessionID)
+	taskID := util.UUIDToString(task.ID)
+
+	for round := 0; round < apiRuntimeMaxToolRounds; round++ {
+		// 只有最后一轮（无 tool 调用或 tool 调用完毕后的最终回复）才走流式
+		// tool call 本身走非流式（中途需要整 JSON tool_calls 结构才能执行）
+		isLastTextRound := toolExecutor == nil || len(tools) == 0
+
+		var res modelapi.ChatResult
+		var err error
+
+		if isLastTextRound || round > 0 {
+			// 尝试流式；如果这轮最终触发了 tool calls 则 fallback 到非流式重试
+			res, err = client.ChatStream(ctx, modelapi.ChatRequest{
+				Model:    model,
+				Messages: messages,
+				Tools:    tools,
+			}, func(chunk string) error {
+				if workspaceID == "" || chunk == "" {
+					return nil
+				}
+				s.Bus.Publish(events.Event{
+					Type:          protocol.EventTaskMessageChunk,
+					WorkspaceID:   workspaceID,
+					ActorType:     "system",
+					ChatSessionID: chatSessionID,
+					TaskID:        taskID,
+					Payload: protocol.TaskMessageChunkPayload{
+						TaskID:        taskID,
+						ChatSessionID: chatSessionID,
+						MessageID:     messageID,
+						Chunk:         chunk,
+					},
+				})
+				return nil
+			})
+		} else {
+			// 有 tool 配置且第一轮：先用非流式以便获取完整 tool_calls JSON
+			res, err = client.Chat(ctx, modelapi.ChatRequest{
+				Model:    model,
+				Messages: messages,
+				Tools:    tools,
+			})
+		}
+
+		if err != nil {
+			return total, err
+		}
+		accumulateAPIRuntimeUsage(&total, res)
+
+		if len(res.ToolCalls) == 0 {
+			// 最终文本回复
+			total.Content = res.Content
+
+			// 推 complete 事件（不写 DB，CompleteTask 路径统一写）
+			if workspaceID != "" {
+				s.Bus.Publish(events.Event{
+					Type:          protocol.EventTaskMessageComplete,
+					WorkspaceID:   workspaceID,
+					ActorType:     "system",
+					ChatSessionID: chatSessionID,
+					TaskID:        taskID,
+					Payload: protocol.TaskMessageCompletePayload{
+						TaskID:        taskID,
+						ChatSessionID: chatSessionID,
+						MessageID:     messageID,
+						Content:       res.Content,
+						InputTokens:   total.InputTokens,
+						OutputTokens:  total.OutputTokens,
+					},
+				})
+			}
+			return total, nil
+		}
+
+		// 有 tool calls：执行 tool 后追加消息，继续下一轮
+		if toolExecutor == nil || len(tools) == 0 {
+			return total, fmt.Errorf("model requested tool calls, but API runtime tools are not configured")
+		}
+		messages = append(messages, modelapi.Message{
+			Role:      "assistant",
+			Content:   res.Content,
+			ToolCalls: res.ToolCalls,
+		})
+		for _, call := range res.ToolCalls {
+			output, err := toolExecutor.Execute(ctx, call)
+			if err != nil {
+				output = apiRuntimeToolErrorJSON(call.Function.Name, err)
+			}
+			messages = append(messages, modelapi.Message{
+				Role:       "tool",
+				ToolCallID: call.ID,
+				Content:    output,
+			})
+		}
+		// 重置 messageID 以区分 tool 执行后最终回复的 chunk 序列
+		messageID = uuid.New().String()
+	}
+
+	return total, fmt.Errorf("API runtime exceeded %d tool-call rounds", apiRuntimeMaxToolRounds)
 }
 
 func (s *TaskService) apiRuntimeChatClient(cfg runtimeconfig.APIRuntimeConfig) apiRuntimeChatClient {
@@ -1734,14 +1877,30 @@ func (s *TaskService) LoadAgentSkillsForTask(ctx context.Context, agentID, works
 // experience total wait time, including queue + dispatch, not just the
 // daemon's actual run time.
 // senderAgentForChatSession returns the agent UUID to attribute an assistant
-// message to, but only for team-mode sessions. 1:1 sessions return an
-// invalid (NULL) UUID so existing single-agent chat behaviour is preserved.
+// message to, in any multi-agent chat shape. 1:1 direct chat sessions return
+// an invalid (NULL) UUID so the legacy "no avatar override" behavior is
+// preserved.
 //
-// Implementation: load the chat_session, check team_id. Cheap because each
-// completion only does one lookup, and chat_session is small.
+// Multi-agent shapes that DO need attribution:
+//   - team chat sessions (chat_session.team_id valid)
+//   - council session fan-out tasks (task.context type = council_broadcast)
+//   - any chat_session borrowed by a running council_session as its
+//     source_chat_session_id (covers per-member replies even when the
+//     individual task was not flagged as a broadcast — for example when
+//     another agent posts a direct reply in the room)
+//
+// Without this attribution, every assistant message in a Council room would
+// look like it came from the same anonymous agent and the UI cannot render
+// the 8-bubble fan-out the user actually sees.
 func (s *TaskService) senderAgentForChatSession(ctx context.Context, task db.AgentTaskQueue) pgtype.UUID {
 	if !task.ChatSessionID.Valid || !task.AgentID.Valid {
 		return pgtype.UUID{}
+	}
+	if len(task.Context) > 0 {
+		var bc CouncilBroadcastContext
+		if json.Unmarshal(task.Context, &bc) == nil && bc.Type == CouncilBroadcastContextType {
+			return task.AgentID
+		}
 	}
 	session, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
 	if err != nil {
@@ -1752,10 +1911,16 @@ func (s *TaskService) senderAgentForChatSession(ctx context.Context, task db.Age
 			"error", err)
 		return pgtype.UUID{}
 	}
-	if !session.TeamID.Valid {
-		return pgtype.UUID{}
+	if session.TeamID.Valid {
+		return task.AgentID
 	}
-	return task.AgentID
+	// Council session check: even outside the team_id path, a chat_session
+	// can be the source of a running council; in that case every assistant
+	// reply belongs to a specific participant and the UI needs the avatar.
+	if _, err := s.Queries.GetRunningCouncilSessionBySourceChat(ctx, task.ChatSessionID); err == nil {
+		return task.AgentID
+	}
+	return pgtype.UUID{}
 }
 
 func computeChatElapsedMs(task db.AgentTaskQueue) pgtype.Int8 {

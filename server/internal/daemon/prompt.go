@@ -184,6 +184,60 @@ func buildCommentPrompt(task Task) string {
 // buildChatPrompt constructs a prompt for interactive chat tasks.
 func buildChatPrompt(task Task) string {
 	var b strings.Builder
+	// Council @全体 fan-out: this leg is one of N parallel "broadcast reply"
+	// tasks. Every participant gets the same prompt shape; the goal is one
+	// short, in-voice answer per agent, NOT a delegation tree or a captain
+	// monologue. This branch must come before the team/captain branch — a
+	// council can borrow a team session for storage, but broadcast mode
+	// always wins.
+	if task.CouncilBroadcast != nil {
+		bc := task.CouncilBroadcast
+		b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat.\n\n")
+		if bc.CouncilTopic != "" {
+			fmt.Fprintf(&b, "Council topic: %s\n", bc.CouncilTopic)
+		}
+		selfName := bc.SelfAgentName
+		if selfName == "" && task.Agent != nil {
+			selfName = task.Agent.Name
+		}
+		if selfName != "" {
+			fmt.Fprintf(&b, "You are: %s\n", selfName)
+		}
+		if len(bc.Participants) > 0 {
+			b.WriteString("\nRoom roster (everyone is receiving this same broadcast in parallel):\n")
+			for _, m := range bc.Participants {
+				name := m.Name
+				if name == "" {
+					name = m.AgentID
+				}
+				role := m.Role
+				if role == "" {
+					role = "member"
+				}
+				fmt.Fprintf(&b, "- %s (%s)\n", name, role)
+			}
+		}
+		broadcaster := bc.BroadcasterName
+		if broadcaster == "" {
+			broadcaster = "the user"
+		}
+		fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\n\n", broadcaster)
+
+		b.WriteString("Broadcast reply rules — STRICT, do not deviate:\n")
+		b.WriteString("1. Answer the question directly from YOUR role's point of view in ONE short paragraph (1–3 sentences). This is a group chat, not an essay.\n")
+		b.WriteString("2. NEVER narrate your reasoning, exploration steps, or self-talk in the message body. Phrases like \"我先确认…\", \"我再看一下…\", \"已经从本地快照里找到…\", \"我先把…补上\", \"下一步我直接…\" are FORBIDDEN in your reply. If you need to use a tool, just use it silently — do not narrate the call.\n")
+		b.WriteString("3. Do NOT @mention or delegate to other members. Every member is already replying in parallel; you only speak for yourself.\n")
+		b.WriteString("4. Do NOT restate the question, do NOT preface your answer with \"作为产品经理…\" or similar role boilerplate. Just answer.\n")
+		b.WriteString("5. If you genuinely don't know, say so in one sentence (\"我这边不掌握，需要 X 确认\"). Don't fabricate.\n")
+		b.WriteString("6. Stay in your own voice and role identity. Don't speak \"on behalf of the whole team\".\n\n")
+		writeRequestedSkills(&b, task.RequestedSkills)
+		message := bc.UserMessage
+		if message == "" {
+			message = task.ChatMessage
+		}
+		fmt.Fprintf(&b, "User broadcast:\n%s\n", message)
+		return b.String()
+	}
 	if task.TeamID != "" {
 		b.WriteString("You are running inside an Origin Council Session (a multi-agent group chat for cross-role decisions).\n\n")
 		if task.TeamName != "" {

@@ -77,6 +77,7 @@ export function ChatInput({
   const setInputDraft = useChatStore((s) => s.setInputDraft);
   const clearInputDraft = useChatStore((s) => s.clearInputDraft);
   const [isEmpty, setIsEmpty] = useState(!inputDraft.trim());
+  const [isFocused, setIsFocused] = useState(false);
   const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [skillSlash, setSkillSlash] = useState<SlashSkillState | null>(null);
@@ -152,6 +153,7 @@ export function ChatInput({
     editorRef.current?.blur();
     clearInputDraft(keyAtSend);
     setIsEmpty(true);
+    setIsFocused(false);
     setSelectedSkillIds([]);
     setSkillSlash(null);
   };
@@ -230,32 +232,32 @@ export function ChatInput({
     : disabled
       ? "这个会话已归档"
       : agentName
-        ? `告诉 ${agentName} 要做什么…`
-        : "告诉我你想做什么…";
+        ? `嗯… 想对 ${agentName} 说点什么吗`
+        : "嗯… 想说点什么吗";
 
   return (
     <div
       className={cn(
         "px-5 pb-3 pt-0",
-        // Outer wrapper carries the disabled cursor. Inner card sets
-        // pointer-events-none, which suppresses hover (and therefore
-        // any cursor of its own) — splitting the two layers lets hover
-        // bubble back here so the browser actually reads cursor.
         noAgent && "cursor-not-allowed",
       )}
     >
       <div
         className={cn(
-          "relative mx-auto flex min-h-16 max-h-40 w-full max-w-4xl flex-col rounded-lg bg-card pb-9 border-1 border-border transition-colors focus-within:border-brand",
-          // Visual + interaction lock when there's no agent. We don't
-          // toggle ContentEditor's editable mode (Tiptap can't switch
-          // cleanly post-mount, and the prop has been removed); instead
-          // we drop pointer events at the wrapper level so clicks miss
-          // the editor entirely, and dim the surface so it reads as
-          // "disabled" rather than "broken".
+          // 默认收起态：高度 36-40px，圆角条；获得焦点后展开成多行
+          "relative mx-auto w-full max-w-4xl flex flex-col rounded-lg bg-card border transition-colors",
+          isFocused || !isEmpty
+            ? "min-h-16 max-h-40 pb-9 border-brand"
+            : "min-h-9 max-h-9 pb-0 border-border cursor-text",
           noAgent && "pointer-events-none opacity-60",
         )}
         aria-disabled={noAgent || undefined}
+        onClick={() => {
+          if (!isFocused && !noAgent) {
+            setIsFocused(true);
+            requestAnimationFrame(() => editorRef.current?.focus());
+          }
+        }}
       >
         {skillSlash && slashOptions.length > 0 && (
           <SkillSlashMenu
@@ -265,51 +267,63 @@ export function ChatInput({
             className="left-3"
           />
         )}
-        {topSlot}
-        <SelectedSkillChips
-          skills={selectedSkills}
-          onRemove={(skillId) =>
-            setSelectedSkillIds((ids) => ids.filter((id) => id !== skillId))
-          }
-          className="px-3 pt-2"
-        />
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
-          <ContentEditor
-            // Remount the editor when the active session changes so its
-            // uncontrolled defaultValue picks up the new session's draft.
-            key={draftKey}
-            ref={editorRef}
-            defaultValue={inputDraft}
-            placeholder={placeholder}
-            onUpdate={(md) => {
-              setIsEmpty(!md.trim());
-              setInputDraft(draftKey, md);
-              updateSlashState(md);
-            }}
-            onSubmit={handleSend}
-            onKeyDown={handleEditorKeyDown}
-            debounceMs={100}
-            // Chat is short-form — the floating formatting toolbar is
-            // more distraction than feature here.
-            showBubbleMenu={false}
-            // Enter sends; Shift-Enter inserts a hard break.
-            submitOnEnter
-          />
-        </div>
-        {leftAdornment && (
+        {/* 收起态：只显示 placeholder 文字，不渲染编辑器 */}
+        {!isFocused && isEmpty && (
+          <div className="flex items-center h-9 px-3 text-sm text-muted-foreground/70 select-none">
+            {placeholder}
+          </div>
+        )}
+        {/* 展开态 */}
+        {(isFocused || !isEmpty) && (
+          <>
+            {topSlot}
+            <SelectedSkillChips
+              skills={selectedSkills}
+              onRemove={(skillId) =>
+                setSelectedSkillIds((ids) => ids.filter((id) => id !== skillId))
+              }
+              className="px-3 pt-2"
+            />
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+              <ContentEditor
+                key={draftKey}
+                ref={editorRef}
+                defaultValue={inputDraft}
+                placeholder={placeholder}
+                onUpdate={(md) => {
+                  setIsEmpty(!md.trim());
+                  setInputDraft(draftKey, md);
+                  updateSlashState(md);
+                }}
+                onSubmit={handleSend}
+                onKeyDown={handleEditorKeyDown}
+                onBlur={() => {
+                  // 有内容时保持展开，无内容时收起
+                  if (isEmpty) setIsFocused(false);
+                }}
+                debounceMs={100}
+                showBubbleMenu={false}
+                submitOnEnter
+              />
+            </div>
+          </>
+        )}
+        {leftAdornment && (isFocused || !isEmpty) && (
           <div className="absolute bottom-1.5 left-2 flex items-center">
             {leftAdornment}
           </div>
         )}
-        <div className="absolute bottom-1 right-1.5 flex items-center gap-2">
-          {rightAdornment}
-          <SubmitButton
-            onClick={handleSend}
-            disabled={isEmpty || !!disabled || !!noAgent}
-            running={isRunning}
-            onStop={onStop}
-          />
-        </div>
+        {(isFocused || !isEmpty) && (
+          <div className="absolute bottom-1 right-1.5 flex items-center gap-2">
+            {rightAdornment}
+            <SubmitButton
+              onClick={handleSend}
+              disabled={isEmpty || !!disabled || !!noAgent}
+              running={isRunning}
+              onStop={onStop}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

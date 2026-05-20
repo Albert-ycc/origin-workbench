@@ -18,6 +18,15 @@ ORDER BY updated_at DESC;
 SELECT * FROM council_session
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: GetRunningCouncilSessionBySourceChat :one
+-- Resolve the active council session that borrows this chat_session for
+-- message storage. Used to fan-out @全体 broadcasts to every participant
+-- when the user posts in a Council room.
+SELECT * FROM council_session
+WHERE source_chat_session_id = $1 AND status = 'running'
+ORDER BY started_at DESC
+LIMIT 1;
+
 -- name: CreateCouncilSession :one
 INSERT INTO council_session (
     workspace_id, convener_user_id, convener_agent_id,

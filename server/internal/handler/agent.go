@@ -179,8 +179,9 @@ type AgentTaskResponse struct {
 	TriggerAuthorName       string                         `json:"trigger_author_name,omitempty"`       // display name of the triggering comment author
 	ChatSessionID           string                         `json:"chat_session_id,omitempty"`           // non-empty for chat tasks
 	ChatMessage             string                         `json:"chat_message,omitempty"`              // user message for chat tasks
-	TeamDelegation          *service.TeamDelegationContext `json:"team_delegation,omitempty"`           // captain-provided instructions for delegated team chat tasks
-	TeamID                  string                         `json:"team_id,omitempty"`                   // non-empty for team group chat tasks
+	TeamDelegation          *service.TeamDelegationContext  `json:"team_delegation,omitempty"`           // captain-provided instructions for delegated team chat tasks
+	CouncilBroadcast        *service.CouncilBroadcastContext `json:"council_broadcast,omitempty"`         // present when this chat task is a Council @全体 fan-out leg
+	TeamID                  string                          `json:"team_id,omitempty"`                   // non-empty for team group chat tasks
 	TeamName                string                         `json:"team_name,omitempty"`                 // team group chat name
 	TeamCaptainAgentID      string                         `json:"team_captain_agent_id,omitempty"`     // captain responsible for delegation
 	TeamMembers             []TeamTaskMemberData           `json:"team_members,omitempty"`              // roster visible to the daemon

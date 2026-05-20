@@ -65,6 +65,7 @@ type Task struct {
 	ChatSessionID           string                 `json:"chat_session_id,omitempty"`           // non-empty for chat tasks
 	ChatMessage             string                 `json:"chat_message,omitempty"`              // user message content for chat tasks
 	TeamDelegation          *TeamDelegationData    `json:"team_delegation,omitempty"`           // captain-provided instructions for delegated team chat tasks
+	CouncilBroadcast        *CouncilBroadcastData  `json:"council_broadcast,omitempty"`         // present when this chat task is a Council @全体 fan-out leg
 	TeamID                  string                 `json:"team_id,omitempty"`                   // non-empty for team group chat tasks
 	TeamName                string                 `json:"team_name,omitempty"`                 // team group chat name
 	TeamCaptainAgentID      string                 `json:"team_captain_agent_id,omitempty"`     // captain responsible for delegation
@@ -89,6 +90,32 @@ type Task struct {
 type OperatorPreferences struct {
 	RoleCard           string `json:"role_card,omitempty"`
 	CommunicationStyle string `json:"communication_style,omitempty"`
+}
+
+// CouncilBroadcastMemberData mirrors service.CouncilBroadcastMemberInfo without
+// importing service into the daemon package.
+type CouncilBroadcastMemberData struct {
+	AgentID string `json:"agent_id"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+}
+
+// CouncilBroadcastData mirrors service.CouncilBroadcastContext for daemon
+// consumption. Presence on a Task tells the prompt builder to switch into
+// "Council @全体 fan-out reply" mode: render a short broadcast prompt that
+// asks this agent to answer the user's question in one short voice, instead
+// of letting the captain ad-lib a delegation plan.
+type CouncilBroadcastData struct {
+	Type             string                       `json:"type"`
+	CouncilSessionID string                       `json:"council_session_id"`
+	CouncilTopic     string                       `json:"council_topic"`
+	ChatSessionID    string                       `json:"chat_session_id"`
+	BroadcasterKind  string                       `json:"broadcaster_kind"`
+	BroadcasterName  string                       `json:"broadcaster_name"`
+	UserMessage      string                       `json:"user_message"`
+	Participants     []CouncilBroadcastMemberData `json:"participants,omitempty"`
+	SelfAgentID      string                       `json:"self_agent_id"`
+	SelfAgentName    string                       `json:"self_agent_name"`
 }
 
 // TeamDelegationData mirrors service.TeamDelegationContext without importing

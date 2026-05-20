@@ -223,6 +223,41 @@ func (q *Queries) GetCouncilSessionInWorkspace(ctx context.Context, arg GetCounc
 	return i, err
 }
 
+const getRunningCouncilSessionBySourceChat = `-- name: GetRunningCouncilSessionBySourceChat :one
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id FROM council_session
+WHERE source_chat_session_id = $1 AND status = 'running'
+ORDER BY started_at DESC
+LIMIT 1
+`
+
+// Resolve the active council session that borrows this chat_session for
+// message storage. Used to fan-out @全体 broadcasts to every participant
+// when the user posts in a Council room.
+func (q *Queries) GetRunningCouncilSessionBySourceChat(ctx context.Context, sourceChatSessionID pgtype.UUID) (CouncilSession, error) {
+	row := q.db.QueryRow(ctx, getRunningCouncilSessionBySourceChat, sourceChatSessionID)
+	var i CouncilSession
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConvenerUserID,
+		&i.ConvenerAgentID,
+		&i.RelatedMissionID,
+		&i.RelatedIdeaID,
+		&i.SourceChatSessionID,
+		&i.Topic,
+		&i.Summary,
+		&i.ActivityLevel,
+		&i.Status,
+		&i.Conclusion,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
 const listArchivedCouncilSessions = `-- name: ListArchivedCouncilSessions :many
 SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id FROM council_session
 WHERE workspace_id = $1

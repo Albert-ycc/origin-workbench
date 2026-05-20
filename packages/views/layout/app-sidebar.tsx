@@ -15,22 +15,10 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Bot,
-  Monitor,
-  ChevronRight,
-  Settings,
-  Compass,
-  Network,
-  Lightbulb,
-  Route,
-  Users,
-  FolderKanban,
   X,
-  Brain,
-  Mic,
+  Leaf,
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@multica/ui/components/ui/collapsible";
 import { StatusIcon } from "../issues/components/status-icon";
 import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
 import {
@@ -39,7 +27,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -74,9 +61,10 @@ function isNavActive(pathname: string, href: string): boolean {
 // re-render loops when the effect itself calls `setState`.
 const EMPTY_PINS: PinnedItem[] = [];
 
-// Nav items reference WorkspacePaths method names so they can be resolved
-// against the current workspace slug at render time (see AppSidebar body).
-// Only parameterless paths are valid nav destinations.
+// 客厅化 sidebar：只保留三个入口
+// - 客厅（主入口）：默认选中，展开当前用户拥有的客厅（chat session）列表
+// - 朋友（agent 池）：圆形头像叠加 icon
+// - 设置（角落底部，最弱视觉权重）
 type NavKey =
   | "workbench"
   | "ideas"
@@ -94,24 +82,50 @@ type NavKey =
   | "skills"
   | "settings";
 
-const productNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
-  { key: "workbench", label: "原点工作台", icon: Compass },
-  // 项目工作区是 v1.2 的主入口，团队作为底层数据自动从项目派生（agent
-  // 集合相同的项目自动归到同一个 team_id）。"团队" 不再是用户级可创建实
-  // 体，所以从 sidebar 撤掉了。
-  { key: "projectWorkspaces", label: "项目工作区", icon: FolderKanban },
-  { key: "meetings", label: "会议 Copilot", icon: Mic },
-  { key: "ideas", label: "想法池", icon: Lightbulb },
-  { key: "agents", label: "智能体", icon: Bot },
-  { key: "councils", label: "会议室", icon: Users },
-  { key: "missions", label: "任务中枢", icon: Network },
-  { key: "explorations", label: "分叉探索", icon: Route },
-];
+// 茶杯/沙发图形 icon：用 SVG 内联，避免引入额外依赖
+function LivingRoomIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {/* 茶杯轮廓 */}
+      <path d="M3 5h7a1 1 0 0 1 1 1v3a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6a1 1 0 0 1 1-1Z" />
+      <path d="M11 7h1.5a1.5 1.5 0 0 1 0 3H11" />
+      <line x1="5" y1="13.5" x2="9" y2="13.5" />
+    </svg>
+  );
+}
 
-const systemNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
-  { key: "runtimes", label: "能力池", icon: Monitor },
-  { key: "skills", label: "记忆 / 技能", icon: Brain },
-  { key: "settings", label: "设置", icon: Settings },
+// 双圆叠加 icon 代表 agent 朋友池
+function FriendsIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="6.5" r="2.5" />
+      <circle cx="10.5" cy="6.5" r="2.5" />
+      <path d="M2 14c0-2.2 1.8-4 4-4h4c2.2 0 4 1.8 4 4" />
+    </svg>
+  );
+}
+
+const livingRoomNav: { key: NavKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "workbench", label: "客厅", icon: LivingRoomIcon },
+  { key: "agents", label: "朋友", icon: FriendsIcon },
 ];
 
 /**
@@ -253,7 +267,13 @@ function PinRow({
   if (projectQuery.isPending) return <PinSkeleton />;
   if (projectQuery.isError || !projectQuery.data) return null;
   const project = projectQuery.data;
-  const iconNode = <FolderKanban className="!size-3.5 shrink-0" />;
+  // FolderKanban icon inlined as SVG to avoid re-importing lucide-react icons
+  const iconNode = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="!size-3.5 shrink-0">
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+      <line x1="8" y1="10" x2="8" y2="16"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="16" y1="10" x2="16" y2="16"/>
+    </svg>
+  );
   return (
     <SortablePinItem
       pin={pin}
@@ -296,7 +316,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const p = useWorkspacePaths();
 
   const wsId = workspace?.id;
-  const hasRuntimeUpdates = useMyRuntimesNeedUpdate(wsId);
+  // hasRuntimeUpdates 暂时保留 hook 调用以保持 hooks 顺序稳定，但不在 UI 中渲染
+  useMyRuntimesNeedUpdate(wsId);
   // Origin §14.10 — surface the user's role card under their name so the
   // sidebar identity row carries actual signal instead of repeating the
   // workspace name (which is hardcoded "Fairy" in single-user mode).
@@ -421,49 +442,15 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           </SidebarMenu>
         </SidebarHeader>
 
-        {/* Navigation */}
+        {/* Navigation — 客厅化三入口 */}
         <SidebarContent>
-          {localPinned.length > 0 && (
-            <Collapsible defaultOpen>
-              <SidebarGroup className="group/pinned">
-                <SidebarGroupLabel
-                  render={<CollapsibleTrigger />}
-                  className="group/trigger cursor-pointer hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
-                >
-                  <span>固定</span>
-                  <ChevronRight className="!size-3 ml-1 stroke-[2.5] transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
-                  <span className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/pinned:opacity-100">{localPinned.length}</span>
-                </SidebarGroupLabel>
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                      <SortableContext items={localPinned.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-                        <SidebarMenu className="gap-0.5">
-	                          {localPinned.map((pin: PinnedItem) => (
-	                            <PinRow
-                              key={pin.id}
-                              pin={pin}
-	                              href={pin.item_type === "issue" ? p.issueDetail(pin.item_id) : p.projectWorkspaceDetail(pin.item_id)}
-                              pathname={pathname}
-                              onUnpin={() => deletePin.mutate({ itemType: pin.item_type, itemId: pin.item_id })}
-                              wsId={wsId ?? ""}
-                            />
-                          ))}
-                        </SidebarMenu>
-                      </SortableContext>
-                    </DndContext>
-                  </SidebarGroupContent>
-                </CollapsibleContent>
-              </SidebarGroup>
-            </Collapsible>
-          )}
-
           <SidebarGroup>
-            <SidebarGroupLabel>Origin</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {productNav.map((item) => {
+                {livingRoomNav.map((item) => {
                   const href = p[item.key]();
+                  const isWorkbench = item.key === "workbench";
+                  // 客厅入口：pathname 匹配 /workbench 或 /agents 都算 active
                   const isActive = isNavActive(pathname, href);
                   return (
                     <SidebarMenuItem key={item.key}>
@@ -472,37 +459,28 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         render={<AppLink href={href} />}
                         className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
                       >
-                        <item.icon />
+                        <item.icon className="size-4" />
                         <span>{item.label}</span>
                       </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-
-          <SidebarGroup>
-            <SidebarGroupLabel>系统</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {systemNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                      >
-                        <item.icon />
-                        <span>{item.label}</span>
-                        {item.key === "runtimes" && hasRuntimeUpdates && (
-                          <span className="ml-auto size-1.5 rounded-full bg-destructive" />
-                        )}
-                      </SidebarMenuButton>
+                      {/* 客厅入口展开后显示 pinned 快捷项 */}
+                      {isWorkbench && isActive && localPinned.length > 0 && (
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                          <SortableContext items={localPinned.map((pin) => pin.id)} strategy={verticalListSortingStrategy}>
+                            <SidebarMenu className="mt-0.5 ml-4 gap-0">
+                              {localPinned.map((pin: PinnedItem) => (
+                                <PinRow
+                                  key={pin.id}
+                                  pin={pin}
+                                  href={pin.item_type === "issue" ? p.issueDetail(pin.item_id) : p.projectWorkspaceDetail(pin.item_id)}
+                                  pathname={pathname}
+                                  onUnpin={() => deletePin.mutate({ itemType: pin.item_type, itemId: pin.item_id })}
+                                  wsId={wsId ?? ""}
+                                />
+                              ))}
+                            </SidebarMenu>
+                          </SortableContext>
+                        </DndContext>
+                      )}
                     </SidebarMenuItem>
                   );
                 })}
@@ -511,8 +489,21 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           </SidebarGroup>
         </SidebarContent>
 
+        {/* 设置入口：最弱视觉权重，置于底部 */}
         <SidebarFooter className="p-2">
-          <div className="flex justify-end">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isNavActive(pathname, p.settings())}
+                render={<AppLink href={p.settings()} />}
+                className="text-muted-foreground/60 hover:not-data-active:bg-sidebar-accent/50 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground text-xs"
+              >
+                <Leaf className="size-3.5" />
+                <span>设置</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <div className="flex justify-end mt-1">
             <HelpLauncher />
           </div>
         </SidebarFooter>

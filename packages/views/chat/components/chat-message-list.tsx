@@ -15,11 +15,12 @@ import { useAutoScroll } from "@multica/ui/hooks/use-auto-scroll";
 import { taskMessagesOptions } from "@multica/core/chat/queries";
 import { Markdown } from "@multica/views/common/markdown";
 import type { AgentAvailability } from "@multica/core/agents";
-import type { ChatMessage, ChatPendingTask, TaskMessagePayload, TaskFailureReason } from "@multica/core/types";
+import type { Agent, ChatMessage, ChatPendingTask, TaskMessagePayload, TaskFailureReason } from "@multica/core/types";
 import type { ChatTimelineItem } from "@multica/core/chat";
 import { failureReasonLabel } from "../../agents/components/tabs/task-failure";
 import { TaskStatusPill } from "./task-status-pill";
 import { formatElapsedMs } from "../lib/format";
+import { ActorAvatar } from "../../common/actor-avatar";
 
 // ─── Public component ────────────────────────────────────────────────────
 
@@ -32,12 +33,18 @@ interface ChatMessageListProps {
   pendingTask: ChatPendingTask | null | undefined;
   /** Resolved presence; pass `undefined` while loading to keep the pill copy neutral. */
   availability: AgentAvailability | undefined;
+  /** Active agent — drives avatar + name display in assistant bubbles. */
+  agent?: Agent | null;
+  /** Callback when user clicks agent avatar/name to open personality drawer. */
+  onOpenAgentDrawer?: (agentId: string) => void;
 }
 
 export function ChatMessageList({
   messages,
   pendingTask,
   availability,
+  agent,
+  onOpenAgentDrawer,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fadeStyle = useScrollFade(scrollRef);
@@ -45,16 +52,10 @@ export function ChatMessageList({
 
   const pendingTaskId = pendingTask?.task_id ?? null;
 
-  // Once the assistant message for this pending task has landed in the
-  // messages list, AssistantMessage owns its rendering — suppress the live
-  // timeline (and pill) to avoid rendering the same content in two places
-  // during the invalidate → refetch window.
   const pendingAlreadyPersisted = !!pendingTaskId && messages.some(
     (m) => m.role === "assistant" && m.task_id === pendingTaskId,
   );
 
-  // Live timeline for the in-flight task. useRealtimeSync keeps this cache
-  // current via setQueryData on task:message events.
   const showLiveTimeline = !!pendingTaskId && !pendingAlreadyPersisted;
   const { data: liveTaskMessages } = useQuery({
     ...taskMessagesOptions(pendingTaskId ?? ""),
@@ -64,19 +65,33 @@ export function ChatMessageList({
   const hasLive = showLiveTimeline && liveTimeline.length > 0;
   const showStatusPill = !!pendingTaskId && !pendingAlreadyPersisted && !!pendingTask;
 
+  // 连续同一人消息合并气泡组：记录上一条消息的 role，避免重复显示头像名字
+  let prevRole: string | null = null;
+
   return (
-    <div ref={scrollRef} style={fadeStyle} className="flex-1 overflow-y-auto">
-      {/* Inner container matches issue / project detail width convention
-       *  (max-w-4xl + mx-auto) so switching between chat and content
-       *  views doesn't jolt the reading width. px-5 is a touch tighter
-       *  than issue-detail's px-8 because the chat window can be narrow. */}
-      <div className="mx-auto w-full max-w-4xl px-5 py-4 space-y-4">
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
+    <div ref={scrollRef} style={fadeStyle} className="flex-1 overflow-y-auto bg-white">
+      <div className="mx-auto w-full max-w-4xl px-5 py-4 space-y-1">
+        {messages.map((msg) => {
+          const isMerged = msg.role === prevRole;
+          prevRole = msg.role;
+          return (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              agent={agent}
+              isMerged={isMerged}
+              onOpenAgentDrawer={onOpenAgentDrawer}
+            />
+          );
+        })}
         {hasLive && (
-          <div className="w-full space-y-1.5">
+          <div className="w-full space-y-1.5 pt-2">
+            {agent && (
+              <AgentNameRow agent={agent} onOpenDrawer={onOpenAgentDrawer} />
+            )}
             <TimelineView items={liveTimeline} />
+            {/* typing shimmer */}
+            <TypingShimmer agentName={agent?.name} />
           </div>
         )}
         {showStatusPill && pendingTask && (
@@ -92,14 +107,11 @@ export function ChatMessageList({
 }
 
 /**
- * Placeholder shown while `chat_message` for a session is being fetched
- * (initial refresh, or switching to an un-cached session). Shape roughly
- * mirrors an assistant → user → assistant exchange so the window doesn't
- * shift under the user when real messages arrive.
+ * Placeholder shown while messages are being fetched.
  */
 export function ChatMessageSkeleton() {
   return (
-    <div className="flex-1 overflow-hidden">
+    <div className="flex-1 overflow-hidden bg-white">
       <div className="mx-auto w-full max-w-4xl px-5 py-4 space-y-5">
         <div className="space-y-2">
           <Skeleton className="h-3.5 w-3/4" />
@@ -129,18 +141,114 @@ function toTimelineItem(m: TaskMessagePayload): ChatTimelineItem {
   };
 }
 
+// ─── Agent name/avatar row ────────────────────────────────────────────────
+
+function AgentNameRow({
+  agent,
+  isAutonomous,
+  onOpenDrawer,
+}: {
+  agent: Agent;
+  isAutonomous?: boolean;
+  onOpenDrawer?: (agentId: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 mb-1">
+      {/* 圆形头像 + 心境 dot */}
+      <button
+        type="button"
+        onClick={() => onOpenDrawer?.(agent.id)}
+        className="relative shrink-0 rounded-full focus:outline-none"
+        aria-label={`查看 ${agent.name} 的人格`}
+      >
+        <ActorAvatar
+          actorType="agent"
+          actorId={agent.id}
+          size={26}
+          showStatusDot
+          // showStatusDot 渲染的是 online/unstable/offline 三态
+          // 客厅化心境 dot（active 绿/安静黄/离开灰）v1.0.14 接活感算法后替换
+        />
+      </button>
+      <span
+        className="text-[11.5px] font-medium cursor-pointer"
+        style={{ color: "var(--living-text-secondary, #86909C)" }}
+        onClick={() => onOpenDrawer?.(agent.id)}
+      >
+        {agent.name}
+      </span>
+      {isAutonomous && (
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded"
+          style={{
+            color: "var(--living-accent-orange, #F59E0B)",
+            background: "rgba(245,158,11,0.08)",
+            border: "1px solid rgba(245,158,11,0.2)",
+          }}
+        >
+          · 自言自语
+        </span>
+      )}
+    </div>
+  );
+}
+
+// typing shimmer："{agentName} 正在想…"
+function TypingShimmer({ agentName }: { agentName?: string }) {
+  const label = agentName ? `${agentName} 正在想…` : "正在想…";
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs"
+      style={{
+        background: "#FFFFFF",
+        borderColor: "var(--living-border-line, #E8E8E8)",
+        color: "var(--living-text-secondary, #86909C)",
+      }}
+    >
+      <span>{label}</span>
+      <span
+        className="inline-block h-0.5 w-12 rounded-full overflow-hidden"
+        style={{ background: "#E8E8E8" }}
+      >
+        <span
+          className="block h-full rounded-full"
+          style={{
+            background: "linear-gradient(90deg, #E8E8E8 0%, #C0C4CC 40%, #E8E8E8 100%)",
+            backgroundSize: "200% 100%",
+            animation: "living-shimmer 1.6s ease-in-out infinite",
+          }}
+        />
+      </span>
+    </div>
+  );
+}
+
 // ─── Message bubbles ─────────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  agent,
+  isMerged,
+  onOpenAgentDrawer,
+}: {
+  message: ChatMessage;
+  agent?: Agent | null;
+  isMerged: boolean;
+  onOpenAgentDrawer?: (agentId: string) => void;
+}) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="rounded-2xl bg-muted px-3.5 py-2 text-sm max-w-[80%] break-words">
-          {/* User messages are authored as markdown in ContentEditor, so
-           * render them through the same pipeline as assistant replies.
-           * Neutralise prose's leading/trailing margin so single-line
-           * bubbles stay as compact as the plain-text version used to. */}
-          <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      <div className={cn("flex justify-end", isMerged ? "mt-0.5" : "mt-3")}>
+        <div
+          className="rounded-lg px-3.5 py-2 text-sm max-w-[80%] break-words"
+          style={{
+            background: "#F0F5FF",
+            border: "1px solid rgba(22,119,255,0.15)",
+            borderRadius: "8px",
+            color: "var(--living-text-primary, #1F2329)",
+          }}
+        >
+          <div className="prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
             <Markdown>{message.content}</Markdown>
           </div>
         </div>
@@ -148,19 +256,29 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
-  return <AssistantMessage message={message} />;
+  return (
+    <AssistantMessage
+      message={message}
+      agent={agent}
+      isMerged={isMerged}
+      onOpenAgentDrawer={onOpenAgentDrawer}
+    />
+  );
 }
 
 function AssistantMessage({
   message,
+  agent,
+  isMerged,
+  onOpenAgentDrawer,
 }: {
   message: ChatMessage;
+  agent?: Agent | null;
+  isMerged: boolean;
+  onOpenAgentDrawer?: (agentId: string) => void;
 }) {
   const taskId = message.task_id;
 
-  // Use the shared taskMessagesOptions so this cache entry is the same one
-  // seeded by useRealtimeSync during task execution — zero refetch when the
-  // task finishes, since WS already populated it.
   const { data: taskMessages } = useQuery({
     ...taskMessagesOptions(taskId ?? ""),
     enabled: !!taskId,
@@ -168,10 +286,10 @@ function AssistantMessage({
 
   const timeline: ChatTimelineItem[] = (taskMessages ?? []).map(toTimelineItem);
 
-  // Failure bubble path: when the server's FailTask wrote a failure
-  // chat_message (failure_reason set), render a destructive bubble with the
-  // human-readable reason label + collapsible raw errMsg + the same timeline
-  // so the user can see exactly where the run broke.
+  // autonomous flag：从 message 读，后端 v1.0.14 补上后自然激活
+  // 类型扩展：ChatMessage 暂无此字段，用 unknown 中转安全读取
+  const isAutonomous = !!((message as unknown as Record<string, unknown>)["autonomous"]);
+
   if (message.failure_reason) {
     return (
       <FailureBubble
@@ -184,14 +302,38 @@ function AssistantMessage({
   }
 
   return (
-    <div className="w-full space-y-1.5">
-      {timeline.length > 0 ? (
-        <TimelineView items={timeline} />
-      ) : (
-        <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
-          <Markdown>{message.content}</Markdown>
-        </div>
+    <div className={cn("w-full", isMerged ? "mt-0.5" : "mt-3")}>
+      {/* 仅第一条消息显示 agent 名字行，连续消息合并 */}
+      {!isMerged && agent && (
+        <AgentNameRow
+          agent={agent}
+          isAutonomous={isAutonomous}
+          onOpenDrawer={onOpenAgentDrawer}
+        />
       )}
+      {/* 消息气泡 */}
+      <div
+        className={cn(
+          "relative rounded-lg border px-3.5 py-2 text-sm",
+          isAutonomous && "autonomous-bubble",
+        )}
+        style={{
+          background: "#FFFFFF",
+          borderColor: "var(--living-border-line, #E8E8E8)",
+          borderRadius: "8px",
+          borderLeft: isAutonomous ? "4px solid #F59E0B" : undefined,
+          color: "var(--living-text-primary, #1F2329)",
+        }}
+      >
+        {timeline.length > 0 ? (
+          <TimelineView items={timeline} />
+        ) : (
+          <div className="text-sm leading-relaxed prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            <Markdown>{message.content}</Markdown>
+          </div>
+        )}
+      </div>
+      {/* 时间戳：hover 才显 */}
       {message.elapsed_ms != null && (
         <ElapsedCaption verb="回复耗时" elapsedMs={message.elapsed_ms} />
       )}
@@ -199,11 +341,6 @@ function AssistantMessage({
   );
 }
 
-// Persisted "Replied in 38s" / "Failed after 12s" line under the assistant
-// bubble. Reads `elapsed_ms` straight off the chat_message — server computes
-// it once at task completion, so this caption is identical across reloads
-// and devices. Skipped silently when null (legacy messages predating
-// migration 063 + user messages).
 function ElapsedCaption({
   verb,
   elapsedMs,
@@ -214,7 +351,10 @@ function ElapsedCaption({
   className?: string;
 }) {
   return (
-    <div className={cn("text-[11px] text-muted-foreground/80", className)}>
+    <div
+      className={cn("text-[11px] opacity-0 group-hover:opacity-100 transition-opacity", className)}
+      style={{ color: "var(--living-text-secondary, #86909C)" }}
+    >
       {verb} {formatElapsedMs(elapsedMs)}
     </div>
   );
@@ -232,19 +372,11 @@ function FailureBubble({
   elapsedMs?: number | null;
 }) {
   const [open, setOpen] = useState(false);
-  // Map the back-end enum to copy via the shared label table; an unknown
-  // reason (e.g. a future enum value the front-end doesn't ship yet)
-  // falls back to a generic "Task failed" so we never render a bare slug.
   const label =
     failureReasonLabel[reason as TaskFailureReason] ?? "任务失败";
 
   return (
-    <div className="w-full space-y-1.5">
-      {/* Failure read as an inline, low-key note — not a destructive
-       *  alert. Intentionally borderless / no background tint: a chat
-       *  failure is informational ("this didn't work"), not a system
-       *  error. The icon + muted destructive text are signal enough,
-       *  the rest stays in the normal reply rhythm. */}
+    <div className="w-full space-y-1.5 mt-3">
       <div className="flex items-start gap-1.5 text-sm">
         <AlertTriangle className="size-3.5 shrink-0 text-destructive/80 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -283,7 +415,6 @@ interface TimelineSegment {
   items: ChatTimelineItem[];
 }
 
-/** Split items into segments: consecutive non-text → "tools", consecutive text → merged "text". */
 function segmentTimeline(items: ChatTimelineItem[]): TimelineSegment[] {
   const segments: TimelineSegment[] = [];
   let toolBuf: ChatTimelineItem[] = [];
@@ -324,7 +455,7 @@ function TimelineView({ items }: { items: ChatTimelineItem[] }) {
     <>
       {segments.map((seg, i) =>
         seg.kind === "text" ? (
-          <div key={seg.items[0]!.seq} className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+          <div key={seg.items[0]!.seq} className="text-sm leading-relaxed prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
             <Markdown>{seg.items.map((t) => t.content ?? "").join("")}</Markdown>
           </div>
         ) : (

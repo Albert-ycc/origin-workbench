@@ -25,6 +25,22 @@ func (f *fakeAPIRuntimeChatClient) Chat(_ context.Context, req modelapi.ChatRequ
 	return res, nil
 }
 
+// ChatStream delegates to Chat and fires the single content as one chunk.
+func (f *fakeAPIRuntimeChatClient) ChatStream(_ context.Context, req modelapi.ChatRequest, onChunk func(string) error) (modelapi.ChatResult, error) {
+	f.requests = append(f.requests, req)
+	if len(f.responses) == 0 {
+		return modelapi.ChatResult{}, nil
+	}
+	res := f.responses[0]
+	f.responses = f.responses[1:]
+	if onChunk != nil && res.Content != "" {
+		if err := onChunk(res.Content); err != nil {
+			return modelapi.ChatResult{}, err
+		}
+	}
+	return res, nil
+}
+
 type fakeAPIRuntimeToolExecutor struct {
 	tools []modelapi.Tool
 	calls []modelapi.ToolCall

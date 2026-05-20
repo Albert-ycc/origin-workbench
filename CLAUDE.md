@@ -135,6 +135,64 @@ Desktop routes fall into these categories:
 Every full-window desktop view outside the dashboard shell must mount
 `<DragStrip />` from `@multica/views/platform` as the first flex child.
 
+### Desktop Build (sandbox + preload)
+
+`apps/desktop/src/main/index.ts` runs `BrowserWindow` with
+`sandbox: true` + `contextIsolation: true` + `nodeIntegration: false`
+(hardened in commit `669700a2`, 2026-05-19).
+
+Under sandbox, the preload script's `require` resolution is restricted —
+it **cannot require external `node_modules`**. The chromium sandbox
+bundle reports `module not found` if any preload import is left as an
+external dependency.
+
+`apps/desktop/electron.vite.config.ts` must therefore **exclude every
+package the preload script actually imports** from
+`externalizeDepsPlugin`. Current shape:
+
+```typescript
+preload: {
+  plugins: [externalizeDepsPlugin({ exclude: ["@electron-toolkit/preload"] })],
+},
+```
+
+If you add a new `import` to `src/preload/index.ts`, append the package
+to the exclude list. Otherwise the renderer never gets
+`window.desktopAPI` and the whole window stays blank on launch.
+
+### Desktop Build Pipeline
+
+Build via the package script, **not** the raw electron-builder binary:
+
+```bash
+pnpm --filter @multica/desktop run package -- --mac --arm64 --dir \
+  -c.mac.notarize=false -c.mac.identity=null
+```
+
+`scripts/package.mjs` cleans `dist-local`, runs `electron-vite build`,
+bundles the matching Go CLI, and injects the `git describe` version.
+Calling `pnpm exec electron-builder` directly skips all of this and
+pollutes `app.asar` root with stray files from `apps/desktop/`.
+
+Verify every build before installing into `~/Applications/Origin.app`:
+
+```bash
+# preload must be bundled (size ≥ 6KB, external require count = 0)
+ls -la apps/desktop/out/preload/index.js
+grep -c '@electron-toolkit/preload' apps/desktop/out/preload/index.js
+
+# asar root must not contain orphan vite chunks or .turbo logs
+npx -y --package=asar -- asar list \
+  apps/desktop/dist-local/mac-arm64/Origin.app/Contents/Resources/app.asar \
+  | grep "^/[^/]" | head
+
+# command-line launch must show 4-5 processes and no preload errors
+~/Applications/Origin.app/Contents/MacOS/Origin > /tmp/origin.log 2>&1 &
+sleep 6
+grep -iE "preload|module not found|Cannot read prop" /tmp/origin.log
+ps -ef | grep "Origin.app/Contents" | grep -v grep
+```
+
 ## UI Rules
 
 - Use shadcn/Base UI components and existing design tokens.

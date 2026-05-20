@@ -50,6 +50,28 @@ type TaskMessagePayload struct {
 	Output  string         `json:"output,omitempty"`  // tool output (tool_result only)
 }
 
+// TaskMessageChunkPayload 是流式输出期间每个 token delta 的 WS payload。
+// 对应事件类型 task:message_chunk。
+// 前端：按 message_id 找到占位气泡，追加 chunk 文本。
+type TaskMessageChunkPayload struct {
+	TaskID        string `json:"task_id"`
+	ChatSessionID string `json:"chat_session_id,omitempty"`
+	MessageID     string `json:"message_id"` // 流中所有 chunk 共享同一 message_id
+	Chunk         string `json:"chunk"`       // 本次增量文本
+}
+
+// TaskMessageCompletePayload 是流式输出完成后发送一次的 WS payload。
+// 对应事件类型 task:message_complete。
+// 前端：用 content 替换占位气泡的累加缓冲区，同时更新 token 计数。
+type TaskMessageCompletePayload struct {
+	TaskID        string `json:"task_id"`
+	ChatSessionID string `json:"chat_session_id,omitempty"`
+	MessageID     string `json:"message_id"` // 与 chunk 事件相同 message_id
+	Content       string `json:"content"`     // 完整消息文本
+	InputTokens   int64  `json:"input_tokens,omitempty"`
+	OutputTokens  int64  `json:"output_tokens,omitempty"`
+}
+
 // DaemonRegisterPayload is sent from daemon to server on connection.
 type DaemonRegisterPayload struct {
 	DaemonID string        `json:"daemon_id"`
