@@ -102,9 +102,13 @@ type CouncilBroadcastMemberData struct {
 
 // CouncilBroadcastData mirrors service.CouncilBroadcastContext for daemon
 // consumption. Presence on a Task tells the prompt builder to switch into
-// "Council @全体 fan-out reply" mode: render a short broadcast prompt that
-// asks this agent to answer the user's question in one short voice, instead
-// of letting the captain ad-lib a delegation plan.
+// "Council @全体 relay reply" mode: NOT a parallel fan-out, but a serial
+// hand-off — lead opens the room as chairperson without ad-libbing the
+// answer, then exactly one follower picks it up and self-introduces.
+//
+// Role decides which prompt shape buildChatPrompt renders. PriorSpeakerName
+// is non-empty only when Role=="follower" and tells this agent who just
+// spoke so it can reference them naturally instead of repeating the open.
 type CouncilBroadcastData struct {
 	Type             string                       `json:"type"`
 	CouncilSessionID string                       `json:"council_session_id"`
@@ -116,6 +120,9 @@ type CouncilBroadcastData struct {
 	Participants     []CouncilBroadcastMemberData `json:"participants,omitempty"`
 	SelfAgentID      string                       `json:"self_agent_id"`
 	SelfAgentName    string                       `json:"self_agent_name"`
+	Role             string                       `json:"role"` // "lead" or "follower"
+	SourceKind       string                       `json:"source_kind,omitempty"`
+	PriorSpeakerName string                       `json:"prior_speaker_name,omitempty"`
 }
 
 // TeamDelegationData mirrors service.TeamDelegationContext without importing

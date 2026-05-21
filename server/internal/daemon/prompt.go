@@ -184,15 +184,15 @@ func buildCommentPrompt(task Task) string {
 // buildChatPrompt constructs a prompt for interactive chat tasks.
 func buildChatPrompt(task Task) string {
 	var b strings.Builder
-	// Council @全体 fan-out: this leg is one of N parallel "broadcast reply"
-	// tasks. Every participant gets the same prompt shape; the goal is one
-	// short, in-voice answer per agent, NOT a delegation tree or a captain
-	// monologue. This branch must come before the team/captain branch — a
-	// council can borrow a team session for storage, but broadcast mode
-	// always wins.
+	// Council @全体 relay (replaces the older parallel fan-out — 2026-05-21).
+	// Two prompt shapes, switched by bc.Role:
+	//   - lead: chairperson opening. Names everyone "standing by", invites
+	//     the user to clarify, and does NOT answer the substantive question.
+	//   - follower: the next member picks up after the lead, self-introduces,
+	//     lists scope, references teammates.
 	if task.CouncilBroadcast != nil {
 		bc := task.CouncilBroadcast
-		b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat.\n\n")
+		b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat. This is a serial relay (NOT a parallel fan-out): exactly one agent speaks per turn, and you are this turn.\n\n")
 		if bc.CouncilTopic != "" {
 			fmt.Fprintf(&b, "Council topic: %s\n", bc.CouncilTopic)
 		}
@@ -204,7 +204,7 @@ func buildChatPrompt(task Task) string {
 			fmt.Fprintf(&b, "You are: %s\n", selfName)
 		}
 		if len(bc.Participants) > 0 {
-			b.WriteString("\nRoom roster (everyone is receiving this same broadcast in parallel):\n")
+			b.WriteString("\nRoom roster (everyone in this room, in seat order):\n")
 			for _, m := range bc.Participants {
 				name := m.Name
 				if name == "" {
@@ -214,28 +214,55 @@ func buildChatPrompt(task Task) string {
 				if role == "" {
 					role = "member"
 				}
-				fmt.Fprintf(&b, "- %s (%s)\n", name, role)
+				marker := ""
+				if m.AgentID == bc.SelfAgentID {
+					marker = "  ← you"
+				}
+				fmt.Fprintf(&b, "- %s (%s)%s\n", name, role, marker)
 			}
 		}
 		broadcaster := bc.BroadcasterName
 		if broadcaster == "" {
 			broadcaster = "the user"
 		}
-		fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\n\n", broadcaster)
+		fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\nUser said: %q\n\n", broadcaster, bc.UserMessage)
 
-		b.WriteString("Broadcast reply rules — STRICT, do not deviate:\n")
-		b.WriteString("1. Answer the question directly from YOUR role's point of view in ONE short paragraph (1–3 sentences). This is a group chat, not an essay.\n")
-		b.WriteString("2. NEVER narrate your reasoning, exploration steps, or self-talk in the message body. Phrases like \"我先确认…\", \"我再看一下…\", \"已经从本地快照里找到…\", \"我先把…补上\", \"下一步我直接…\" are FORBIDDEN in your reply. If you need to use a tool, just use it silently — do not narrate the call.\n")
-		b.WriteString("3. Do NOT @mention or delegate to other members. Every member is already replying in parallel; you only speak for yourself.\n")
-		b.WriteString("4. Do NOT restate the question, do NOT preface your answer with \"作为产品经理…\" or similar role boilerplate. Just answer.\n")
-		b.WriteString("5. If you genuinely don't know, say so in one sentence (\"我这边不掌握，需要 X 确认\"). Don't fabricate.\n")
-		b.WriteString("6. Stay in your own voice and role identity. Don't speak \"on behalf of the whole team\".\n\n")
-		writeRequestedSkills(&b, task.RequestedSkills)
-		message := bc.UserMessage
-		if message == "" {
-			message = task.ChatMessage
+		switch bc.Role {
+		case "lead":
+			b.WriteString("You are the team LEAD. Your job this turn is to OPEN THE ROOM as chairperson — NOT to answer the substantive question. Follow this shape strictly:\n\n")
+			b.WriteString("1. Warm acknowledgement of the user, one short sentence.\n")
+			b.WriteString("2. Name every teammate that is standing by (use roster names exactly), and one short phrase describing each one's scope. Be specific to each member's role identity, not generic.\n")
+			b.WriteString("3. Invite the user to clarify what they want first — what topic, what depth, who they want to hear from.\n")
+			b.WriteString("4. End on a question to the user. The next speaker will pick up from there.\n\n")
+			b.WriteString("STRICT bans:\n")
+			b.WriteString("- Do NOT answer the user's actual question (model? roadmap? data?) — leave substance to the followers.\n")
+			b.WriteString("- Do NOT narrate any reasoning, exploration steps, or self-talk in the message body. Phrases like \"我先确认…\", \"我再看一下…\", \"已经从本地快照里找到…\", \"下一步我直接…\" are FORBIDDEN. If you need to call a tool, call it silently.\n")
+			b.WriteString("- Do NOT preface with role boilerplate like \"作为产品经理…\". Just speak.\n")
+			b.WriteString("- Do NOT @-mention any teammate in a way that creates a delegation task — this turn is an opening, not a hand-off.\n")
+			b.WriteString("- Total length 4–7 sentences. This is a chairperson's opening, not an essay.\n\n")
+		case "follower":
+			prior := bc.PriorSpeakerName
+			if prior == "" {
+				prior = "the team lead"
+			}
+			fmt.Fprintf(&b, "%s just opened the room. Your job this turn is to PICK UP THE RELAY — introduce yourself and declare your scope. Follow this shape strictly:\n\n", prior)
+			b.WriteString("1. One short acknowledgement of the user (varied phrasing, don't echo the lead's open).\n")
+			b.WriteString("2. State your own role identity in one sentence — what you focus on in this team.\n")
+			b.WriteString("3. Reference the OTHER teammates' scope so the user sees clean division of labor. Use the pattern: \"While [colleague A] handles X and [colleague B] handles Y, I'm here for Z.\" Use roster names exactly.\n")
+			b.WriteString("4. List 3–5 bullet points of concrete things YOU can do on this topic. Each bullet should be a verb-first capability, not a job-title slogan.\n")
+			b.WriteString("5. End with one open question inviting the user to share specifics before you go deeper.\n\n")
+			b.WriteString("STRICT bans:\n")
+			b.WriteString("- Do NOT narrate your reasoning or exploration steps in the message body. Tool calls happen silently.\n")
+			b.WriteString("- Do NOT repeat the lead's opening — assume the user already read it.\n")
+			b.WriteString("- Do NOT @-mention or delegate to other teammates.\n")
+			b.WriteString("- Do NOT speak \"on behalf of the whole team\". Stay in your own role identity.\n")
+			b.WriteString("- Total length 5–8 sentences plus the bullet list. Keep it scannable.\n\n")
+		default:
+			// Defensive fallback for an unset/unknown Role — behave like a
+			// follower so we never silently drop back to "answer it yourself".
+			b.WriteString("Self-introduce briefly, declare your scope, list 3–5 concrete things you can do on this topic, and invite the user to share specifics. Do NOT narrate your reasoning. 5–8 sentences plus the bullet list.\n\n")
 		}
-		fmt.Fprintf(&b, "User broadcast:\n%s\n", message)
+		writeRequestedSkills(&b, task.RequestedSkills)
 		return b.String()
 	}
 	if task.TeamID != "" {
