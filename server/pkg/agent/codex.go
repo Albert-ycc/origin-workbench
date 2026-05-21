@@ -450,6 +450,13 @@ type codexClient struct {
 	turnStarted          bool
 	completedTurnIDs     map[string]bool
 
+	// streamedMessageIDs tracks which agentMessage item ids have already been
+	// pushed to onMessage incrementally via item/agentMessage/delta. When the
+	// later item/completed event arrives carrying the full text, we skip the
+	// re-send so the daemon doesn't double-emit the same assistant reply.
+	// Keyed by params.item.id from the agentMessage notification stream.
+	streamedMessageIDs map[string]bool
+
 	usageMu sync.Mutex
 	usage   TokenUsage // accumulated from turn events
 
@@ -888,13 +895,54 @@ func (c *codexClient) handleItemNotification(method string, params map[string]an
 
 	case method == "item/completed" && itemType == "agentMessage":
 		text, _ := item["text"].(string)
-		if text != "" && c.onMessage != nil {
+		// If this agentMessage already streamed token-by-token via
+		// item/agentMessage/delta, do NOT push the full text again — that
+		// would make the daemon's pendingText buffer contain the message
+		// twice (one as the accumulated delta stream, one as the final
+		// completed push), and the chat bubble would end up duplicated.
+		c.mu.Lock()
+		alreadyStreamed := c.streamedMessageIDs[itemID]
+		if alreadyStreamed {
+			delete(c.streamedMessageIDs, itemID)
+		}
+		c.mu.Unlock()
+		if !alreadyStreamed && text != "" && c.onMessage != nil {
 			c.onMessage(Message{Type: MessageText, Content: text})
 		}
 		phase, _ := item["phase"].(string)
 		if phase == "final_answer" && c.turnStarted {
 			if c.onTurnDone != nil {
 				c.onTurnDone(false)
+			}
+		}
+
+	case method == "item/agentMessage/delta":
+		// Codex CLI emits this once per token (or small token chunk) while
+		// the model is producing the assistant reply. Forward each delta to
+		// onMessage as a regular MessageText — the daemon's pending-text
+		// flush path will batch them and report at the 120ms tick, which
+		// gives the user true token-level streaming in the chat bubble
+		// instead of waiting for item/completed to fire at the end of the
+		// reply (the original behavior, which felt like "卡了 30 秒，最后一
+		// 次性出整段").
+		delta, _ := params["delta"].(string)
+		if delta == "" {
+			// Some older payloads put the delta string under params.item.delta
+			// or params.text — fall back to those before giving up.
+			delta, _ = item["delta"].(string)
+			if delta == "" {
+				delta, _ = params["text"].(string)
+			}
+		}
+		if delta != "" {
+			c.mu.Lock()
+			if c.streamedMessageIDs == nil {
+				c.streamedMessageIDs = map[string]bool{}
+			}
+			c.streamedMessageIDs[itemID] = true
+			c.mu.Unlock()
+			if c.onMessage != nil {
+				c.onMessage(Message{Type: MessageText, Content: delta})
 			}
 		}
 	}
