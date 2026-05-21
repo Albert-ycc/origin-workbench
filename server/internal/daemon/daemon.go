@@ -56,6 +56,12 @@ type Daemon struct {
 	reloading    sync.Mutex         // prevents concurrent workspace syncs
 	runtimeSetCh chan struct{}      // notifies the WS wakeup loop to reconnect with a new runtime set
 
+	// syncWg tracks all in-flight background repo syncs started by
+	// registerTaskRepos. Tests call d.syncWg.Wait() in t.Cleanup to ensure
+	// all git subprocesses have exited before t.TempDir RemoveAll runs,
+	// avoiding "directory not empty" cleanup failures.
+	syncWg sync.WaitGroup
+
 	versionsMu    sync.RWMutex      // guards agentVersions
 	agentVersions map[string]string // provider -> detected CLI version (set during registration)
 
@@ -454,7 +460,11 @@ func (d *Daemon) registerTaskRepos(workspaceID string, repos []RepoData) {
 		// `ensureRepoReady` reports a meaningful error if the cache isn't ready
 		// yet, so the agent's first checkout will surface a sync failure
 		// without silently treating it as a config bug.
-		go d.syncWorkspaceRepos(workspaceID, toSync)
+		d.syncWg.Add(1)
+		go func() {
+			defer d.syncWg.Done()
+			d.syncWorkspaceRepos(workspaceID, toSync)
+		}()
 	}
 }
 
@@ -605,7 +615,11 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context) error {
 		d.mu.Unlock()
 
 		if d.repoCache != nil && len(resp.Repos) > 0 {
-			go d.syncWorkspaceRepos(id, resp.Repos)
+			d.syncWg.Add(1)
+			go func() {
+				defer d.syncWg.Done()
+				d.syncWorkspaceRepos(id, resp.Repos)
+			}()
 		}
 
 		// Tell the server about any tasks the previous daemon process was

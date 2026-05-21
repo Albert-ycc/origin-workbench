@@ -498,13 +498,21 @@ func newRepoReadyTestDaemon(t *testing.T, handler http.HandlerFunc) *Daemon {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return &Daemon{
+	// t.TempDir 在内部注册 RemoveAll cleanup（LIFO 顺序）。
+	// d.syncWg.Wait() 必须在 RemoveAll 之前执行，否则后台 git 子进程还在写
+	// refs/remotes/origin/ 时 RemoveAll 会遇到"directory not empty"。
+	// LIFO 保证：先注册 TempDir（RemoveAll），再注册 syncWg.Wait()，
+	// 执行时 Wait() 先跑，等所有 git 子进程退出后 RemoveAll 才运行。
+	cacheDir := t.TempDir()
+	d := &Daemon{
 		client:       NewClient(srv.URL),
-		repoCache:    repocache.New(t.TempDir(), slog.Default()),
+		repoCache:    repocache.New(cacheDir, slog.Default()),
 		logger:       slog.Default(),
 		workspaces:   make(map[string]*workspaceState),
 		runtimeIndex: make(map[string]Runtime),
 	}
+	t.Cleanup(func() { d.syncWg.Wait() })
+	return d
 }
 
 func TestExecuteAndDrain_ResumeFailureFallback(t *testing.T) {
