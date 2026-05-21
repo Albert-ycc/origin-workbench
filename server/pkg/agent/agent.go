@@ -54,6 +54,13 @@ const (
 	MessageStatus     MessageType = "status"
 	MessageError      MessageType = "error"
 	MessageLog        MessageType = "log"
+	// MessageProgress is a short, human-readable hint about what the agent
+	// is doing RIGHT NOW (e.g. "正在分析问题…", "正在编写回复…"). Unlike
+	// MessageText/Thinking, progress lines are NOT accumulated and each one
+	// is force-flushed as its own task_message so the chat timeline shows
+	// the agent making forward motion when the underlying CLI does not emit
+	// token-level deltas (Codex 0.131 is in this bucket).
+	MessageProgress MessageType = "progress"
 )
 
 // Message is a unified event emitted by an agent during execution.

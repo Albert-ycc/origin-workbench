@@ -363,7 +363,7 @@ function FailureBubble({
 // ─── Timeline: flat interleaved text + collapsible tool groups ───────────
 
 interface TimelineSegment {
-  kind: "text" | "tools";
+  kind: "text" | "tools" | "progress";
   items: ChatTimelineItem[];
 }
 
@@ -390,6 +390,12 @@ function segmentTimeline(items: ChatTimelineItem[]): TimelineSegment[] {
     if (item.type === "text") {
       flushTools();
       textBuf.push(item);
+    } else if (item.type === "progress") {
+      // Progress hints stand alone — not collapsed under "N 个工具", not
+      // glued into markdown. Renders as a single inline ephemeral line.
+      flushTools();
+      flushText();
+      segments.push({ kind: "progress", items: [item] });
     } else {
       flushText();
       toolBuf.push(item);
@@ -405,19 +411,26 @@ function TimelineView({ items }: { items: ChatTimelineItem[] }) {
 
   return (
     <>
-      {segments.map((seg, i) =>
-        seg.kind === "text" ? (
-          <div key={seg.items[0]!.seq} className="text-sm leading-relaxed prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            <Markdown>{seg.items.map((t) => t.content ?? "").join("")}</Markdown>
-          </div>
-        ) : (
+      {segments.map((seg, i) => {
+        if (seg.kind === "text") {
+          return (
+            <div key={seg.items[0]!.seq} className="text-sm leading-relaxed prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              <Markdown>{seg.items.map((t) => t.content ?? "").join("")}</Markdown>
+            </div>
+          );
+        }
+        if (seg.kind === "progress") {
+          // Single ephemeral hint row, rendered inline (no collapsing).
+          return <ProgressRow key={seg.items[0]!.seq} item={seg.items[0]!} />;
+        }
+        return (
           <ToolGroupCollapsible
             key={seg.items[0]!.seq}
             items={seg.items}
             defaultOpen={i === segments.length - 1}
           />
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
@@ -460,11 +473,23 @@ function ItemRow({ item }: { item: ChatTimelineItem }) {
       return <ToolResultRow item={item} />;
     case "thinking":
       return <ThinkingRow item={item} />;
+    case "progress":
+      return <ProgressRow item={item} />;
     case "error":
       return <ErrorRow item={item} />;
     default:
       return null;
   }
+}
+
+function ProgressRow({ item }: { item: ChatTimelineItem }) {
+  if (!item.content) return null;
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 italic py-0.5">
+      <span className="inline-block size-1.5 rounded-full bg-muted-foreground/40 animate-pulse" />
+      <span>{item.content}</span>
+    </div>
+  );
 }
 
 function shortenPath(p: string): string {

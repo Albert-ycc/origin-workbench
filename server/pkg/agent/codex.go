@@ -690,6 +690,12 @@ func (c *codexClient) handleEvent(msg map[string]any) {
 		c.turnStarted = true
 		if c.onMessage != nil {
 			c.onMessage(Message{Type: MessageStatus, Status: "running", SessionID: c.threadID})
+			// Codex 0.131 has no token-level streaming for agent_message, so
+			// the chat bubble would sit empty for 30–60s of model thinking
+			// before any text shows. Drop a visible progress hint here so
+			// the user can see motion. The follow-up hints land on
+			// item/started agentMessage and item/started commandExecution.
+			c.onMessage(Message{Type: MessageProgress, Content: "正在分析问题…"})
 		}
 	case "agent_message":
 		text, _ := msg["message"].(string)
@@ -863,6 +869,19 @@ func (c *codexClient) handleItemNotification(method string, params map[string]an
 				Input:  map[string]any{"command": command},
 			})
 		}
+	case method == "item/started" && itemType == "agentMessage":
+		// Codex tells us "the model is now producing the assistant reply"
+		// at this point. Without delta streaming we don't know any of the
+		// actual content yet, but we can at least let the user know the
+		// agent has moved from "thinking" to "writing" so the wait feels
+		// less like a hang.
+		if c.onMessage != nil {
+			c.onMessage(Message{Type: MessageProgress, Content: "正在编写回复…"})
+		}
+	case method == "turn/completed":
+		// Turn ended successfully — the final agent_message will land via
+		// item/completed almost immediately. No further progress hint
+		// needed; the actual chat bubble is about to replace the placeholder.
 
 	case method == "item/completed" && itemType == "commandExecution":
 		output, _ := item["aggregatedOutput"].(string)

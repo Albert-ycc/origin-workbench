@@ -1759,6 +1759,25 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 						// "not streaming" when watching a chat reply appear.
 						flush()
 					}
+				case agent.MessageProgress:
+					// Progress hints — one short line per stage transition
+					// (e.g. "正在分析问题…", "正在编写回复…"). Each one is
+					// written as its own task_message and force-flushed so
+					// the chat live-timeline can show the agent moving
+					// forward even when the underlying CLI doesn't emit
+					// token-level deltas. Don't accumulate with thinking/
+					// text — those have very different rendering semantics.
+					if msg.Content != "" {
+						s := seq.Add(1)
+						mu.Lock()
+						batch = append(batch, TaskMessageData{
+							Seq:     int(s),
+							Type:    "progress",
+							Content: msg.Content,
+						})
+						mu.Unlock()
+						flush()
+					}
 				case agent.MessageError:
 					taskLog.Error("agent error", "content", msg.Content)
 					s := seq.Add(1)
