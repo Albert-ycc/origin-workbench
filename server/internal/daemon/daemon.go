@@ -1659,7 +1659,12 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 			}
 		}
 
-		ticker := time.NewTicker(500 * time.Millisecond)
+		// Was 500ms — felt unresponsive to users ("无法流式输出 + 回复慢").
+		// 120ms is roughly perceptual-instant for streaming text and well
+		// below the cost of an HTTP round trip from daemon → server. Text
+		// chunks also force-flush on arrival (see MessageText case below),
+		// so this ticker is now a fallback for thinking/tool batches.
+		ticker := time.NewTicker(120 * time.Millisecond)
 		defer ticker.Stop()
 
 		done := make(chan struct{})
@@ -1748,6 +1753,11 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 						mu.Lock()
 						pendingText.WriteString(msg.Content)
 						mu.Unlock()
+						// Force-flush on every text arrival — this is the path
+						// the chat bubble live timeline consumes. Don't wait
+						// for the ticker; users perceive any delay > ~80ms as
+						// "not streaming" when watching a chat reply appear.
+						flush()
 					}
 				case agent.MessageError:
 					taskLog.Error("agent error", "content", msg.Content)
