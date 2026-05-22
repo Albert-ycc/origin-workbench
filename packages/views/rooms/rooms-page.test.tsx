@@ -123,7 +123,7 @@ describe("RoomsPage", () => {
   it("marks the page with the current ambient theme", () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date("2026-05-22T23:30:00+08:00"));
+      vi.setSystemTime(new Date(2026, 4, 22, 23, 30));
       const { container } = renderRoomsPage();
 
       expect(container.firstElementChild).toHaveAttribute("data-room-theme", "night");
