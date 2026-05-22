@@ -43,6 +43,11 @@ const PROTOCOL = "multica";
 
 let mainWindow: BrowserWindow | null = null;
 
+function showMainWindowWhenReady(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+  mainWindow.show();
+}
+
 // --- Deep link helpers ---------------------------------------------------
 
 function handleDeepLink(url: string): void {
@@ -110,9 +115,10 @@ function createWindow(): void {
     );
   }
 
-  mainWindow.on("ready-to-show", () => {
-    mainWindow?.show();
-  });
+  mainWindow.on("ready-to-show", showMainWindowWhenReady);
+  mainWindow.webContents.once("did-finish-load", showMainWindowWhenReady);
+  mainWindow.webContents.once("did-fail-load", showMainWindowWhenReady);
+  setTimeout(showMainWindowWhenReady, 3_000);
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     openExternalSafely(details.url);

@@ -32,6 +32,8 @@ type ExecOptions struct {
 	ExtraArgs                 []string        // daemon-wide default CLI arguments appended before CustomArgs; currently read by claude and codex backends only
 	CustomArgs                []string        // per-agent CLI arguments appended after ExtraArgs
 	McpConfig                 json.RawMessage // if non-nil, MCP server config to pass via --mcp-config
+	Bare                      bool            // if true, ask backends to ignore repository/user context when supported
+	DisableTools              bool            // if true, ask backends to disable tool execution when supported
 }
 
 // Session represents a running agent execution.

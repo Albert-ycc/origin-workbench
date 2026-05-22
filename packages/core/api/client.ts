@@ -1751,6 +1751,10 @@ export class ApiClient {
     return this.fetch(`/api/v12/projects/${id}/archive`, { method: "POST" });
   }
 
+  async deleteProjectV12(id: string): Promise<void> {
+    await this.fetch(`/api/v12/projects/${id}`, { method: "DELETE" });
+  }
+
   async appendProjectMemoryDoc(id: string, data: AppendMemoryDocRequest): Promise<ProjectV12> {
     return this.fetch(`/api/v12/projects/${id}/memory-doc/append`, {
       method: "POST",
@@ -1795,6 +1799,10 @@ export class ApiClient {
 
   async archiveMeeting(id: string): Promise<MeetingSession> {
     return this.fetch(`/api/v13/meetings/${id}/archive`, { method: "POST" });
+  }
+
+  async deleteMeeting(id: string): Promise<void> {
+    await this.fetch(`/api/v13/meetings/${id}`, { method: "DELETE" });
   }
 
   async getMeetingSummary(id: string): Promise<MeetingSummary> {
@@ -1957,6 +1965,10 @@ export class ApiClient {
 
   async archiveRoom(id: string): Promise<void> {
     await this.fetch(`/api/rooms/${id}/archive`, { method: "POST" });
+  }
+
+  async deleteRoom(id: string): Promise<void> {
+    await this.fetch(`/api/rooms/${id}`, { method: "DELETE" });
   }
 
   async listRoomMembers(roomId: string): Promise<ListRoomMembersResponse> {

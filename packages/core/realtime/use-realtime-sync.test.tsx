@@ -10,7 +10,9 @@ import { issueKeys } from "../issues/queries";
 import { setCurrentWorkspace } from "../platform/workspace-storage";
 import { projectKeys } from "../projects/queries";
 import { projectV12Keys } from "../projects-v12/queries";
+import { roomKeys } from "../rooms/queries";
 import { teamKeys } from "../teams/queries";
+import type { ListRoomMessagesResponse } from "../types";
 import type { StoreApi, UseBoundStore } from "zustand";
 import { useRealtimeSync } from "./use-realtime-sync";
 
@@ -169,5 +171,61 @@ describe("useRealtimeSync", () => {
     expect(invalidatedKeys(spy)).toContainEqual(
       teamKeys.delegationCards(wsId, "source-message-1"),
     );
+  });
+
+  it("writes room message events into the room cache immediately", async () => {
+    const qc = createQueryClient();
+    const ws = new FakeWS();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    qc.setQueryData<ListRoomMessagesResponse>(roomKeys.messages("room-1"), {
+      messages: [
+        {
+          id: "message-1",
+          room_id: "room-1",
+          sender_type: "user",
+          sender_id: "user-1",
+          sender_name: null,
+          content: "有人吗",
+          is_autonomous: false,
+          created_at: "2026-05-21T00:00:01Z",
+        },
+      ],
+    });
+
+    renderRealtimeSync(qc, ws);
+    await flushEffects();
+
+    act(() => {
+      ws.emit("room:message", {
+        room_id: "room-1",
+        message_id: "message-2",
+        sender_type: "agent",
+        sender_id: "agent-1",
+        sender_name: "产品经理",
+        content: "在，我先接一下。",
+        is_autonomous: false,
+        created_at: "2026-05-21T00:00:02Z",
+      });
+      ws.emit("room:message", {
+        room_id: "room-1",
+        message_id: "message-2",
+        sender_type: "agent",
+        sender_id: "agent-1",
+        sender_name: "产品经理",
+        content: "在，我先接一下。",
+        is_autonomous: false,
+        created_at: "2026-05-21T00:00:02Z",
+      });
+    });
+
+    const data = qc.getQueryData<ListRoomMessagesResponse>(roomKeys.messages("room-1"));
+    expect(data?.messages).toHaveLength(2);
+    expect(data?.messages[1]).toMatchObject({
+      id: "message-2",
+      sender_type: "agent",
+      sender_name: "产品经理",
+      content: "在，我先接一下。",
+    });
+    expect(invalidatedKeys(spy)).toContainEqual(roomKeys.messages("room-1"));
   });
 });

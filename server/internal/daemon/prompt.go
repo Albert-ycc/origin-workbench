@@ -192,9 +192,17 @@ func buildChatPrompt(task Task) string {
 	//     lists scope, references teammates.
 	if task.CouncilBroadcast != nil {
 		bc := task.CouncilBroadcast
-		b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat. This is a serial relay (NOT a parallel fan-out): exactly one agent speaks per turn, and you are this turn.\n\n")
+		if bc.Role == "salon_speaker" {
+			b.WriteString("You are in an Origin Salon — a casual chillout room, NOT a work meeting. Multiple agents take turns speaking to keep the user company. This turn is yours.\n\n")
+		} else {
+			b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat. This is a serial relay (NOT a parallel fan-out): exactly one agent speaks per turn, and you are this turn.\n\n")
+		}
 		if bc.CouncilTopic != "" {
-			fmt.Fprintf(&b, "Council topic: %s\n", bc.CouncilTopic)
+			if bc.Role == "salon_speaker" {
+				fmt.Fprintf(&b, "Salon vibe / topic: %s\n", bc.CouncilTopic)
+			} else {
+				fmt.Fprintf(&b, "Council topic: %s\n", bc.CouncilTopic)
+			}
 		}
 		selfName := bc.SelfAgentName
 		if selfName == "" && task.Agent != nil {
@@ -225,9 +233,65 @@ func buildChatPrompt(task Task) string {
 		if broadcaster == "" {
 			broadcaster = "the user"
 		}
-		fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\nUser said: %q\n\n", broadcaster, bc.UserMessage)
+		if bc.Role == "salon_speaker" {
+			fmt.Fprintf(&b, "\n%s kicked off the salon by saying: %q\n\n", broadcaster, bc.UserMessage)
+		} else {
+			fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\nUser said: %q\n\n", broadcaster, bc.UserMessage)
+		}
 
 		switch bc.Role {
+		case "salon_speaker":
+			// Salon（圆桌客厅）模式：不是来评议方案的，是来陪用户聊天的。
+			// 多 agent 轮流发言，每轮一人，松弛、共情、有腔调，可以跟队友
+			// 接话/吐槽/搭茬，但不要总结、不要列方案、不要做结论。
+			turnIdx := bc.TurnIndex
+			maxTurns := bc.MaxTurns
+			if maxTurns <= 0 {
+				maxTurns = 8
+			}
+			fmt.Fprintf(&b, "This is turn %d of %d in this salon. ", turnIdx, maxTurns)
+			if turnIdx == 1 {
+				b.WriteString("You are opening the room.\n\n")
+			} else if turnIdx >= maxTurns {
+				b.WriteString("This is the final turn — leave the user with a warm closing vibe, not a summary.\n\n")
+			} else {
+				b.WriteString("Pick up naturally from where the room is.\n\n")
+			}
+			if len(bc.Transcript) > 0 {
+				b.WriteString("Conversation so far (read this before you speak):\n")
+				for _, t := range bc.Transcript {
+					speaker := strings.TrimSpace(t.Speaker)
+					if speaker == "" {
+						speaker = "成员"
+					}
+					content := strings.TrimSpace(t.Content)
+					if content == "" {
+						continue
+					}
+					fmt.Fprintf(&b, "  [%s] %s\n", speaker, content)
+				}
+				b.WriteString("\n")
+			}
+			if bc.PriorSpeakerName != "" {
+				fmt.Fprintf(&b, "Prior speaker was: %s. You can riff off what they said, agree, push back, or change the topic.\n\n", bc.PriorSpeakerName)
+			}
+			b.WriteString("You are in salon (chillout) mode, not work mode. Shape:\n\n")
+			b.WriteString("1. Speak as yourself — one short paragraph, 1–4 sentences total.\n")
+			b.WriteString("2. Stay in character. If the prior speaker said something teasable, tease back. If the user shared something heavy, sit with it before reacting.\n")
+			b.WriteString("3. You can address the user OR a teammate by name. Cross-talk is fine.\n")
+			b.WriteString("4. Land on something the next person can pick up — a question, a joke, an opinion, a vibe. Do NOT close the conversation.\n\n")
+			b.WriteString("STRICT bans:\n")
+			b.WriteString("- Do NOT run `multica issue`, `multica council`, or any other CLI workflow. The prompt already contains the message and roster.\n")
+			b.WriteString("- Do NOT create issues, comments, tasks, or records. Your only job is to write the chat reply text.\n")
+			b.WriteString("- Do NOT summarize what's been said.\n")
+			b.WriteString("- Do NOT list bullet points, action items, or next steps.\n")
+			b.WriteString("- Do NOT offer to deliver a document, plan, or analysis.\n")
+			b.WriteString("- Do NOT preface with role boilerplate like \"作为 X…\".\n")
+			b.WriteString("- Do NOT narrate any reasoning steps.\n")
+			b.WriteString("- Do NOT repeat what a prior speaker just said in different words.\n")
+			b.WriteString("- Keep it short. This is conversation, not a memo.\n\n")
+			writeRequestedSkills(&b, task.RequestedSkills)
+			return b.String()
 		case "lead":
 			b.WriteString("You are the team LEAD. Your job this turn is to OPEN THE ROOM as chairperson — NOT to answer the substantive question. Follow this shape strictly:\n\n")
 			b.WriteString("1. Warm acknowledgement of the user, one short sentence.\n")

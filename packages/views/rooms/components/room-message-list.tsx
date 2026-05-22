@@ -17,7 +17,7 @@ export function RoomMessageList({ roomId }: RoomMessageListProps) {
   const fadeStyle = useScrollFade(scrollRef);
   useAutoScroll(scrollRef);
 
-  const { data, isPending } = useQuery(roomMessagesOptions(roomId));
+  const { data, isPending, isError, refetch } = useQuery(roomMessagesOptions(roomId));
   const messages = data?.messages ?? [];
 
   if (isPending) {
@@ -35,6 +35,26 @@ export function RoomMessageList({ roomId }: RoomMessageListProps) {
             <Skeleton className="h-3.5 w-2/3" />
             <Skeleton className="h-3.5 w-5/6" />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-5 text-center">
+        <div className="max-w-sm">
+          <p className="text-sm font-medium text-foreground">消息加载失败</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            网络或后端暂时不可用，稍后重试。
+          </p>
+          <button
+            type="button"
+            className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-muted"
+            onClick={() => void refetch()}
+          >
+            重试
+          </button>
         </div>
       </div>
     );

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { cn } from "@multica/ui/lib/utils";
 import { Button } from "@multica/ui/components/ui/button";
 import { useSendRoomMessage } from "@multica/core/rooms";
+import { toast } from "sonner";
 
 interface RoomMessageInputProps {
   roomId: string;
@@ -19,7 +20,15 @@ export function RoomMessageInput({ roomId }: RoomMessageInputProps) {
     const content = value.trim();
     if (!content || sendMessage.isPending) return;
     setValue("");
-    sendMessage.mutate({ content });
+    sendMessage.mutate(
+      { content },
+      {
+        onError: () => {
+          setValue(content);
+          toast.error("发送失败，内容已保留，请稍后重试");
+        },
+      },
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

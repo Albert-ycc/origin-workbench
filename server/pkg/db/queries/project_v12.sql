@@ -59,6 +59,9 @@ UPDATE project SET status = 'archived', updated_at = now()
 WHERE id = $1
 RETURNING *;
 
+-- name: DeleteProjectV12 :exec
+DELETE FROM project WHERE id = $1;
+
 -- name: IncrementProjectCompactionV12 :one
 UPDATE project SET
     compaction_count = compaction_count + 1,

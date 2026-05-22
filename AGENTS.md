@@ -27,16 +27,41 @@ not part of the Origin user path.
 - `packages/views/`: no `next/*`, no `react-router-dom`; route through the navigation adapter.
 - `apps/desktop/src/renderer/src/platform/`: desktop router wiring belongs here.
 
+## Git Workflow
+
+Before making code changes, read and follow [`docs/git-workflow.md`](docs/git-workflow.md).
+
+- Use one branch and one `git worktree` per task when running parallel agents or
+  parallel feature/bugfix work.
+- Merge `feature/*` and `fix/*` branches into `develop` first for test
+  verification; reserve `main` for production-ready releases.
+- Do not mix unrelated bugs, features, or cleanup in the same branch.
+- Before merging, report what changed, what was verified, and what remains
+  unverified.
+
 ## Common Commands
 
 ```bash
 make selfhost                         # Build/start local PostgreSQL + backend
+docker compose -p multica -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --no-deps --force-recreate backend
 pnpm dev:desktop                      # Run the desktop shell
 pnpm --filter @multica/desktop typecheck
 pnpm --filter @multica/views typecheck
 pnpm --filter @multica/core typecheck
 cd server && go test ./...
 ```
+
+## Runtime Verification
+
+- Business API traffic is served by Docker container `multica-backend-1` on
+  `localhost:8080`; the desktop daemon health port (`127.0.0.1:19544`) is not
+  the API server.
+- After backend route/handler/query changes, rebuild or recreate the existing
+  backend container with Compose project `multica`, then run a real HTTP smoke
+  against `localhost:8080`. Handler tests alone are not enough.
+- When replacing the installed desktop app, keep only two local copies:
+  `/Users/albert/Applications/Origin.app` and one
+  `/Users/albert/Applications/Origin.app.rollback-*`.
 
 ## Build/Storage Hygiene
 

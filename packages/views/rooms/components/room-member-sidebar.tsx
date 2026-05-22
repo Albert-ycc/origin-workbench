@@ -1,11 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { roomMembersOptions } from "@multica/core/rooms";
+import { roomMembersOptions, useRemoveRoomMember } from "@multica/core/rooms";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { agentListOptions } from "@multica/core/workspace/queries";
 import { ActorAvatar } from "@multica/views/common/actor-avatar";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
-import { Users } from "lucide-react";
+import { Trash2, Users } from "lucide-react";
+import { toast } from "sonner";
 
 interface RoomMemberSidebarProps {
   roomId: string;
@@ -13,8 +16,24 @@ interface RoomMemberSidebarProps {
 }
 
 export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProps) {
+  const wsId = useWorkspaceId();
   const { data, isPending } = useQuery(roomMembersOptions(roomId));
+  const { data: agents = [] } = useQuery({
+    ...agentListOptions(wsId),
+    enabled: !!wsId,
+  });
+  const removeMember = useRemoveRoomMember(roomId);
   const members = data?.members ?? [];
+  const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+
+  const handleRemoveAgent = async (agentId: string, name: string) => {
+    try {
+      await removeMember.mutateAsync(agentId);
+      toast.success(`已移除「${name}」`);
+    } catch {
+      toast.error("移除成员失败");
+    }
+  };
 
   return (
     <div
@@ -56,22 +75,39 @@ export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProp
             还没有成员
           </p>
         ) : (
-          members.map((member) => (
-            <div key={member.agent_id} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-default">
-              <ActorAvatar
-                actorType="agent"
-                actorId={member.agent_id}
-                size={24}
-                showStatusDot
-              />
-              <span
-                className="text-xs truncate flex-1"
-                style={{ color: "var(--living-text-primary, #1F2329)" }}
-              >
-                {member.agent_id}
-              </span>
-            </div>
-          ))
+          members.map((member) => {
+            const agentId = member.agent_id ?? member.member_id;
+            const agent = member.member_type === "agent" ? agentById.get(agentId) : undefined;
+            return (
+              <div key={member.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors cursor-default">
+                <ActorAvatar
+                  actorType="agent"
+                  actorId={agentId}
+                  size={24}
+                  showStatusDot
+                />
+                <span
+                  className="text-xs truncate flex-1"
+                  style={{ color: "var(--living-text-primary, #1F2329)" }}
+                  title={agent?.name ?? agentId}
+                >
+                  {agent?.name ?? agentId}
+                </span>
+                {member.member_type === "agent" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    aria-label={`移除${agent?.name ?? agentId}`}
+                    disabled={removeMember.isPending}
+                    onClick={() => void handleRemoveAgent(agentId, agent?.name ?? agentId)}
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>

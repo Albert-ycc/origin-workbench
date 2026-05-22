@@ -48,7 +48,7 @@ const (
 	// payload 字段：task_id, message_id, content（完整消息文本），input_tokens, output_tokens。
 	// 前端收到此事件后可将累加缓冲区替换为最终权威内容。
 	EventTaskMessageComplete = "task:message_complete"
-	EventTaskCancelled = "task:cancelled" // * → cancelled
+	EventTaskCancelled       = "task:cancelled" // * → cancelled
 
 	// Inbox events
 	EventInboxNew           = "inbox:new"
@@ -156,6 +156,7 @@ const (
 	EventMeetingUpdated                  = "meeting:updated"
 	EventMeetingStarted                  = "meeting:started"
 	EventMeetingStopped                  = "meeting:stopped"
+	EventMeetingDeleted                  = "meeting:deleted"
 	EventMeetingTranscriptSegmentCreated = "meeting:transcript_segment_created"
 	EventMeetingInsightCreated           = "meeting:insight_created"
 	EventMeetingInsightUpdated           = "meeting:insight_updated"

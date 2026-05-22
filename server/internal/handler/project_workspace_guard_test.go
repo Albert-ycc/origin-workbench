@@ -162,6 +162,41 @@ func TestCreateProjectV12RejectsArchivedAgent(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectV12RemovesProjectFromList(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	fixture := createMeetingProjectFixture(t, "project-delete")
+
+	w := httptest.NewRecorder()
+	req := withURLParam(newRequest(http.MethodDelete, "/api/v12/projects/"+fixture.ProjectID+"?workspace_id="+testWorkspaceID, nil), "id", fixture.ProjectID)
+	testHandler.DeleteProjectV12(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DeleteProjectV12: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest(http.MethodGet, "/api/v12/projects?workspace_id="+testWorkspaceID, nil)
+	testHandler.ListProjectsV12(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListProjectsV12: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var list struct {
+		Projects []struct {
+			ID string `json:"id"`
+		} `json:"projects"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&list); err != nil {
+		t.Fatalf("decode project list: %v", err)
+	}
+	for _, project := range list.Projects {
+		if project.ID == fixture.ProjectID {
+			t.Fatalf("deleted project still appeared in project list")
+		}
+	}
+}
+
 func TestIssueRejectsForeignProjectIDOnCreateAndUpdate(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

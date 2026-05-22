@@ -632,6 +632,25 @@ func (h *Handler) ArchiveMeetingSession(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) DeleteMeetingSession(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Queries.DeleteMeetingSession(r.Context(), db.DeleteMeetingSessionParams{
+		ID:          meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete meeting")
+		return
+	}
+	h.publish(protocol.EventMeetingDeleted, uuidToString(meeting.WorkspaceID), "member", requestUserID(r), map[string]any{
+		"meeting_id": uuidToString(meeting.ID),
+		"project_id": uuidToString(meeting.ProjectID),
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) GetMeetingSummary(w http.ResponseWriter, r *http.Request) {
 	meeting, ok := h.meetingFromURL(w, r)
 	if !ok {

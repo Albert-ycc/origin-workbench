@@ -36,6 +36,7 @@ import type {
   Agent,
   CouncilActivityLevel,
   CouncilSession,
+  CouncilSessionMode,
   CouncilSessionParticipant,
 } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
@@ -44,6 +45,7 @@ import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
+import { DragStrip } from "../platform";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 
 export function CouncilsPage() {
@@ -72,6 +74,7 @@ export function CouncilsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <DragStrip />
       <PageHeader className="gap-1.5">
         <WorkspaceAvatar name={workspace?.name ?? "O"} size="sm" />
         <span className="text-sm text-muted-foreground">Origin</span>
@@ -99,7 +102,11 @@ export function CouncilsPage() {
                 <Badge variant={selectedSession.status === "running" ? "default" : "secondary"}>
                   {labelForStatus(selectedSession.status)}
                 </Badge>
-                <Badge variant="outline">{labelForActivity(selectedSession.activity_level)}</Badge>
+                <Badge variant="outline">
+                  {selectedSession.mode === "salon"
+                    ? `沙龙 · ${selectedSession.max_turns} 轮`
+                    : labelForActivity(selectedSession.activity_level)}
+                </Badge>
               </div>
             </div>
 
@@ -163,22 +170,30 @@ function ConveneSession({
 }) {
   const [topic, setTopic] = useState("");
   const [activityLevel, setActivityLevel] = useState<CouncilActivityLevel>("concise");
+  const [mode, setMode] = useState<CouncilSessionMode>("relay");
+  const [maxTurns, setMaxTurns] = useState<number>(6);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const create = useCreateCouncilSession();
 
   const submit = async () => {
     const trimmed = topic.trim();
     if (!trimmed) return;
+    if (mode === "salon" && selectedAgentIds.length < 2) {
+      toast.error("沙龙至少需要 2 位陪伴 Agent");
+      return;
+    }
     try {
       const created = await create.mutateAsync({
         topic: trimmed,
         activity_level: activityLevel,
         participant_agent_ids: selectedAgentIds,
+        mode,
+        max_turns: mode === "salon" ? maxTurns : undefined,
       });
       setTopic("");
       setSelectedAgentIds([]);
       onCreated?.(created.session.id);
-      toast.success("会议室已开");
+      toast.success(mode === "salon" ? "沙龙已开张，Agent 即将轮流发言" : "会议室已开");
     } catch (err) {
       toast.error("召开失败", { description: err instanceof Error ? err.message : String(err) });
     }
@@ -190,6 +205,8 @@ function ConveneSession({
     );
   };
 
+  const isSalon = mode === "salon";
+
   return (
     <section className="rounded-lg border bg-card">
       <div className="flex items-center justify-between gap-3 border-b p-4">
@@ -198,35 +215,79 @@ function ConveneSession({
             <Users className="size-4" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">新建会议</h2>
-            <p className="text-sm text-muted-foreground">填写议题，选择参会 Agent。</p>
+            <h2 className="text-base font-semibold">{isSalon ? "开沙龙" : "新建会议"}</h2>
+            <p className="text-sm text-muted-foreground">
+              {isSalon
+                ? "选几个 Agent 进来陪你聊。他们会自动轮流发言。"
+                : "填写议题，选择参会 Agent。"}
+            </p>
           </div>
         </div>
       </div>
       <div className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">模式：</span>
+          <Button
+            size="sm"
+            variant={mode === "relay" ? "default" : "outline"}
+            onClick={() => setMode("relay")}
+          >
+            决议室
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === "salon" ? "default" : "outline"}
+            onClick={() => setMode("salon")}
+          >
+            沙龙客厅
+          </Button>
+        </div>
+
         <Textarea
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          placeholder="议题：要让多个角色对齐什么？"
+          placeholder={
+            isSalon
+              ? "随便说点什么开个场：今天好累 / 帮我吐槽下这事 / 想被夸夸…"
+              : "议题：要让多个角色对齐什么？"
+          }
           rows={2}
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">活跃度：</span>
-          {(["quiet", "concise", "lively"] as const).map((lv) => (
-            <Button
-              key={lv}
-              size="sm"
-              variant={activityLevel === lv ? "default" : "outline"}
-              onClick={() => setActivityLevel(lv)}
-            >
-              {labelForActivity(lv)}
-            </Button>
-          ))}
-        </div>
+        {!isSalon ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">活跃度：</span>
+            {(["quiet", "concise", "lively"] as const).map((lv) => (
+              <Button
+                key={lv}
+                size="sm"
+                variant={activityLevel === lv ? "default" : "outline"}
+                onClick={() => setActivityLevel(lv)}
+              >
+                {labelForActivity(lv)}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">轮数：</span>
+            {[4, 6, 8, 12].map((n) => (
+              <Button
+                key={n}
+                size="sm"
+                variant={maxTurns === n ? "default" : "outline"}
+                onClick={() => setMaxTurns(n)}
+              >
+                {n} 轮
+              </Button>
+            ))}
+          </div>
+        )}
 
         <div>
-          <div className="mb-2 text-xs text-muted-foreground">参会角色（可选）：</div>
+          <div className="mb-2 text-xs text-muted-foreground">
+            {isSalon ? "陪伴角色（至少 2 位）：" : "参会角色（可选）："}
+          </div>
           <div className="flex flex-wrap gap-2">
             {agents.length === 0 ? (
               <span className="text-xs text-muted-foreground">还没有可选 Agent</span>
@@ -246,9 +307,13 @@ function ConveneSession({
         </div>
 
         <div className="flex justify-end">
-          <Button size="sm" onClick={submit} disabled={!topic.trim() || create.isPending}>
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={!topic.trim() || create.isPending || (isSalon && selectedAgentIds.length < 2)}
+          >
             {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-            召开会议
+            {isSalon ? "开张沙龙" : "召开会议"}
           </Button>
         </div>
       </div>
@@ -299,11 +364,19 @@ function SessionsList({
         {sessions.map((s) => (
           <li
             key={s.id}
+            role="button"
+            tabIndex={0}
             className={cn(
               "cursor-pointer p-4 transition-colors hover:bg-muted/40",
               selectedId === s.id && "bg-muted/60",
             )}
             onClick={() => onSelect(s.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(s.id);
+              }
+            }}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -315,9 +388,15 @@ function SessionsList({
                   <Badge variant={s.status === "running" ? "default" : "secondary"} className="text-[10px]">
                     {labelForStatus(s.status)}
                   </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {labelForActivity(s.activity_level)}
-                  </Badge>
+                  {s.mode === "salon" ? (
+                    <Badge variant="outline" className="text-[10px]">
+                      沙龙 · {s.max_turns} 轮
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">
+                      {labelForActivity(s.activity_level)}
+                    </Badge>
+                  )}
                   <span className="ml-auto">{formatRelativeTime(s.updated_at)}</span>
                 </div>
               </div>
@@ -354,9 +433,9 @@ function SessionInteractionPanel({
     return (
       <section className="rounded-lg border bg-card p-6 text-center">
         <MessageSquareText className="mx-auto size-7 text-muted-foreground" />
-        <h2 className="mt-3 text-sm font-semibold">发言 / 追问</h2>
+        <h2 className="mt-3 text-sm font-semibold">私聊 / 追问</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          先召开一个会议，然后在这里选择参会 Agent 发言。
+          先召开一个会议，然后在这里选择参会 Agent 私聊追问。
         </p>
       </section>
     );
@@ -374,7 +453,7 @@ function SessionInteractionPanel({
     <section className="rounded-lg border bg-card">
       <div className="flex items-center justify-between gap-3 border-b p-4">
         <div>
-          <h2 className="text-sm font-semibold">发言 / 追问</h2>
+          <h2 className="text-sm font-semibold">私聊 / 追问</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             写一句要带进会议的话，再选择一个参会 Agent。消息会在 Direct Chat 中打开，带上当前会议上下文。
           </p>
@@ -388,7 +467,7 @@ function SessionInteractionPanel({
           <Skeleton className="h-24 w-full" />
         ) : activeParticipants.length === 0 ? (
           <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            还没有参会 Agent。先在右侧加人，再开始发言。
+            还没有参会 Agent。先在右侧加人，再开始私聊追问。
           </div>
         ) : (
           <>
@@ -409,7 +488,7 @@ function SessionInteractionPanel({
                   onClick={() => openAgentChat(p.agent_id)}
                 >
                   <Send className="size-3.5" />
-                  向 {agentNameById(agents, p.agent_id)} 发言
+                  私聊 {agentNameById(agents, p.agent_id)}
                 </Button>
               ))}
             </div>
@@ -511,7 +590,7 @@ function SessionDetailPanel({
                       }
                     >
                       <MessageSquareText className="size-3" />
-                      发言
+                      私聊
                     </Button>
                     <Button
                       size="sm"

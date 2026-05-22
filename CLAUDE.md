@@ -71,6 +71,7 @@ Without it, chromium subprocess fork uses the npm `name`
 # Local runtime
 make selfhost                         # Build/start PostgreSQL + backend
 make selfhost-stop                    # Stop local Docker Compose services
+docker compose -p multica -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --no-deps --force-recreate backend
 pnpm dev:desktop                      # Run Electron desktop dev app
 
 # TypeScript checks
@@ -91,6 +92,29 @@ make sqlc
 cd server && go run ./cmd/migrate up
 cd server && go run ./cmd/server
 ```
+
+## Runtime Last Mile
+
+`localhost:8080` is served by the Docker backend container
+`multica-backend-1`. The desktop daemon health server runs separately on a
+profile-derived port such as `127.0.0.1:19544`; do not use that daemon port to
+verify business APIs.
+
+For backend route, handler, SQL, or generated sqlc changes, "done" requires:
+
+1. Fastest relevant unit tests for the touched code.
+2. Rebuild/recreate the existing Docker backend on Compose project `multica`.
+3. Authenticated HTTP smoke against `http://localhost:8080` for the changed
+   route.
+
+Use `-p multica` when recreating the existing backend. Without it, Compose may
+use the file-level project name `origin` and try to create `origin-postgres-1`,
+which collides with the existing `multica-postgres-1` port 5432.
+
+The installed desktop app directory should keep exactly two versions: current
+`/Users/albert/Applications/Origin.app` and one rollback directory named
+`Origin.app.rollback-*`. Do not accumulate historical `.app` bundles in
+`/Users/albert/Applications`.
 
 ## Coding Rules
 

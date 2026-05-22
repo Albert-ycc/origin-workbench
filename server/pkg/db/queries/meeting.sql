@@ -86,6 +86,9 @@ UPDATE meeting_session SET
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 
+-- name: DeleteMeetingSession :exec
+DELETE FROM meeting_session WHERE id = $1 AND workspace_id = $2;
+
 -- name: GetMeetingSummary :one
 SELECT
     meeting_id,

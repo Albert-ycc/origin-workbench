@@ -36,6 +36,10 @@ type CouncilSessionResponse struct {
 	EndedAt             *string `json:"ended_at"`
 	CreatedAt           string  `json:"created_at"`
 	UpdatedAt           string  `json:"updated_at"`
+	// Salon mode 扩展（v1.0.14）。Mode="relay" 是原有的 lead/follower 决议模式；
+	// Mode="salon" 是圆桌客厅，多 agent 轮转陪伴用户，每场最多 MaxTurns 轮。
+	Mode     string `json:"mode"`
+	MaxTurns int    `json:"max_turns"`
 }
 
 type CouncilSessionParticipantResponse struct {
@@ -62,17 +66,20 @@ type ListCouncilSessionsResponse struct {
 // =====================
 
 type CreateCouncilSessionRequest struct {
-	Topic                string   `json:"topic"`
-	Summary              string   `json:"summary"`
-	ActivityLevel        string   `json:"activity_level"`
-	ConvenerAgentID      *string  `json:"convener_agent_id"`
-	RelatedMissionID     *string  `json:"related_mission_id"`
-	RelatedIdeaID        *string  `json:"related_idea_id"`
-	SourceChatSessionID  *string  `json:"source_chat_session_id"`
+	Topic               string  `json:"topic"`
+	Summary             string  `json:"summary"`
+	ActivityLevel       string  `json:"activity_level"`
+	ConvenerAgentID     *string `json:"convener_agent_id"`
+	RelatedMissionID    *string `json:"related_mission_id"`
+	RelatedIdeaID       *string `json:"related_idea_id"`
+	SourceChatSessionID *string `json:"source_chat_session_id"`
 	// PRD §17.6 — when convened from a project workspace's main chat,
 	// project_id binds the council so adjourn writes back to memory_doc.
-	ProjectID            *string  `json:"project_id"`
-	ParticipantAgentIDs  []string `json:"participant_agent_ids"`
+	ProjectID           *string  `json:"project_id"`
+	ParticipantAgentIDs []string `json:"participant_agent_ids"`
+	// Salon mode（v1.0.14）。Mode 留空走 "relay" 默认；"salon" 启用圆桌客厅。
+	Mode     *string `json:"mode,omitempty"`
+	MaxTurns *int    `json:"max_turns,omitempty"`
 }
 
 type UpdateCouncilSessionRequest struct {
@@ -118,6 +125,8 @@ func councilSessionToResponse(s db.CouncilSession) CouncilSessionResponse {
 		EndedAt:             endedAt,
 		CreatedAt:           timestampToString(s.CreatedAt),
 		UpdatedAt:           timestampToString(s.UpdatedAt),
+		Mode:                s.Mode,
+		MaxTurns:            int(s.MaxTurns),
 	}
 }
 
@@ -144,6 +153,37 @@ func normalizeActivityLevel(raw string) string {
 	default:
 		return "concise"
 	}
+}
+
+// normalizeCouncilMode 把请求里的 mode 字符串规整成 schema 允许的取值。
+// 默认 "relay"（lead/follower 决议模式），"salon" 启用圆桌客厅。
+func normalizeCouncilMode(raw *string) string {
+	if raw == nil {
+		return "relay"
+	}
+	switch strings.TrimSpace(*raw) {
+	case "salon":
+		return "salon"
+	default:
+		return "relay"
+	}
+}
+
+// clampMaxTurns 把请求里的 max_turns 限制在 schema CHECK 允许的 [2, 24] 区间。
+// nil 或非法值落到 default 8。
+func clampMaxTurns(raw *int) int32 {
+	const defaultTurns int32 = 8
+	if raw == nil {
+		return defaultTurns
+	}
+	v := *raw
+	if v < 2 {
+		return 2
+	}
+	if v > 24 {
+		return 24
+	}
+	return int32(v)
 }
 
 func normalizeParticipantRole(raw string) string {
@@ -268,6 +308,8 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	normalizedMode := normalizeCouncilMode(req.Mode)
+	maxTurns := clampMaxTurns(req.MaxTurns)
 	params := db.CreateCouncilSessionParams{
 		WorkspaceID:    wsUUID,
 		ConvenerUserID: userUUID,
@@ -275,6 +317,8 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 		Summary:        strings.TrimSpace(req.Summary),
 		ActivityLevel:  normalizeActivityLevel(req.ActivityLevel),
 		Status:         "running",
+		Mode:           pgtype.Text{String: normalizedMode, Valid: true},
+		MaxTurns:       pgtype.Int4{Int32: maxTurns, Valid: true},
 	}
 
 	if req.ConvenerAgentID != nil && strings.TrimSpace(*req.ConvenerAgentID) != "" {
@@ -316,6 +360,13 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		if _, err := h.Queries.GetChatSessionInWorkspace(r.Context(), db.GetChatSessionInWorkspaceParams{
+			ID:          uuid,
+			WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "source_chat_session_id must be a chat session in this workspace")
+			return
+		}
 		params.SourceChatSessionID = uuid
 	}
 	if req.ProjectID != nil && strings.TrimSpace(*req.ProjectID) != "" {
@@ -347,40 +398,69 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 		seen[raw] = true
 		participantUUIDs = append(participantUUIDs, uuid)
 	}
+	if params.ConvenerAgentID.Valid && !seen[uuidToString(params.ConvenerAgentID)] {
+		seen[uuidToString(params.ConvenerAgentID)] = true
+		participantUUIDs = append(participantUUIDs, params.ConvenerAgentID)
+	}
 
-	session, err := h.Queries.CreateCouncilSession(r.Context(), params)
+	// Salon 模式：在创建 council 之前预建一个 chat_session 作为消息载体，
+	// 把它的 ID 写进 params.SourceChatSessionID。后续 kickoff broadcast 会
+	// 用这个 chat_session 发轮转任务和挂 chat_message。chat_session.agent_id
+	// 必须非空（schema 约束），用第一位参与者顶上仅满足约束，不影响 salon
+	// 多 agent 轮转语义。
+	var salonChatSession db.ChatSession
+	salonChatSessionReady := false
+	if normalizedMode == "salon" && len(participantUUIDs) > 0 {
+		if params.SourceChatSessionID.Valid {
+			cs, err := h.Queries.GetChatSessionInWorkspace(r.Context(), db.GetChatSessionInWorkspaceParams{
+				ID:          params.SourceChatSessionID,
+				WorkspaceID: wsUUID,
+			})
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "source_chat_session_id must be a chat session in this workspace")
+				return
+			}
+			salonChatSession = cs
+			salonChatSessionReady = true
+		}
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create council session")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	if normalizedMode == "salon" && len(participantUUIDs) > 0 && !params.SourceChatSessionID.Valid {
+		cs, err := qtx.CreateChatSession(r.Context(), db.CreateChatSessionParams{
+			WorkspaceID: wsUUID,
+			AgentID:     participantUUIDs[0],
+			CreatorID:   userUUID,
+			Title:       req.Topic,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create salon chat session")
+			return
+		}
+		params.SourceChatSessionID = cs.ID
+		salonChatSession = cs
+		salonChatSessionReady = true
+	}
+
+	session, err := qtx.CreateCouncilSession(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create council session")
 		return
 	}
 
-	// If a convener agent was set, ensure it appears in the participant list
-	if params.ConvenerAgentID.Valid {
-		convenerInList := false
-		for _, p := range participantUUIDs {
-			if p == params.ConvenerAgentID {
-				convenerInList = true
-				break
-			}
-		}
-		if !convenerInList {
-			if _, err := h.Queries.AddCouncilSessionParticipant(r.Context(), db.AddCouncilSessionParticipantParams{
-				SessionID: session.ID,
-				AgentID:   params.ConvenerAgentID,
-				Role:      "convener",
-			}); err != nil {
-				// non-fatal: log and continue, the session already exists
-				writeError(w, http.StatusInternalServerError, "failed to add convener as participant")
-				return
-			}
-		}
-	}
 	for _, agentUUID := range participantUUIDs {
 		role := "member"
 		if agentUUID == params.ConvenerAgentID {
 			role = "convener"
 		}
-		if _, err := h.Queries.AddCouncilSessionParticipant(r.Context(), db.AddCouncilSessionParticipantParams{
+		if _, err := qtx.AddCouncilSessionParticipant(r.Context(), db.AddCouncilSessionParticipantParams{
 			SessionID: session.ID,
 			AgentID:   agentUUID,
 			Role:      role,
@@ -388,6 +468,11 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to add participant")
 			return
 		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create council session")
+		return
 	}
 
 	// Reload participants for response
@@ -398,6 +483,17 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 	}
 	for i, p := range participants {
 		resp.Participants[i] = councilParticipantToResponse(p)
+	}
+
+	// Salon（圆桌客厅）创建即开场：kickoff salon broadcast 让第一位发言者
+	// 开口。chat_session 已在 council create 之前预建（见上方 salon 分支），
+	// kickoff 失败不阻断会议创建。
+	if salonChatSessionReady {
+		if _, err := h.TaskService.EnqueueCouncilBroadcastTasks(
+			r.Context(), salonChatSession, session, req.Topic, "user", userID, "",
+		); err != nil {
+			slog.Warn("salon: kickoff broadcast failed", "council_id", uuidToString(session.ID), "error", err)
+		}
 	}
 
 	h.publish(protocol.EventCouncilCreated, uuidToString(session.WorkspaceID), "member", userID, map[string]any{"session": resp.Session})

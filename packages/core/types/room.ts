@@ -8,15 +8,22 @@ export interface Room {
   workspace_id: string;
   name: string;
   description?: string | null;
+  theme?: string;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  last_active_at?: string;
 }
 
 export interface RoomMember {
+  id: string;
   room_id: string;
-  agent_id: string;
+  member_type: "user" | "agent";
+  member_id: string;
+  agent_id?: string;
+  role: "owner" | "participant";
   joined_at: string;
+  left_at?: string | null;
 }
 
 export interface RoomMessage {
@@ -49,11 +56,16 @@ export interface UpdateRoomRequest {
 }
 
 export interface AddRoomMemberRequest {
-  agent_id: string;
+  member_type?: "user" | "agent";
+  member_id?: string;
+  agent_id?: string;
+  role?: "owner" | "participant";
 }
 
 export interface SendRoomMessageRequest {
   content: string;
+  reply_to_message_id?: string;
+  mentions?: string[];
   mention_agent_ids?: string[];
 }
 

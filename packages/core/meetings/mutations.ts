@@ -71,6 +71,20 @@ export function useArchiveMeetingSession(wsId: string) {
   });
 }
 
+export function useDeleteMeetingSession(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteMeeting(id),
+    onSuccess: (_data, id) => {
+      qc.removeQueries({ queryKey: meetingKeys.detail(wsId, id) });
+      qc.removeQueries({ queryKey: meetingKeys.transcript(wsId, id) });
+      qc.removeQueries({ queryKey: meetingKeys.insights(wsId, id) });
+      qc.removeQueries({ queryKey: meetingKeys.summary(wsId, id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.all(wsId) });
+    },
+  });
+}
+
 export function useGenerateMeetingSummary(wsId: string) {
   const qc = useQueryClient();
   return useMutation({

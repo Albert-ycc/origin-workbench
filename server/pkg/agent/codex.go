@@ -358,13 +358,19 @@ func (c *codexClient) startOrResumeThread(ctx context.Context, opts ExecOptions,
 		}
 	}
 
+	approvalPolicy := any(nil)
+	sandbox := any(nil)
+	if opts.DisableTools {
+		approvalPolicy = "untrusted"
+		sandbox = "read-only"
+	}
 	startResult, err := c.request(ctx, "thread/start", map[string]any{
 		"model":                  nilIfEmpty(opts.Model),
 		"modelProvider":          nil,
 		"profile":                nil,
 		"cwd":                    opts.Cwd,
-		"approvalPolicy":         nil,
-		"sandbox":                nil,
+		"approvalPolicy":         approvalPolicy,
+		"sandbox":                sandbox,
 		"config":                 nil,
 		"baseInstructions":       nil,
 		"developerInstructions":  nilIfEmpty(opts.SystemPrompt),

@@ -1,13 +1,17 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -28,14 +32,24 @@ type RoomResponse struct {
 	LastActiveAt string  `json:"last_active_at"`
 }
 
+type ListRoomsResponse struct {
+	Rooms []RoomResponse `json:"rooms"`
+	Total int            `json:"total"`
+}
+
 type RoomMemberResponse struct {
 	ID         string  `json:"id"`
 	RoomID     string  `json:"room_id"`
 	MemberType string  `json:"member_type"`
 	MemberID   string  `json:"member_id"`
+	AgentID    string  `json:"agent_id,omitempty"`
 	Role       string  `json:"role"`
 	JoinedAt   string  `json:"joined_at"`
 	LeftAt     *string `json:"left_at"`
+}
+
+type ListRoomMembersResponse struct {
+	Members []RoomMemberResponse `json:"members"`
 }
 
 type RoomMessageResponse struct {
@@ -43,11 +57,22 @@ type RoomMessageResponse struct {
 	RoomID           string   `json:"room_id"`
 	SenderType       string   `json:"sender_type"`
 	SenderID         string   `json:"sender_id"`
+	SenderName       string   `json:"sender_name,omitempty"`
 	Content          string   `json:"content"`
 	ReplyToMessageID *string  `json:"reply_to_message_id"`
 	Mentions         []string `json:"mentions"`
 	IsAutonomous     bool     `json:"is_autonomous"`
 	CreatedAt        string   `json:"created_at"`
+}
+
+type ListRoomMessagesResponse struct {
+	Messages   []RoomMessageResponse `json:"messages"`
+	NextCursor *string               `json:"next_cursor,omitempty"`
+}
+
+type roomMessageCursor struct {
+	CreatedAt string `json:"created_at"`
+	ID        string `json:"id"`
 }
 
 type RoomAgentPersonaResponse struct {
@@ -64,9 +89,10 @@ type RoomAgentPersonaResponse struct {
 // ---------------------------------------------------------------------------
 
 type CreateRoomRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Theme       string `json:"theme"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Theme       string   `json:"theme"`
+	AgentIDs    []string `json:"agent_ids"`
 }
 
 type UpdateRoomRequest struct {
@@ -78,6 +104,7 @@ type UpdateRoomRequest struct {
 type AddRoomMemberRequest struct {
 	MemberType string `json:"member_type"`
 	MemberID   string `json:"member_id"`
+	AgentID    string `json:"agent_id"`
 	Role       string `json:"role"`
 }
 
@@ -85,6 +112,7 @@ type SendRoomMessageRequest struct {
 	Content          string   `json:"content"`
 	ReplyToMessageID *string  `json:"reply_to_message_id"`
 	Mentions         []string `json:"mentions"`
+	MentionAgentIDs  []string `json:"mention_agent_ids"`
 }
 
 type UpsertRoomAgentPersonaRequest struct {
@@ -123,7 +151,7 @@ func roomToResponse(r db.Room) RoomResponse {
 }
 
 func roomMemberToResponse(m db.RoomMember) RoomMemberResponse {
-	return RoomMemberResponse{
+	resp := RoomMemberResponse{
 		ID:         uuidToString(m.ID),
 		RoomID:     uuidToString(m.RoomID),
 		MemberType: m.MemberType,
@@ -132,6 +160,10 @@ func roomMemberToResponse(m db.RoomMember) RoomMemberResponse {
 		JoinedAt:   timestampToString(m.JoinedAt),
 		LeftAt:     timestampToPtr(m.LeftAt),
 	}
+	if m.MemberType == "agent" {
+		resp.AgentID = resp.MemberID
+	}
+	return resp
 }
 
 func roomMessageToResponse(m db.RoomMessage) RoomMessageResponse {
@@ -150,6 +182,44 @@ func roomMessageToResponse(m db.RoomMessage) RoomMessageResponse {
 		IsAutonomous:     m.IsAutonomous,
 		CreatedAt:        timestampToString(m.CreatedAt),
 	}
+}
+
+func encodeRoomMessageCursor(msg db.RoomMessage) string {
+	createdAt := timestampToString(msg.CreatedAt)
+	if msg.CreatedAt.Valid {
+		createdAt = msg.CreatedAt.Time.Format(time.RFC3339Nano)
+	}
+	raw, _ := json.Marshal(roomMessageCursor{
+		CreatedAt: createdAt,
+		ID:        uuidToString(msg.ID),
+	})
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func decodeRoomMessageCursor(raw string) (pgtype.Timestamptz, pgtype.UUID, bool) {
+	if raw == "" {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, true
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return pgtype.Timestamptz{Time: ts, Valid: true}, pgtype.UUID{}, true
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	var cur roomMessageCursor
+	if err := json.Unmarshal(decoded, &cur); err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, cur.CreatedAt)
+	if err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	id, err := util.ParseUUID(cur.ID)
+	if err != nil {
+		return pgtype.Timestamptz{}, pgtype.UUID{}, false
+	}
+	return pgtype.Timestamptz{Time: ts, Valid: true}, id, true
 }
 
 func roomAgentPersonaToResponse(p db.RoomAgentPersona) RoomAgentPersonaResponse {
@@ -214,7 +284,7 @@ func (h *Handler) ListRooms(w http.ResponseWriter, r *http.Request) {
 	for i, room := range rooms {
 		resp[i] = roomToResponse(room)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, ListRoomsResponse{Rooms: resp, Total: len(resp)})
 }
 
 func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
@@ -237,18 +307,57 @@ func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	agentUUIDs := make([]pgtype.UUID, 0, len(req.AgentIDs))
+	for _, agentID := range req.AgentIDs {
+		agentUUID, ok := parseUUIDOrBadRequest(w, agentID, "agent_id")
+		if !ok {
+			return
+		}
+		if _, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID:          agentUUID,
+			WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "agent not found in this workspace")
+			return
+		}
+		agentUUIDs = append(agentUUIDs, agentUUID)
+	}
+
 	theme := req.Theme
 	if theme == "" {
 		theme = "default"
 	}
 
-	room, err := h.Queries.CreateRoom(r.Context(), db.CreateRoomParams{
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create room")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	room, err := qtx.CreateRoom(r.Context(), db.CreateRoomParams{
 		WorkspaceID: wsUUID,
 		Name:        req.Name,
 		Description: req.Description,
 		Theme:       theme,
 	})
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create room")
+		return
+	}
+	for _, agentUUID := range agentUUIDs {
+		if _, err := qtx.AddRoomMember(r.Context(), db.AddRoomMemberParams{
+			RoomID:     room.ID,
+			MemberType: "agent",
+			MemberID:   agentUUID,
+			Role:       "participant",
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to add room member")
+			return
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create room")
 		return
 	}
@@ -341,11 +450,6 @@ func (h *Handler) DeleteRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !room.ArchivedAt.Valid {
-		writeError(w, http.StatusBadRequest, "room must be archived before deletion")
-		return
-	}
-
 	if err := h.Queries.DeleteRoom(r.Context(), room.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete room")
 		return
@@ -370,22 +474,66 @@ func (h *Handler) ListRoomMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit := int32(50)
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		if n > 100 {
+			n = 100
+		}
+		limit = int32(n)
+	}
+	var before pgtype.Timestamptz
+	var beforeID pgtype.UUID
+	rawCursor := r.URL.Query().Get("cursor")
+	if rawCursor == "" {
+		rawCursor = r.URL.Query().Get("before")
+	}
+	if rawCursor != "" {
+		var ok bool
+		before, beforeID, ok = decodeRoomMessageCursor(rawCursor)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
+	}
+
 	rows, err := h.Queries.ListRoomMessages(r.Context(), db.ListRoomMessagesParams{
 		RoomID:          room.ID,
-		BeforeCreatedAt: pgtype.Timestamptz{},
-		BeforeID:        pgtype.UUID{},
-		LimitCount:      50,
+		BeforeCreatedAt: before,
+		BeforeID:        beforeID,
+		LimitCount:      limit + 1,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list room messages")
 		return
 	}
+	hasMore := len(rows) > int(limit)
+	if hasMore {
+		rows = rows[:limit]
+	}
 
 	resp := make([]RoomMessageResponse, len(rows))
 	for i, msg := range rows {
-		resp[i] = roomMessageToResponse(msg)
+		// The query fetches the latest page in descending order for cursor
+		// efficiency; the chat UI renders oldest-to-newest.
+		item := roomMessageToResponse(msg)
+		if msg.SenderType == "agent" {
+			if agent, err := h.Queries.GetAgent(r.Context(), msg.SenderID); err == nil {
+				item.SenderName = agent.Name
+			}
+		}
+		resp[len(rows)-1-i] = item
 	}
-	writeJSON(w, http.StatusOK, resp)
+	var nextCursor *string
+	if hasMore && len(rows) > 0 {
+		cursor := encodeRoomMessageCursor(rows[len(rows)-1])
+		nextCursor = &cursor
+	}
+	writeJSON(w, http.StatusOK, ListRoomMessagesResponse{Messages: resp, NextCursor: nextCursor})
 }
 
 func (h *Handler) SendRoomMessage(w http.ResponseWriter, r *http.Request) {
@@ -421,6 +569,9 @@ func (h *Handler) SendRoomMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mentions := req.Mentions
+	if mentions == nil {
+		mentions = req.MentionAgentIDs
+	}
 	if mentions == nil {
 		mentions = []string{}
 	}
@@ -465,15 +616,14 @@ func (h *Handler) SendRoomMessage(w http.ResponseWriter, r *http.Request) {
 			"room_id", uuidToString(room.ID), "error", err)
 	}
 
-	// 5. 决策 A：mentions 非空时触发 agent fan-out（单 @ 也走 broadcast context）
-	if len(mentions) > 0 {
-		if err := h.TaskService.EnqueueRoomChatTasks(
-			r.Context(), h.Queries, room, msg, userID, workspaceID, h,
-		); err != nil {
-			// fan-out 失败不阻断消息发送，降级处理
-			slog.Warn("room chat task fan-out failed",
-				"room_id", uuidToString(room.ID), "error", err)
-		}
+	// 5. 触发 agent fan-out。普通消息默认让所有 active agent 接话；
+	// mentions 非空时由 service 层收窄到 @all 或被 @ 的 agent。
+	if err := h.TaskService.EnqueueRoomChatTasks(
+		r.Context(), h.Queries, room, msg, userID, workspaceID, h,
+	); err != nil {
+		// fan-out 失败不阻断消息发送，降级处理
+		slog.Warn("room chat task fan-out failed",
+			"room_id", uuidToString(room.ID), "error", err)
 	}
 
 	writeJSON(w, http.StatusCreated, roomMessageToResponse(msg))
@@ -482,6 +632,31 @@ func (h *Handler) SendRoomMessage(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Room Members
 // ---------------------------------------------------------------------------
+
+func (h *Handler) ListRoomMembers(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := h.resolveWorkspaceID(r)
+
+	room, ok := h.loadRoomForWorkspace(w, r, workspaceID)
+	if !ok {
+		return
+	}
+
+	rows, err := h.Queries.ListRoomMembers(r.Context(), room.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list room members")
+		return
+	}
+
+	resp := make([]RoomMemberResponse, len(rows))
+	for i, member := range rows {
+		resp[i] = roomMemberToResponse(member)
+	}
+	writeJSON(w, http.StatusOK, ListRoomMembersResponse{Members: resp})
+}
 
 func (h *Handler) AddRoomMember(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUserID(w, r)
@@ -500,6 +675,10 @@ func (h *Handler) AddRoomMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if req.MemberID == "" && req.AgentID != "" {
+		req.MemberType = "agent"
+		req.MemberID = req.AgentID
+	}
 	if req.MemberType != "user" && req.MemberType != "agent" {
 		writeError(w, http.StatusBadRequest, "member_type must be 'user' or 'agent'")
 		return
@@ -511,6 +690,28 @@ func (h *Handler) AddRoomMember(w http.ResponseWriter, r *http.Request) {
 	memberUUID, ok := parseUUIDOrBadRequest(w, req.MemberID, "member_id")
 	if !ok {
 		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace_id")
+	if !ok {
+		return
+	}
+	switch req.MemberType {
+	case "agent":
+		if _, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID:          memberUUID,
+			WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "member_id does not refer to an agent in this workspace")
+			return
+		}
+	case "user":
+		if _, err := h.Queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
+			UserID:      memberUUID,
+			WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "member_id does not refer to a user in this workspace")
+			return
+		}
 	}
 
 	role := req.Role

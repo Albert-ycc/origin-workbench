@@ -32,9 +32,23 @@ type CouncilBroadcastContext struct {
 	Participants     []CouncilBroadcastMemberInfo `json:"participants,omitempty"`
 	SelfAgentID      string                       `json:"self_agent_id"`
 	SelfAgentName    string                       `json:"self_agent_name"`
-	Role             string                       `json:"role"`                  // "lead" or "follower"
+	Role             string                       `json:"role"`                  // "lead" / "follower" / "salon_speaker"
 	SourceKind       string                       `json:"source_kind,omitempty"` // "council" or "team" — drives the chain handler
 	PriorSpeakerName string                       `json:"prior_speaker_name,omitempty"`
+	// Salon 模式专用：当前是第几轮发言（1-based）+ 总轮数上限。
+	// 调度器无状态，靠 payload 流转保留循环计数。
+	TurnIndex int `json:"turn_index,omitempty"`
+	MaxTurns  int `json:"max_turns,omitempty"`
+	// Salon transcript：把前几轮的发言原文打包到任务 payload，让发言 agent
+	// 知道队友说过什么。daemon 子进程跑 claude 时是新 session，看不到表里
+	// 别人写的 chat_message，必须通过 prompt 注入。
+	Transcript []CouncilSalonTurn `json:"transcript,omitempty"`
+}
+
+// CouncilSalonTurn 是 salon 模式 transcript 的一条发言，按 timeline 顺序流转。
+type CouncilSalonTurn struct {
+	Speaker string `json:"speaker"`
+	Content string `json:"content"`
 }
 
 // CouncilBroadcastMemberInfo is the lightweight roster row injected into the
@@ -56,6 +70,14 @@ const CouncilBroadcastContextType = "council_broadcast"
 const (
 	CouncilBroadcastRoleLead     = "lead"
 	CouncilBroadcastRoleFollower = "follower"
+	// Salon 模式下每一轮发言者统一 Role，循环到 MaxTurns 截止。
+	CouncilBroadcastRoleSalon = "salon_speaker"
+)
+
+// CouncilSessionModeSalon 是 council_session.mode 的 salon 取值（与 migration 086 对齐）。
+const (
+	CouncilSessionModeRelay = "relay"
+	CouncilSessionModeSalon = "salon"
 )
 
 // CouncilBroadcastSourceCouncil / CouncilBroadcastSourceTeam tell the chain
@@ -104,6 +126,27 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 	rosterInfo, rosterAgents, skipped, err := s.loadCouncilRoster(ctx, council.ID)
 	if err != nil {
 		return CouncilBroadcastResult{CouncilSessionID: util.UUIDToString(council.ID)}, err
+	}
+	// Salon 模式（圆桌客厅）：开场任意一人发言，由 handleCouncilBroadcastRelay
+	// 串行轮转直到 MaxTurns；区别于 relay 的 lead/follower 二段固定结构。
+	if council.Mode == CouncilSessionModeSalon {
+		maxTurns := int(council.MaxTurns)
+		if maxTurns <= 0 {
+			maxTurns = 8
+		}
+		return s.enqueueSalonOpening(
+			ctx,
+			chatSession,
+			source,
+			rosterInfo,
+			rosterAgents,
+			skipped,
+			userMessage,
+			broadcasterKind,
+			broadcasterID,
+			broadcasterName,
+			maxTurns,
+		)
 	}
 	return s.enqueueBroadcastLead(
 		ctx,
@@ -405,7 +448,8 @@ func (s *TaskService) enqueueBroadcastFollower(
 // handleCouncilBroadcastRelay is called from the chat-task-complete path
 // (right after the assistant message lands). When the just-finished task was
 // a lead broadcast, it kicks off the follower. When the just-finished task
-// was a follower broadcast, the relay stops. Any other task type → no-op.
+// was a follower broadcast, the relay stops. Salon turns continue round-robin
+// until TurnIndex reaches MaxTurns. Any other task type → no-op.
 func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.AgentTaskQueue) {
 	if len(task.Context) == 0 || !task.ChatSessionID.Valid {
 		return
@@ -414,7 +458,7 @@ func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.A
 	if err := json.Unmarshal(task.Context, &bc); err != nil {
 		return
 	}
-	if bc.Type != CouncilBroadcastContextType || bc.Role != CouncilBroadcastRoleLead {
+	if bc.Type != CouncilBroadcastContextType {
 		return
 	}
 	chatSession, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
@@ -424,10 +468,250 @@ func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.A
 			"error", err)
 		return
 	}
-	if _, _, err := s.enqueueBroadcastFollower(ctx, chatSession, bc); err != nil {
-		slog.Warn("broadcast relay: follower enqueue failed",
-			"chat_session_id", util.UUIDToString(task.ChatSessionID),
-			"lead_agent_id", bc.SelfAgentID,
-			"error", err)
+	switch bc.Role {
+	case CouncilBroadcastRoleLead:
+		if _, _, err := s.enqueueBroadcastFollower(ctx, chatSession, bc); err != nil {
+			slog.Warn("broadcast relay: follower enqueue failed",
+				"chat_session_id", util.UUIDToString(task.ChatSessionID),
+				"lead_agent_id", bc.SelfAgentID,
+				"error", err)
+		}
+	case CouncilBroadcastRoleSalon:
+		if bc.TurnIndex >= bc.MaxTurns {
+			slog.Info("salon relay: reached max_turns, room idle",
+				"chat_session_id", util.UUIDToString(task.ChatSessionID),
+				"turn_index", bc.TurnIndex,
+				"max_turns", bc.MaxTurns,
+			)
+			return
+		}
+		if _, _, err := s.enqueueSalonNextTurn(ctx, chatSession, bc); err != nil {
+			slog.Warn("salon relay: next turn enqueue failed",
+				"chat_session_id", util.UUIDToString(task.ChatSessionID),
+				"prior_speaker_id", bc.SelfAgentID,
+				"turn_index", bc.TurnIndex,
+				"error", err)
+		}
 	}
+}
+
+// buildSalonTranscript 拉 chat_session 全部消息按时间顺序映射成 salon transcript。
+// 用 roster 把 sender_agent_id 反查回 agent 名字；user 角色统一标 "用户"。
+// 控制最多 transcript 长度，避免 payload 膨胀（保留最近 N 条）。
+func (s *TaskService) buildSalonTranscript(
+	ctx context.Context,
+	chatSessionID pgtype.UUID,
+	roster []CouncilBroadcastMemberInfo,
+	broadcasterName string,
+) []CouncilSalonTurn {
+	const maxTranscriptTurns = 24
+	messages, err := s.Queries.ListChatMessages(ctx, chatSessionID)
+	if err != nil {
+		slog.Warn("salon: list chat_message failed",
+			"chat_session_id", util.UUIDToString(chatSessionID),
+			"error", err)
+		return nil
+	}
+	nameByID := make(map[string]string, len(roster))
+	for _, m := range roster {
+		nameByID[m.AgentID] = m.Name
+	}
+	turns := make([]CouncilSalonTurn, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			continue
+		}
+		var speaker string
+		switch msg.Role {
+		case "user":
+			speaker = broadcasterName
+			if speaker == "" {
+				speaker = "用户"
+			}
+		default:
+			if msg.SenderAgentID.Valid {
+				if name, ok := nameByID[util.UUIDToString(msg.SenderAgentID)]; ok && name != "" {
+					speaker = name
+				}
+			}
+			if speaker == "" {
+				speaker = "成员"
+			}
+		}
+		turns = append(turns, CouncilSalonTurn{
+			Speaker: speaker,
+			Content: msg.Content,
+		})
+	}
+	if len(turns) > maxTranscriptTurns {
+		turns = turns[len(turns)-maxTranscriptTurns:]
+	}
+	return turns
+}
+
+// pickSalonSpeaker 在 salon 模式下挑选当前发言者：避开上一位，按 roster 顺序
+// round-robin。priorAgentID 为空时（开场轮）退化为「随便选第一个 eligible」。
+func pickSalonSpeaker(roster []CouncilBroadcastMemberInfo, priorAgentID string) (CouncilBroadcastMemberInfo, bool) {
+	if len(roster) == 0 {
+		return CouncilBroadcastMemberInfo{}, false
+	}
+	if priorAgentID == "" {
+		return roster[0], true
+	}
+	priorIdx := -1
+	for i, m := range roster {
+		if m.AgentID == priorAgentID {
+			priorIdx = i
+			break
+		}
+	}
+	if priorIdx == -1 {
+		return roster[0], true
+	}
+	// 下一位（wrap 回开头）。
+	next := roster[(priorIdx+1)%len(roster)]
+	return next, true
+}
+
+// enqueueSalonOpening 是 salon 模式的开场轮：选第一位发言者（优先 convener，
+// 否则 roster[0]），TurnIndex=1。
+func (s *TaskService) enqueueSalonOpening(
+	ctx context.Context,
+	chatSession db.ChatSession,
+	source CouncilBroadcastSource,
+	rosterInfo []CouncilBroadcastMemberInfo,
+	rosterAgents map[string]db.Agent,
+	skipped []string,
+	userMessage string,
+	broadcasterKind string,
+	broadcasterID string,
+	broadcasterName string,
+	maxTurns int,
+) (CouncilBroadcastResult, error) {
+	result := CouncilBroadcastResult{
+		CouncilSessionID: util.UUIDToString(source.ID),
+		SkippedAgentIDs:  append([]string{}, skipped...),
+	}
+	if len(rosterInfo) == 0 {
+		return result, fmt.Errorf("%s salon has no eligible participants", source.Kind)
+	}
+	if maxTurns < 2 {
+		maxTurns = 2
+	}
+	if maxTurns > 24 {
+		maxTurns = 24
+	}
+
+	opener, _ := pickSalonSpeaker(rosterInfo, "")
+	broadcasterName = strings.TrimSpace(broadcasterName)
+	if broadcasterName == "" {
+		if broadcasterKind == "agent" {
+			if a, ok := rosterAgents[broadcasterID]; ok {
+				broadcasterName = a.Name
+			}
+		}
+		if broadcasterName == "" {
+			broadcasterName = "用户"
+		}
+	}
+
+	openerAgent := rosterAgents[opener.AgentID]
+	payload := CouncilBroadcastContext{
+		Type:             CouncilBroadcastContextType,
+		CouncilSessionID: util.UUIDToString(source.ID),
+		CouncilTopic:     source.Topic,
+		ChatSessionID:    util.UUIDToString(chatSession.ID),
+		BroadcasterKind:  broadcasterKind,
+		BroadcasterName:  broadcasterName,
+		UserMessage:      userMessage,
+		Participants:     rosterInfo,
+		SelfAgentID:      opener.AgentID,
+		SelfAgentName:    opener.Name,
+		Role:             CouncilBroadcastRoleSalon,
+		SourceKind:       source.Kind,
+		TurnIndex:        1,
+		MaxTurns:         maxTurns,
+	}
+	contextJSON, err := json.Marshal(payload)
+	if err != nil {
+		return result, fmt.Errorf("marshal salon opening context: %w", err)
+	}
+	task, err := s.EnqueueFreshChatTaskForAgent(
+		ctx,
+		chatSession,
+		pgtype.UUID{Bytes: openerAgent.ID.Bytes, Valid: true},
+		contextJSON,
+	)
+	if err != nil {
+		return result, fmt.Errorf("enqueue salon opening task: %w", err)
+	}
+	result.Tasks = append(result.Tasks, task)
+
+	slog.Info("salon relay: opening enqueued",
+		"source_kind", source.Kind,
+		"source_id", util.UUIDToString(source.ID),
+		"chat_session_id", util.UUIDToString(chatSession.ID),
+		"opener_agent_id", opener.AgentID,
+		"opener_agent_name", opener.Name,
+		"roster_size", len(rosterInfo),
+		"max_turns", maxTurns,
+	)
+	return result, nil
+}
+
+// enqueueSalonNextTurn 由 handleCouncilBroadcastRelay 在 salon 上一轮完成时
+// 触发：按 round-robin 选下一位，TurnIndex+1。
+func (s *TaskService) enqueueSalonNextTurn(
+	ctx context.Context,
+	chatSession db.ChatSession,
+	prior CouncilBroadcastContext,
+) (db.AgentTaskQueue, bool, error) {
+	next, ok := pickSalonSpeaker(prior.Participants, prior.SelfAgentID)
+	if !ok {
+		return db.AgentTaskQueue{}, false, nil
+	}
+	nextAgentUUID, err := util.ParseUUID(next.AgentID)
+	if err != nil || !nextAgentUUID.Valid {
+		return db.AgentTaskQueue{}, false, fmt.Errorf("invalid salon next agent id %q: %v", next.AgentID, err)
+	}
+	transcript := s.buildSalonTranscript(ctx, chatSession.ID, prior.Participants, prior.BroadcasterName)
+
+	payload := CouncilBroadcastContext{
+		Type:             CouncilBroadcastContextType,
+		CouncilSessionID: prior.CouncilSessionID,
+		CouncilTopic:     prior.CouncilTopic,
+		ChatSessionID:    prior.ChatSessionID,
+		BroadcasterKind:  prior.BroadcasterKind,
+		BroadcasterName:  prior.BroadcasterName,
+		UserMessage:      prior.UserMessage,
+		Participants:     prior.Participants,
+		SelfAgentID:      next.AgentID,
+		SelfAgentName:    next.Name,
+		Role:             CouncilBroadcastRoleSalon,
+		SourceKind:       prior.SourceKind,
+		PriorSpeakerName: prior.SelfAgentName,
+		TurnIndex:        prior.TurnIndex + 1,
+		MaxTurns:         prior.MaxTurns,
+		Transcript:       transcript,
+	}
+	contextJSON, err := json.Marshal(payload)
+	if err != nil {
+		return db.AgentTaskQueue{}, false, fmt.Errorf("marshal salon next-turn context: %w", err)
+	}
+	task, err := s.EnqueueFreshChatTaskForAgent(ctx, chatSession, nextAgentUUID, contextJSON)
+	if err != nil {
+		return db.AgentTaskQueue{}, false, fmt.Errorf("enqueue salon next-turn task: %w", err)
+	}
+
+	slog.Info("salon relay: next turn enqueued",
+		"source_kind", prior.SourceKind,
+		"source_id", prior.CouncilSessionID,
+		"chat_session_id", prior.ChatSessionID,
+		"prior_speaker", prior.SelfAgentName,
+		"next_agent_id", next.AgentID,
+		"next_agent_name", next.Name,
+		"turn_index", payload.TurnIndex,
+		"max_turns", payload.MaxTurns,
+	)
+	return task, true, nil
 }

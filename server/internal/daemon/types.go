@@ -120,9 +120,21 @@ type CouncilBroadcastData struct {
 	Participants     []CouncilBroadcastMemberData `json:"participants,omitempty"`
 	SelfAgentID      string                       `json:"self_agent_id"`
 	SelfAgentName    string                       `json:"self_agent_name"`
-	Role             string                       `json:"role"` // "lead" or "follower"
+	Role             string                       `json:"role"` // "lead" / "follower" / "salon_speaker"
 	SourceKind       string                       `json:"source_kind,omitempty"`
 	PriorSpeakerName string                       `json:"prior_speaker_name,omitempty"`
+	// Salon 模式专用计数（与 service.CouncilBroadcastContext 同源）。
+	TurnIndex int `json:"turn_index,omitempty"`
+	MaxTurns  int `json:"max_turns,omitempty"`
+	// Salon transcript：service 端打包的历史发言（speaker + content），
+	// daemon 自己看不到表里别人写的 chat_message，必须通过 payload 拿。
+	Transcript []CouncilSalonTurnData `json:"transcript,omitempty"`
+}
+
+// CouncilSalonTurnData 是 salon transcript 的一条发言，镜像 service.CouncilSalonTurn。
+type CouncilSalonTurnData struct {
+	Speaker string `json:"speaker"`
+	Content string `json:"content"`
 }
 
 // TeamDelegationData mirrors service.TeamDelegationContext without importing

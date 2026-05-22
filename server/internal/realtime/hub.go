@@ -45,21 +45,40 @@ func init() {
 }
 
 func loadAllowedOrigins() []string {
-	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	defaults := []string{
+		"http://localhost:3000",
+		"http://localhost:5173",
+		"http://localhost:5174",
+		"file://",
 	}
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	if raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS")); raw != "" {
+		return splitAllowedOrigins(raw)
 	}
-	if raw == "" {
-		return []string{
-			"http://localhost:3000",
-			"http://localhost:5173",
-			"http://localhost:5174",
-		}
+	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
+		return splitAllowedOrigins(raw)
+	}
+	frontendOrigin := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	if frontendOrigin == "" {
+		return defaults
 	}
 
+	origins := append([]string{}, defaults...)
+	for _, origin := range splitAllowedOrigins(frontendOrigin) {
+		seen := false
+		for _, existing := range origins {
+			if existing == origin {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
+}
+
+func splitAllowedOrigins(raw string) []string {
 	parts := strings.Split(raw, ",")
 	origins := make([]string, 0, len(parts))
 	for _, part := range parts {

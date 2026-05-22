@@ -318,6 +318,42 @@ func TestBuildClaudeArgsFiltersBlockedCustomArgs(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeArgsCanDisableContextAndTools(t *testing.T) {
+	t.Parallel()
+
+	args := buildClaudeArgs(ExecOptions{
+		Bare:         true,
+		DisableTools: true,
+		CustomArgs:   []string{"--max-turns", "50"},
+	}, slog.Default())
+
+	foundBare := false
+	for _, arg := range args {
+		if arg == "--bare" {
+			foundBare = true
+			break
+		}
+	}
+	if !foundBare {
+		t.Fatalf("expected --bare in args: %v", args)
+	}
+
+	if len(args) < 2 || args[len(args)-2] != "--tools" || args[len(args)-1] != "" {
+		t.Fatalf("expected --tools \"\" to be appended last, got %v", args)
+	}
+
+	foundCustomMaxTurns := false
+	for i, arg := range args {
+		if arg == "--max-turns" && i+1 < len(args) && args[i+1] == "50" {
+			foundCustomMaxTurns = true
+			break
+		}
+	}
+	if !foundCustomMaxTurns {
+		t.Fatalf("expected custom args to still be preserved before tool lock, got %v", args)
+	}
+}
+
 func TestBuildClaudeInputEncodesUserMessage(t *testing.T) {
 	t.Parallel()
 

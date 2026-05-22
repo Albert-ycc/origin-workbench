@@ -761,6 +761,43 @@ func TestCodexStartOrResumeThreadStartsFresh(t *testing.T) {
 	}
 }
 
+func TestCodexStartOrResumeThreadRestrictsToolsWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	c, fs, _ := newTestCodexClient(t)
+
+	wait := drainRPCScript(t, c, fs, []rpcResponse{
+		{
+			method: "thread/start",
+			result: json.RawMessage(`{"thread":{"id":"thr_chat"}}`),
+			assertFn: func(t *testing.T, params map[string]any) {
+				if params["approvalPolicy"] != "untrusted" {
+					t.Errorf("approvalPolicy = %v, want untrusted", params["approvalPolicy"])
+				}
+				if params["sandbox"] != "read-only" {
+					t.Errorf("sandbox = %v, want read-only", params["sandbox"])
+				}
+			},
+		},
+	})
+	defer wait()
+
+	threadID, resumed, err := c.startOrResumeThread(
+		context.Background(),
+		ExecOptions{Cwd: "/work", DisableTools: true},
+		slog.Default(),
+	)
+	if err != nil {
+		t.Fatalf("startOrResumeThread: %v", err)
+	}
+	if threadID != "thr_chat" {
+		t.Errorf("threadID = %q, want thr_chat", threadID)
+	}
+	if resumed {
+		t.Error("resumed should be false when starting a restricted fresh thread")
+	}
+}
+
 func TestCodexStartOrResumeThreadResumesPriorThread(t *testing.T) {
 	t.Parallel()
 

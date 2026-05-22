@@ -21,3 +21,16 @@ func TestMainRouterDoesNotExposePrometheusMetrics(t *testing.T) {
 		t.Fatalf("main API /metrics status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
+
+func TestAllowedOriginsIncludesPackagedDesktopFileOrigin(t *testing.T) {
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("FRONTEND_ORIGIN", "")
+
+	origins := allowedOrigins()
+	for _, origin := range origins {
+		if origin == "file://" {
+			return
+		}
+	}
+	t.Fatalf("default CORS origins = %v, want file://", origins)
+}

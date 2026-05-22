@@ -23,7 +23,9 @@ WHERE id = $1 AND workspace_id = $2;
 -- message storage. Used to fan-out @全体 broadcasts to every participant
 -- when the user posts in a Council room.
 SELECT * FROM council_session
-WHERE source_chat_session_id = $1 AND status = 'running'
+WHERE source_chat_session_id = $1
+  AND workspace_id = $2
+  AND status = 'running'
 ORDER BY started_at DESC
 LIMIT 1;
 
@@ -31,7 +33,7 @@ LIMIT 1;
 INSERT INTO council_session (
     workspace_id, convener_user_id, convener_agent_id,
     related_mission_id, related_idea_id, source_chat_session_id, project_id,
-    topic, summary, activity_level, status
+    topic, summary, activity_level, status, mode, max_turns
 ) VALUES (
     $1,
     sqlc.narg('convener_user_id')::uuid,
@@ -40,7 +42,9 @@ INSERT INTO council_session (
     sqlc.narg('related_idea_id')::uuid,
     sqlc.narg('source_chat_session_id')::uuid,
     sqlc.narg('project_id')::uuid,
-    $2, $3, $4, $5
+    $2, $3, $4, $5,
+    COALESCE(sqlc.narg('mode')::text, 'relay'),
+    COALESCE(sqlc.narg('max_turns')::int, 8)
 )
 RETURNING *;
 

@@ -289,6 +289,20 @@ func (q *Queries) CreateMeetingTranscriptSegment(ctx context.Context, arg Create
 	return i, err
 }
 
+const deleteMeetingSession = `-- name: DeleteMeetingSession :exec
+DELETE FROM meeting_session WHERE id = $1 AND workspace_id = $2
+`
+
+type DeleteMeetingSessionParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteMeetingSession(ctx context.Context, arg DeleteMeetingSessionParams) error {
+	_, err := q.db.Exec(ctx, deleteMeetingSession, arg.ID, arg.WorkspaceID)
+	return err
+}
+
 const getMeetingSessionInWorkspace = `-- name: GetMeetingSessionInWorkspace :one
 SELECT id, workspace_id, project_id, title, goal, user_role, strategy, reminder_mode, reminder_intensity, sound_enabled, asr_provider, model_source, analysis_status, status, created_by_user_id, started_at, stopped_at, created_at, updated_at FROM meeting_session
 WHERE id = $1 AND workspace_id = $2

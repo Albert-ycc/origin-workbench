@@ -39,6 +39,20 @@ export function useArchiveProjectV12(wsId: string) {
   });
 }
 
+export function useDeleteProjectV12(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteProjectV12(id),
+    onSuccess: (_data, id) => {
+      qc.removeQueries({ queryKey: projectV12Keys.detail(wsId, id) });
+      qc.removeQueries({ queryKey: projectV12Keys.mainChat(wsId, id) });
+      qc.removeQueries({ queryKey: projectV12Keys.mainChatMessages(wsId, id) });
+      qc.removeQueries({ queryKey: projectV12Keys.archivedSessions(wsId, id) });
+      qc.invalidateQueries({ queryKey: projectV12Keys.all(wsId) });
+    },
+  });
+}
+
 export function useAppendProjectMemoryDoc(wsId: string) {
   const qc = useQueryClient();
   return useMutation({

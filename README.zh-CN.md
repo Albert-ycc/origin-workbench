@@ -80,7 +80,7 @@ OpenAI 兼容环境变量，用来给聊天型 Agent 提供模型回复。
 pnpm install
 
 # 2. 用 Docker Compose 起后端（Postgres + Go server）
-docker compose -f docker-compose.selfhost.yml \
+docker compose -p multica -f docker-compose.selfhost.yml \
   -f docker-compose.selfhost.build.yml up -d --build backend
 
 # 3. 跑桌面端 dev 模式（electron-vite HMR）
@@ -92,13 +92,15 @@ App 启动后会停在本地登录页——挑个头像、填个名字就进来�
 ## 打包桌面端正式版
 
 ```bash
-pnpm --filter @multica/desktop build
-cd apps/desktop
-CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder \
-  --mac --arm64 --dir -c.mac.notarize=false -c.mac.identity=null
+pnpm --filter @multica/desktop run package -- --mac --arm64 --dir \
+  -c.mac.notarize=false -c.mac.identity=null
 ```
 
 打好的 `.app` 在 `apps/desktop/dist-local/mac-arm64/` 里。
+
+本机安装更新时，要同时更新 `docker compose -p multica` 下现有
+`multica-backend-1` 后端容器，并替换 `/Users/albert/Applications/Origin.app`。
+安装目录只保留当前 `Origin.app` 和一个 `Origin.app.rollback-*` 回滚版本。
 
 ## 许可与署名
 

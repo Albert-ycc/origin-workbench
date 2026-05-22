@@ -47,6 +47,21 @@ export function useArchiveRoom() {
   });
 }
 
+export function useDeleteRoom() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+
+  return useMutation({
+    mutationFn: (roomId: string) => api.deleteRoom(roomId),
+    onSettled: (_data, _err, roomId) => {
+      qc.removeQueries({ queryKey: roomKeys.detail(wsId, roomId) });
+      qc.removeQueries({ queryKey: roomKeys.members(roomId) });
+      qc.removeQueries({ queryKey: roomKeys.messages(roomId) });
+      qc.invalidateQueries({ queryKey: roomKeys.list(wsId) });
+    },
+  });
+}
+
 export function useAddRoomMember(roomId: string) {
   const qc = useQueryClient();
 

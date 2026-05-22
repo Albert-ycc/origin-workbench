@@ -68,6 +68,7 @@ export type WSEventType =
   | "meeting:updated"
   | "meeting:started"
   | "meeting:stopped"
+  | "meeting:deleted"
   | "meeting:transcript_segment_created"
   | "meeting:insight_created"
   | "meeting:insight_updated"

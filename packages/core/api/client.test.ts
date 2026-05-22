@@ -522,4 +522,30 @@ describe("ApiClient", () => {
       { url: "https://api.example.test/api/mailbox-items/mb-1", method: "GET" },
     ]);
   });
+
+  it("issues DELETE requests for room, project workspace, and meeting records", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 204,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.deleteRoom("room-1");
+    await client.deleteProjectV12("project-1");
+    await client.deleteMeeting("meeting-1");
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/rooms/room-1", method: "DELETE" },
+      { url: "https://api.example.test/api/v12/projects/project-1", method: "DELETE" },
+      { url: "https://api.example.test/api/v13/meetings/meeting-1", method: "DELETE" },
+    ]);
+  });
 });

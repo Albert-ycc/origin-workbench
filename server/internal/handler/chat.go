@@ -79,7 +79,15 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	workspaceID := ctxWorkspaceID(r.Context())
+	workspaceID := h.resolveWorkspaceID(r)
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	creatorUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
+	if !ok {
+		return
+	}
 
 	status := r.URL.Query().Get("status")
 
@@ -88,8 +96,8 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 	var resp []ChatSessionResponse
 	if status == "all" {
 		rows, err := h.Queries.ListAllChatSessionsByCreator(r.Context(), db.ListAllChatSessionsByCreatorParams{
-			WorkspaceID: parseUUID(workspaceID),
-			CreatorID:   parseUUID(userID),
+			WorkspaceID: workspaceUUID,
+			CreatorID:   creatorUUID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
@@ -111,8 +119,8 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		rows, err := h.Queries.ListChatSessionsByCreator(r.Context(), db.ListChatSessionsByCreatorParams{
-			WorkspaceID: parseUUID(workspaceID),
-			CreatorID:   parseUUID(userID),
+			WorkspaceID: workspaceUUID,
+			CreatorID:   creatorUUID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list chat sessions")
@@ -280,7 +288,10 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 			broadcastErr    error
 			broadcastKind   string
 		)
-		if council, councilErr := h.Queries.GetRunningCouncilSessionBySourceChat(r.Context(), session.ID); councilErr == nil {
+		if council, councilErr := h.Queries.GetRunningCouncilSessionBySourceChat(r.Context(), db.GetRunningCouncilSessionBySourceChatParams{
+			SourceChatSessionID: session.ID,
+			WorkspaceID:         session.WorkspaceID,
+		}); councilErr == nil {
 			broadcastKind = "council"
 			broadcastResult, broadcastErr = h.TaskService.EnqueueCouncilBroadcastTasks(
 				r.Context(), session, council, req.Content, "user", userID, "",

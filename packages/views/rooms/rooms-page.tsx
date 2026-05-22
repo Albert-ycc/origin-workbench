@@ -16,7 +16,7 @@ export function RoomsPage() {
   const p = useWorkspacePaths();
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data, isPending } = useQuery(roomsOptions(wsId));
+  const { data, isPending, isError, refetch } = useQuery(roomsOptions(wsId));
   const rooms = data?.rooms ?? [];
   const activeRooms = rooms.filter((r) => !r.archived_at);
   const archivedRooms = rooms.filter((r) => r.archived_at);
@@ -30,7 +30,7 @@ export function RoomsPage() {
             茶水间
           </h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--living-text-secondary, #86909C)" }}>
-            和你的 agent 朋友们一起聊天
+            和你的智能体朋友们一起聊天
           </p>
         </div>
         <Button size="sm" onClick={() => setShowCreate(true)}>
@@ -41,6 +41,8 @@ export function RoomsPage() {
       <div className="flex-1 overflow-y-auto px-8 py-6">
         {isPending ? (
           <RoomsLoadingSkeleton />
+        ) : isError ? (
+          <RoomsErrorState onRetry={() => void refetch()} />
         ) : activeRooms.length === 0 && archivedRooms.length === 0 ? (
           <RoomsEmptyState onCreate={() => setShowCreate(true)} />
         ) : (
@@ -87,20 +89,19 @@ function RoomCard({ room, href }: { room: Room; href: string }) {
   return (
     <AppLink
       href={href}
-      className="block rounded-lg border bg-card p-4 transition-all hover:border-ring hover:shadow-sm"
+      className="block rounded-lg border bg-card p-4 text-card-foreground transition-all hover:border-ring hover:shadow-sm"
     >
-      <div className="font-medium text-sm truncate" style={{ color: "var(--living-text-primary, #1F2329)" }}>
+      <div className="font-medium text-sm truncate text-foreground">
         {room.name}
       </div>
       {room.description && (
         <div
-          className="text-xs mt-1 line-clamp-2"
-          style={{ color: "var(--living-text-secondary, #86909C)" }}
+          className="text-xs mt-1 line-clamp-2 text-muted-foreground"
         >
           {room.description}
         </div>
       )}
-      <div className="mt-3 text-[11px]" style={{ color: "var(--living-text-secondary, #86909C)" }}>
+      <div className="mt-3 text-[11px] text-muted-foreground">
         {new Date(room.created_at).toLocaleDateString("zh-CN")} 创建
       </div>
     </AppLink>
@@ -121,10 +122,24 @@ function RoomsEmptyState({ onCreate }: { onCreate: () => void }) {
         还没有茶水间
       </h2>
       <p className="text-sm mb-6" style={{ color: "var(--living-text-secondary, #86909C)" }}>
-        创建一个茶水间，邀请你的 agent 朋友进来聊天
+        创建一个茶水间，邀请你的智能体朋友进来聊天
       </p>
       <Button onClick={onCreate}>
         新建第一个茶水间
+      </Button>
+    </div>
+  );
+}
+
+function RoomsErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <h2 className="text-base font-semibold mb-1 text-foreground">茶水间加载失败</h2>
+      <p className="text-sm mb-6 text-muted-foreground">
+        网络或后端暂时不可用，重试后再查看房间列表。
+      </p>
+      <Button variant="outline" onClick={onRetry}>
+        重试
       </Button>
     </div>
   );

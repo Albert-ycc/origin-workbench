@@ -95,7 +95,7 @@ The desktop app is the only supported shell.
 pnpm install
 
 # 2. Start the backend (Postgres + Go server) via Docker Compose
-docker compose -f docker-compose.selfhost.yml \
+docker compose -p multica -f docker-compose.selfhost.yml \
   -f docker-compose.selfhost.build.yml up -d --build backend
 
 # 3. Run the desktop app in dev mode (electron-vite HMR)
@@ -108,13 +108,15 @@ you're in. Local sign-in does not require email or verification code.
 ## Build a release desktop app
 
 ```bash
-pnpm --filter @multica/desktop build
-cd apps/desktop
-CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder \
-  --mac --arm64 --dir -c.mac.notarize=false -c.mac.identity=null
+pnpm --filter @multica/desktop run package -- --mac --arm64 --dir \
+  -c.mac.notarize=false -c.mac.identity=null
 ```
 
 The packaged `.app` lands in `apps/desktop/dist-local/mac-arm64/`.
+
+For a local installed update, rebuild/recreate the existing backend container
+on Compose project `multica`, replace `/Users/albert/Applications/Origin.app`,
+and keep only one `Origin.app.rollback-*` copy for rollback.
 
 ## License & attribution
 

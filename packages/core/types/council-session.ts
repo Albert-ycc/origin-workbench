@@ -1,6 +1,8 @@
 export type CouncilSessionStatus = "running" | "adjourned" | "archived";
 export type CouncilActivityLevel = "quiet" | "concise" | "lively";
 export type CouncilParticipantRole = "convener" | "member";
+// v1.0.14: "relay" 是原有的 lead/follower 决议模式；"salon" 是圆桌客厅。
+export type CouncilSessionMode = "relay" | "salon";
 
 export interface CouncilSession {
   id: string;
@@ -19,6 +21,8 @@ export interface CouncilSession {
   ended_at: string | null;
   created_at: string;
   updated_at: string;
+  mode: CouncilSessionMode;
+  max_turns: number;
 }
 
 export interface CouncilSessionParticipant {
@@ -47,6 +51,10 @@ export interface CreateCouncilSessionRequest {
   // adjourn hook also writes the conclusion to project.memory_doc 「关键决策」.
   project_id?: string | null;
   participant_agent_ids?: string[];
+  // v1.0.14 salon 模式：mode="salon" 时后端自动建 chat_session + kickoff 首位
+  // 发言者，max_turns 控制总轮数（默认 8，clamp 到 [2, 24]）。
+  mode?: CouncilSessionMode;
+  max_turns?: number;
 }
 
 export interface UpdateCouncilSessionRequest {

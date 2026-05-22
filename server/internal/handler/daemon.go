@@ -1026,13 +1026,13 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// failed before reporting completion). Without this fallback a
 			// single failed turn would silently drop the entire conversation
 			// memory on the next message.
-			if cs.SessionID.Valid {
+			if !task.ForceFreshSession && cs.SessionID.Valid {
 				resp.PriorSessionID = cs.SessionID.String
 			}
-			if cs.WorkDir.Valid {
+			if !task.ForceFreshSession && cs.WorkDir.Valid {
 				resp.PriorWorkDir = cs.WorkDir.String
 			}
-			if resp.PriorSessionID == "" {
+			if !task.ForceFreshSession && resp.PriorSessionID == "" {
 				if prior, err := h.Queries.GetLastChatTaskSession(r.Context(), cs.ID); err == nil && prior.SessionID.Valid {
 					resp.PriorSessionID = prior.SessionID.String
 					if prior.WorkDir.Valid && resp.PriorWorkDir == "" {

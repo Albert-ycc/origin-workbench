@@ -32,7 +32,10 @@ export function roomMessagesOptions(roomId: string) {
     queryKey: roomKeys.messages(roomId),
     queryFn: () => api.listRoomMessages(roomId),
     enabled: !!roomId,
-    staleTime: Infinity,
+    staleTime: 5_000,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
   });
 }
 

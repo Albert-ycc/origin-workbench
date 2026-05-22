@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
@@ -992,5 +993,72 @@ func TestDefaultArgsForProvider(t *testing.T) {
 	}
 	if got := defaultArgsForProvider(cfg, "gemini"); got != nil {
 		t.Fatalf("expected nil for unsupported provider, got %#v", got)
+	}
+}
+
+func TestConstrainSalonSpeakerExecOptions(t *testing.T) {
+	opts := agent.ExecOptions{
+		ResumeSessionID: "old-session",
+		ExtraArgs:       []string{"--max-turns", "60"},
+		CustomArgs:      []string{"--allowedTools", "Bash"},
+		McpConfig:       []byte(`{"mcpServers":{"x":{}}}`),
+		SystemPrompt:    "runtime instructions",
+	}
+
+	constrainSalonSpeakerExecOptions(&opts)
+
+	if opts.ResumeSessionID != "" {
+		t.Fatalf("expected fresh session, got %q", opts.ResumeSessionID)
+	}
+	if opts.ExtraArgs != nil || opts.CustomArgs != nil || opts.McpConfig != nil || opts.SystemPrompt != "" {
+		t.Fatalf("expected launch context to be stripped, got %+v", opts)
+	}
+	if !opts.Bare || !opts.DisableTools {
+		t.Fatalf("expected bare text-only execution, got Bare=%v DisableTools=%v", opts.Bare, opts.DisableTools)
+	}
+}
+
+func TestConstrainSalonSpeakerEnvironmentStripsRuntimeContext(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workdir")
+	codexHome := filepath.Join(root, "codex-home")
+	for _, dir := range []string{
+		filepath.Join(workDir, ".agent_context"),
+		filepath.Join(codexHome, "skills"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(workDir, "AGENTS.md"),
+		filepath.Join(workDir, "CLAUDE.md"),
+		filepath.Join(workDir, ".agent_context", "issue_context.md"),
+		filepath.Join(codexHome, "skills", "tooling", "SKILL.md"),
+		filepath.Join(codexHome, "instructions.md"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir parent %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("tooling"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	constrainSalonSpeakerEnvironment(&execenv.Environment{
+		WorkDir:   workDir,
+		CodexHome: codexHome,
+	})
+
+	for _, path := range []string{
+		filepath.Join(workDir, "AGENTS.md"),
+		filepath.Join(workDir, "CLAUDE.md"),
+		filepath.Join(workDir, ".agent_context"),
+		filepath.Join(codexHome, "skills"),
+		filepath.Join(codexHome, "instructions.md"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed, stat err=%v", path, err)
+		}
 	}
 }

@@ -91,6 +91,15 @@ func (q *Queries) CreateProjectV12(ctx context.Context, arg CreateProjectV12Para
 	return i, err
 }
 
+const deleteProjectV12 = `-- name: DeleteProjectV12 :exec
+DELETE FROM project WHERE id = $1
+`
+
+func (q *Queries) DeleteProjectV12(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProjectV12, id)
+	return err
+}
+
 const getAgentProjectMemory = `-- name: GetAgentProjectMemory :one
 
 SELECT id, agent_id, project_id, content, last_auto_compaction_at, created_at, updated_at FROM agent_project_memory WHERE agent_id = $1 AND project_id = $2

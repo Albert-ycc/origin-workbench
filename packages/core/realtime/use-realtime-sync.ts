@@ -83,6 +83,7 @@ import type {
   MeetingTranscriptSegmentCreatedPayload,
   TaskMessageChunkPayload,
   TaskMessageCompletePayload,
+  ListRoomMessagesResponse,
   RoomMessagePayload,
 } from "../types";
 import { useRoomsStore } from "../rooms/store";
@@ -261,6 +262,7 @@ export function useRealtimeSync(
       "meeting:updated",
       "meeting:started",
       "meeting:stopped",
+      "meeting:deleted",
       "meeting:transcript_segment_created",
       "meeting:insight_created",
       "meeting:insight_updated",
@@ -337,6 +339,17 @@ export function useRealtimeSync(
     const unsubMeetingUpdated = ws.on("meeting:updated", handleMeetingChanged);
     const unsubMeetingStarted = ws.on("meeting:started", handleMeetingChanged);
     const unsubMeetingStopped = ws.on("meeting:stopped", handleMeetingChanged);
+    const unsubMeetingDeleted = ws.on("meeting:deleted", (p) => {
+      const { meeting_id, project_id } = p as { meeting_id?: string; project_id?: string };
+      const wsId = getCurrentWsId();
+      if (!wsId || !meeting_id) return;
+      qc.removeQueries({ queryKey: meetingKeys.detail(wsId, meeting_id) });
+      qc.removeQueries({ queryKey: meetingKeys.transcript(wsId, meeting_id) });
+      qc.removeQueries({ queryKey: meetingKeys.insights(wsId, meeting_id) });
+      qc.removeQueries({ queryKey: meetingKeys.summary(wsId, meeting_id) });
+      if (project_id) qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, project_id) });
+      qc.invalidateQueries({ queryKey: meetingKeys.list(wsId) });
+    });
 
     const unsubMeetingTranscriptSegmentCreated = ws.on(
       "meeting:transcript_segment_created",
@@ -678,10 +691,32 @@ export function useRealtimeSync(
     // v1.0.14 — new room message: invalidate message list for that room.
     const unsubRoomMessage = ws.on("room:message", (p) => {
       const payload = p as RoomMessagePayload;
-      const wsId = getCurrentWsId();
-      if (wsId) {
-        qc.invalidateQueries({ queryKey: roomKeys.messages(payload.room_id) });
-      }
+      qc.setQueryData<ListRoomMessagesResponse>(
+        roomKeys.messages(payload.room_id),
+        (old) => {
+          const message = {
+            id: payload.message_id,
+            room_id: payload.room_id,
+            sender_type: payload.sender_type,
+            sender_id: payload.sender_id,
+            sender_name: payload.sender_name ?? null,
+            content: payload.content,
+            is_autonomous: payload.is_autonomous,
+            created_at: payload.created_at,
+          };
+          const current = old ?? { messages: [] };
+          if (current.messages.some((m) => m.id === message.id)) {
+            return current;
+          }
+          return {
+            ...current,
+            messages: [...current.messages, message].sort((a, b) =>
+              a.created_at.localeCompare(b.created_at),
+            ),
+          };
+        },
+      );
+      qc.invalidateQueries({ queryKey: roomKeys.messages(payload.room_id) });
     });
 
     // Helpers reused by chat lifecycle handlers.
@@ -941,6 +976,7 @@ export function useRealtimeSync(
       unsubMeetingUpdated();
       unsubMeetingStarted();
       unsubMeetingStopped();
+      unsubMeetingDeleted();
       unsubMeetingTranscriptSegmentCreated();
       unsubMeetingInsightCreated();
       unsubMeetingInsightUpdated();

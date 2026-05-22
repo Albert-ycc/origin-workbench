@@ -283,7 +283,7 @@ export function WorkbenchPage() {
               title="想法池"
               icon={Lightbulb}
               action={
-                <Button variant="ghost" size="sm" render={<AppLink href={p.ideas()} />}>
+                <Button variant="ghost" size="sm" nativeButton={false} render={<AppLink href={p.ideas()} />}>
                   打开
                 </Button>
               }
@@ -340,7 +340,7 @@ export function WorkbenchPage() {
               title="能力池"
               icon={Monitor}
               action={
-                <Button variant="ghost" size="sm" render={<AppLink href={p.runtimes()} />}>
+                <Button variant="ghost" size="sm" nativeButton={false} render={<AppLink href={p.runtimes()} />}>
                   管理
                 </Button>
               }
@@ -372,7 +372,7 @@ export function WorkbenchPage() {
               title="项目工作区"
               icon={Briefcase}
               action={
-                <Button variant="outline" size="sm" render={<AppLink href={p.projectWorkspaces()} />}>
+                <Button variant="outline" size="sm" nativeButton={false} render={<AppLink href={p.projectWorkspaces()} />}>
                   全部项目
                 </Button>
               }
@@ -413,7 +413,7 @@ export function WorkbenchPage() {
               title="我的智能体"
               icon={Bot}
               action={
-                <Button variant="outline" size="sm" render={<AppLink href={p.agents()} />}>
+                <Button variant="outline" size="sm" nativeButton={false} render={<AppLink href={p.agents()} />}>
                   管理智能体
                 </Button>
               }
@@ -465,7 +465,7 @@ export function WorkbenchPage() {
               title="进行中 Mission"
               icon={Network}
               action={
-                <Button variant="outline" size="sm" render={<AppLink href={p.missions()} />}>
+                <Button variant="outline" size="sm" nativeButton={false} render={<AppLink href={p.missions()} />}>
                   进入任务中枢
                 </Button>
               }

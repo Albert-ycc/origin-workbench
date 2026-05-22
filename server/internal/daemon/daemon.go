@@ -1322,9 +1322,17 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		defer d.unmarkActiveEnvRoot(env.RootDir)
 	}
 
+	salonTask := isSalonSpeakerTask(task)
+	if salonTask {
+		constrainSalonSpeakerEnvironment(env)
+	}
 	// Inject runtime-specific config (meta skill) so the agent discovers .agent_context/.
-	if err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx); err != nil {
-		d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
+	if !salonTask {
+		if err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx); err != nil {
+			d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
+		}
+	} else {
+		taskLog.Info("salon speaker task: skipping runtime config injection")
 	}
 	// NOTE: No cleanup — workdir is preserved for reuse by future tasks on
 	// the same (agent, issue) pair. The work_dir path is stored in DB on
@@ -1452,6 +1460,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// file and don't need this.
 	if provider == "openclaw" {
 		execOpts.SystemPrompt = instructions
+	}
+	if salonTask {
+		constrainSalonSpeakerExecOptions(&execOpts)
+		taskLog.Info("salon speaker task constrained to text-only execution")
 	}
 
 	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID)
@@ -1975,4 +1987,39 @@ func defaultArgsForProvider(cfg Config, provider string) []string {
 		return nil
 	}
 	return append([]string(nil), args...)
+}
+
+func isSalonSpeakerTask(task Task) bool {
+	return task.CouncilBroadcast != nil && task.CouncilBroadcast.Role == "salon_speaker"
+}
+
+func constrainSalonSpeakerExecOptions(opts *agent.ExecOptions) {
+	opts.ResumeSessionID = ""
+	opts.ExtraArgs = nil
+	opts.CustomArgs = nil
+	opts.McpConfig = nil
+	opts.SystemPrompt = ""
+	opts.Bare = true
+	opts.DisableTools = true
+}
+
+func constrainSalonSpeakerEnvironment(env *execenv.Environment) {
+	if env == nil {
+		return
+	}
+	for _, path := range []string{
+		filepath.Join(env.WorkDir, "AGENTS.md"),
+		filepath.Join(env.WorkDir, "CLAUDE.md"),
+		filepath.Join(env.WorkDir, ".agent_context"),
+	} {
+		_ = os.RemoveAll(path)
+	}
+	if env.CodexHome != "" {
+		for _, path := range []string{
+			filepath.Join(env.CodexHome, "skills"),
+			filepath.Join(env.CodexHome, "instructions.md"),
+		} {
+			_ = os.RemoveAll(path)
+		}
+	}
 }

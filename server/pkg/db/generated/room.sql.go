@@ -72,10 +72,9 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 }
 
 const deleteRoom = `-- name: DeleteRoom :exec
-DELETE FROM room WHERE id = $1 AND archived_at IS NOT NULL
+DELETE FROM room WHERE id = $1
 `
 
-// 只允许删除已归档的 room，未归档的走 ArchiveRoom
 func (q *Queries) DeleteRoom(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRoom, id)
 	return err

@@ -1526,6 +1526,74 @@ func TestClaimTask_AutopilotRunOnly_PopulatesWorkspaceID(t *testing.T) {
 	}
 }
 
+func TestClaimTask_ForceFreshChatTaskSkipsPriorSession(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	ctx := context.Background()
+
+	var agentID, runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		SELECT a.id, a.runtime_id
+		FROM agent a
+		WHERE a.workspace_id = $1 AND a.runtime_id IS NOT NULL
+		LIMIT 1
+	`, testWorkspaceID).Scan(&agentID, &runtimeID); err != nil {
+		t.Fatalf("setup: get agent/runtime: %v", err)
+	}
+
+	var chatSessionID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO chat_session (
+			workspace_id, agent_id, creator_id, title, session_id, work_dir
+		)
+		VALUES ($1, $2, $3, 'force fresh chat claim', 'prior-chat-session', '/tmp/prior-chat-workdir')
+		RETURNING id
+	`, testWorkspaceID, agentID, testUserID).Scan(&chatSessionID); err != nil {
+		t.Fatalf("setup: create chat session: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM chat_session WHERE id = $1`, chatSessionID) })
+
+	var taskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority, chat_session_id, force_fresh_session
+		)
+		VALUES ($1, $2, NULL, 'queued', 0, $3, TRUE)
+		RETURNING id
+	`, agentID, runtimeID, chatSessionID).Scan(&taskID); err != nil {
+		t.Fatalf("setup: create chat task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
+
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil,
+		testWorkspaceID, "test-force-fresh-chat-claim")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ClaimTaskByRuntime(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ClaimTaskByRuntime: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Task *struct {
+			PriorSessionID string `json:"prior_session_id"`
+			PriorWorkDir   string `json:"prior_work_dir"`
+		} `json:"task"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Task == nil {
+		t.Fatal("expected task in response")
+	}
+	if resp.Task.PriorSessionID != "" || resp.Task.PriorWorkDir != "" {
+		t.Fatalf("force fresh chat task reused prior session/workdir: prior_session=%q prior_work_dir=%q",
+			resp.Task.PriorSessionID, resp.Task.PriorWorkDir)
+	}
+}
+
 // TestClaimTaskByRuntime_TaskWorkspaceMismatch_CancelsAndRejects verifies
 // the defense-in-depth check in ClaimTaskByRuntime: if a task is somehow
 // dispatched to a runtime whose workspace doesn't match the task's

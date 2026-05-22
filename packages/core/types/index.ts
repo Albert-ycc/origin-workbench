@@ -156,6 +156,7 @@ export type {
   CouncilSession,
   CouncilSessionStatus,
   CouncilActivityLevel,
+  CouncilSessionMode,
   CouncilParticipantRole,
   CouncilSessionParticipant,
   CouncilSessionDetail,

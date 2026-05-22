@@ -32,17 +32,35 @@ var defaultOrigins = []string{
 	"http://localhost:3000", // Next.js dev
 	"http://localhost:5173", // electron-vite dev
 	"http://localhost:5174", // electron-vite dev (fallback port)
+	"file://",               // packaged desktop app
 }
 
 func allowedOrigins() []string {
-	raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
+		return splitOrigins(raw)
 	}
-	if raw == "" {
+	frontendOrigin := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	if frontendOrigin == "" {
 		return defaultOrigins
 	}
 
+	origins := append([]string{}, defaultOrigins...)
+	for _, origin := range splitOrigins(frontendOrigin) {
+		seen := false
+		for _, existing := range origins {
+			if existing == origin {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
+}
+
+func splitOrigins(raw string) []string {
 	parts := strings.Split(raw, ",")
 	origins := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -426,6 +444,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/", h.DeleteRoom)
 					r.Get("/messages", h.ListRoomMessages)
 					r.Post("/messages", h.SendRoomMessage)
+					r.Get("/members", h.ListRoomMembers)
 					r.Post("/members", h.AddRoomMember)
 					r.Delete("/members/{memberId}", h.RemoveRoomMember)
 					r.Route("/agents/{agentId}/persona", func(r chi.Router) {
@@ -503,6 +522,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetProjectV12)
 					r.Patch("/", h.UpdateProjectV12)
+					r.Delete("/", h.DeleteProjectV12)
 					r.Post("/archive", h.ArchiveProjectV12)
 					r.Post("/memory-doc/append", h.AppendProjectMemoryDoc)
 					r.Post("/memory/pin", h.PinChatMessageToProjectMemory)
@@ -529,6 +549,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetMeetingSession)
 					r.Patch("/", h.UpdateMeetingSession)
+					r.Delete("/", h.DeleteMeetingSession)
 					r.Post("/start", h.StartMeetingSession)
 					r.Post("/stop", h.StopMeetingSession)
 					r.Post("/archive", h.ArchiveMeetingSession)

@@ -376,6 +376,66 @@ func TestArchiveMeetingSessionRemovesMeetingFromActiveList(t *testing.T) {
 	}
 }
 
+func TestDeleteMeetingSessionRemovesMeetingAndDependents(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	fixture := createMeetingProjectFixture(t, "delete")
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/v13/meetings?workspace_id="+testWorkspaceID, map[string]any{
+		"project_id":       fixture.ProjectID,
+		"title":            "待删除会议",
+		"goal":             "验证删除会议",
+		"analysis_enabled": false,
+	})
+	testHandler.CreateMeetingSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateMeetingSession: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created meeting: %v", err)
+	}
+
+	req = withURLParam(newRequest(http.MethodPost, "/api/v13/meetings/"+created.ID+"/transcript-segments?workspace_id="+testWorkspaceID, map[string]any{
+		"seq":           1,
+		"text":          "这段转写应随会议删除",
+		"speaker_label": "PM",
+		"source":        "manual",
+	}), "id", created.ID)
+	w = httptest.NewRecorder()
+	testHandler.CreateMeetingTranscriptSegment(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateMeetingTranscriptSegment: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = withURLParam(newRequest(http.MethodDelete, "/api/v13/meetings/"+created.ID+"?workspace_id="+testWorkspaceID, nil), "id", created.ID)
+	w = httptest.NewRecorder()
+	testHandler.DeleteMeetingSession(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DeleteMeetingSession: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var meetingCount int
+	if err := testPool.QueryRow(context.Background(), `SELECT COUNT(*) FROM meeting_session WHERE id = $1`, created.ID).Scan(&meetingCount); err != nil {
+		t.Fatalf("count meeting_session: %v", err)
+	}
+	if meetingCount != 0 {
+		t.Fatalf("expected meeting_session to be deleted, got count=%d", meetingCount)
+	}
+
+	var segmentCount int
+	if err := testPool.QueryRow(context.Background(), `SELECT COUNT(*) FROM meeting_transcript_segment WHERE meeting_id = $1`, created.ID).Scan(&segmentCount); err != nil {
+		t.Fatalf("count meeting_transcript_segment: %v", err)
+	}
+	if segmentCount != 0 {
+		t.Fatalf("expected meeting transcript segments to cascade-delete, got count=%d", segmentCount)
+	}
+}
+
 func TestGenerateMeetingSummaryPersistsTranscriptDigest(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

@@ -120,8 +120,8 @@ SELECT * FROM chat_message
 WHERE id = $1;
 
 -- name: CreateChatTask :one
-INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, chat_session_id, context)
-VALUES ($1, $2, NULL, 'queued', $3, $4, sqlc.narg('context'))
+INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, chat_session_id, context, force_fresh_session)
+VALUES ($1, $2, NULL, 'queued', $3, $4, sqlc.narg('context'), COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE))
 RETURNING *;
 
 -- name: GetLastChatTaskSession :one

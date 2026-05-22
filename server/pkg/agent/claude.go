@@ -422,6 +422,9 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 		"--strict-mcp-config",
 		"--permission-mode", "bypassPermissions",
 	}
+	if opts.Bare {
+		args = append(args, "--bare")
+	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}
@@ -436,6 +439,9 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 	}
 	args = append(args, filterCustomArgs(opts.ExtraArgs, claudeBlockedArgs, logger)...)
 	args = append(args, filterCustomArgs(opts.CustomArgs, claudeBlockedArgs, logger)...)
+	if opts.DisableTools {
+		args = append(args, "--tools", "")
+	}
 	return args
 }
 

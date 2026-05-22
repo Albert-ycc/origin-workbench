@@ -19,6 +19,7 @@ import {
   Send,
   Sparkles,
   Square,
+  Trash2,
   Upload,
   Volume2,
   VolumeX,
@@ -35,6 +36,7 @@ import {
   useArchiveMeetingSession,
   useCreateMeetingSession,
   useCreateMeetingTranscriptSegment,
+  useDeleteMeetingSession,
   useGenerateMeetingSummary,
   useStartMeetingSession,
   useStopMeetingSession,
@@ -52,6 +54,16 @@ import type {
 } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -344,6 +356,7 @@ function MeetingSessionView({
   const startMeeting = useStartMeetingSession(wsId);
   const stopMeeting = useStopMeetingSession(wsId);
   const archiveMeeting = useArchiveMeetingSession(wsId);
+  const deleteMeeting = useDeleteMeetingSession(wsId);
   const updateMeeting = useUpdateMeetingSession(wsId);
   const addSegment = useCreateMeetingTranscriptSegment(wsId);
   const updateInsight = useUpdateMeetingInsightStatus(wsId);
@@ -569,6 +582,16 @@ function MeetingSessionView({
     }
   };
 
+  const deleteCurrentMeeting = async () => {
+    try {
+      await deleteMeeting.mutateAsync(meeting.id);
+      toast.success("会议已删除");
+      navigation.push(projectId ? paths.projectMeetings(projectId) : paths.meetings());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+    }
+  };
+
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -653,6 +676,11 @@ function MeetingSessionView({
           <Archive className="size-4" />
           归档
         </Button>
+        <DeleteMeetingButton
+          meetingTitle={meeting.title}
+          disabled={deleteMeeting.isPending}
+          onDelete={() => void deleteCurrentMeeting()}
+        />
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(420px,1.35fr)_minmax(340px,0.85fr)] overflow-hidden">
@@ -1124,6 +1152,53 @@ function QuickLaunchStrip({
         ))}
       </div>
     </div>
+  );
+}
+
+function DeleteMeetingButton({
+  meetingTitle,
+  disabled,
+  onDelete,
+}: {
+  meetingTitle: string;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+      >
+        <Trash2 className="size-4" />
+        删除
+      </Button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除「{meetingTitle}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作无法撤销。会议转写、洞察卡片和纪要会一并删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={disabled}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onDelete}
+              disabled={disabled}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {disabled ? "删除中…" : "确认删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

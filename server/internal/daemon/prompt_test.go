@@ -150,6 +150,55 @@ func TestBuildPromptCouncilBroadcastFollowerSelfIntroducesAndReferences(t *testi
 	}
 }
 
+func TestBuildPromptSalonSpeakerIsCasualAndDoesNotUseWorkflows(t *testing.T) {
+	prompt := BuildPrompt(Task{
+		ChatSessionID: "chat-1",
+		ChatMessage:   "现在谁先来接话？",
+		Agent:         &AgentData{ID: "agent-pm", Name: "产品经理"},
+		CouncilBroadcast: &CouncilBroadcastData{
+			Type:             "council_broadcast",
+			CouncilSessionID: "room-1",
+			CouncilTopic:     "茶水间排查测试",
+			ChatSessionID:    "chat-1",
+			BroadcasterKind:  "user",
+			BroadcasterName:  "用户",
+			UserMessage:      "现在谁先来接话？",
+			SelfAgentID:      "agent-pm",
+			SelfAgentName:    "产品经理",
+			Role:             "salon_speaker",
+			Participants: []CouncilBroadcastMemberData{
+				{AgentID: "agent-pm", Name: "产品经理", Role: "participant"},
+				{AgentID: "agent-md", Name: "医学经理", Role: "participant"},
+			},
+		},
+	})
+
+	for _, want := range []string{
+		"Origin Salon — a casual chillout room, NOT a work meeting",
+		"Salon vibe / topic: 茶水间排查测试",
+		"用户 kicked off the salon by saying",
+		"Do NOT run `multica issue`, `multica council`, or any other CLI workflow",
+		"Your only job is to write the chat reply text",
+		"Do NOT narrate any reasoning steps",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("salon prompt missing %q\n----- prompt -----\n%s", want, prompt)
+		}
+	}
+
+	for _, banned := range []string{
+		"You are participating in an Origin Council Session",
+		"Council topic:",
+		"addressed the whole room with @全体",
+		"Start by running `multica issue get",
+		"comment add",
+	} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("salon prompt must not include work workflow text %q\n----- prompt -----\n%s", banned, prompt)
+		}
+	}
+}
+
 func TestBuildPromptChatIncludesRequestedSkills(t *testing.T) {
 	prompt := BuildPrompt(Task{
 		ChatSessionID:   "chat-1",

@@ -20,6 +20,7 @@ import {
   Plus,
   Sparkles,
   Target,
+  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -40,6 +41,7 @@ import {
   useStartProjectCompactionPreviewJob,
   useConfirmProjectCompaction,
   useArchiveProjectV12,
+  useDeleteProjectV12,
   projectArchivedSessionsOptions,
   projectCompactionPreviewJobOptions,
 } from "@multica/core/projects-v12";
@@ -285,6 +287,7 @@ export function ProjectWorkspacePage({
           {project.status !== "archived" && (
             <ArchiveProjectButton projectId={project.id} projectTitle={project.title} />
           )}
+          <DeleteProjectButton projectId={project.id} projectTitle={project.title} />
           <Button
             size="sm"
             variant="ghost"
@@ -1389,6 +1392,68 @@ function ArchiveProjectButton({
             <AlertDialogCancel disabled={archive.isPending}>取消</AlertDialogCancel>
             <AlertDialogAction onClick={submit} disabled={archive.isPending}>
               {archive.isPending ? "归档中…" : "确认归档"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function DeleteProjectButton({
+  projectId,
+  projectTitle,
+}: {
+  projectId: string;
+  projectTitle: string;
+}) {
+  const wsId = useWorkspaceId();
+  const paths = useWorkspacePaths();
+  const navigation = useNavigation();
+  const [open, setOpen] = useState(false);
+  const remove = useDeleteProjectV12(wsId);
+
+  const submit = async () => {
+    try {
+      await remove.mutateAsync(projectId);
+      toast.success(`「${projectTitle}」已删除`);
+      setOpen(false);
+      navigation.push(paths.projectWorkspaces());
+    } catch (err) {
+      toast.error("删除失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={() => setOpen(true)}
+        title="删除项目"
+      >
+        <Trash2 className="size-3" />
+        删除
+      </Button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除「{projectTitle}」？</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作无法撤销。项目主聊、会议、Mission、Idea、分岔探索、工具绑定和项目记忆会一并删除。本地目录不会被删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={remove.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={submit}
+              disabled={remove.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {remove.isPending ? "删除中…" : "确认删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

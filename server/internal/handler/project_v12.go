@@ -526,6 +526,34 @@ func (h *Handler) ArchiveProjectV12(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) DeleteProjectV12(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	if !ok {
+		return
+	}
+	pid, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	p, err := h.Queries.GetProjectInWorkspaceV12(r.Context(), db.GetProjectInWorkspaceV12Params{
+		ID:          pid,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if err := h.Queries.DeleteProjectV12(r.Context(), pid); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project")
+		return
+	}
+	h.publish(protocol.EventProjectDeleted, uuidToString(p.WorkspaceID), "system", "", map[string]any{
+		"project_id": uuidToString(p.ID),
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListProjectsByTeamV12 returns projects under a team (used on team detail page).
 func (h *Handler) ListProjectsByTeamV12(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)

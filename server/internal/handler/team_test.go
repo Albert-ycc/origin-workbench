@@ -1303,6 +1303,107 @@ func TestAdjournCouncilSessionRelaysConclusionToSourceChat(t *testing.T) {
 	}
 }
 
+func TestCreateCouncilSessionRejectsForeignSourceChat(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	localAgentID := createTeamTestAgent(t, "Council Local Agent")
+
+	slug := "foreign-council-source-" + strings.NewReplacer("/", "-", "_", "-").Replace(t.Name())
+	var foreignWorkspaceID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO workspace (name, slug, description)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, "Foreign Council Source", slug, "foreign source chat guard").Scan(&foreignWorkspaceID); err != nil {
+		t.Fatalf("create foreign workspace: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM workspace WHERE id = $1`, parseUUID(foreignWorkspaceID))
+	})
+
+	var foreignRuntimeID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO agent_runtime (
+			workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at
+		)
+		VALUES ($1, NULL, $2, 'cloud', $3, 'online', $4, '{}'::jsonb, $5, now())
+		RETURNING id
+	`, parseUUID(foreignWorkspaceID), "Foreign Council Runtime", "foreign_council_runtime", "foreign runtime", parseUUID(testUserID)).Scan(&foreignRuntimeID); err != nil {
+		t.Fatalf("create foreign runtime: %v", err)
+	}
+
+	var foreignAgentID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO agent (
+			workspace_id, runtime_id, name, description, runtime_mode,
+			runtime_config, visibility, max_concurrent_tasks, owner_id, work_mode
+		)
+		VALUES ($1, $2, $3, '', 'cloud', '{}'::jsonb, 'workspace', 1, $4, 'live')
+		RETURNING id
+	`, parseUUID(foreignWorkspaceID), parseUUID(foreignRuntimeID), "Foreign Council Agent", parseUUID(testUserID)).Scan(&foreignAgentID); err != nil {
+		t.Fatalf("create foreign agent: %v", err)
+	}
+
+	var foreignChatID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO chat_session (workspace_id, agent_id, creator_id, title)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, parseUUID(foreignWorkspaceID), parseUUID(foreignAgentID), parseUUID(testUserID), "Foreign Source Chat").Scan(&foreignChatID); err != nil {
+		t.Fatalf("create foreign chat: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/council-sessions", map[string]any{
+		"topic":                  "must reject foreign source chat",
+		"convener_agent_id":      localAgentID,
+		"source_chat_session_id": foreignChatID,
+	})
+	testHandler.CreateCouncilSession(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateCouncilSession foreign source chat: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "source_chat_session_id") {
+		t.Fatalf("CreateCouncilSession foreign source chat: expected source_chat_session_id error, got %s", w.Body.String())
+	}
+}
+
+func TestCreateSalonCouncilWithConvenerOnlyCreatesParticipantAndSourceChat(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	convenerAgentID := createTeamTestAgent(t, "Solo Salon Convener")
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodPost, "/api/council-sessions", map[string]any{
+		"topic":             "Convener-only salon should start",
+		"mode":              "salon",
+		"convener_agent_id": convenerAgentID,
+	})
+	testHandler.CreateCouncilSession(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateCouncilSession salon convener-only: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var created CouncilSessionDetailResponse
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decode council create response: %v", err)
+	}
+	if created.Session.Mode != "salon" {
+		t.Fatalf("session mode = %q, want salon", created.Session.Mode)
+	}
+	if created.Session.SourceChatSessionID == nil || *created.Session.SourceChatSessionID == "" {
+		t.Fatal("salon convener-only: expected auto-created source_chat_session_id")
+	}
+	if len(created.Participants) != 1 {
+		t.Fatalf("salon convener-only: expected 1 participant, got %d", len(created.Participants))
+	}
+	if created.Participants[0].AgentID != convenerAgentID || created.Participants[0].Role != "convener" {
+		t.Fatalf("salon convener-only participant mismatch: %+v", created.Participants[0])
+	}
+}
+
 func TestToolBindingMissionLifecycle(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

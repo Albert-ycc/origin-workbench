@@ -109,6 +109,7 @@ const ROUTE_ICONS: Record<string, string> = {
   issues: "ListTodo",
   explorations: "Route",
   projects: "FolderKanban",
+  rooms: "MessagesSquare",
   meetings: "Mic",
   autopilots: "ListTodo",
   agents: "Bot",

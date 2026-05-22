@@ -425,6 +425,14 @@ func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSe
 // captain agent themselves and pass it in. Daemon protocol is unchanged: the
 // task carries agent_id like any other chat task.
 func (s *TaskService) EnqueueChatTaskForAgent(ctx context.Context, chatSession db.ChatSession, agentID pgtype.UUID, taskContexts ...[]byte) (db.AgentTaskQueue, error) {
+	return s.enqueueChatTaskForAgent(ctx, chatSession, agentID, false, taskContexts...)
+}
+
+func (s *TaskService) EnqueueFreshChatTaskForAgent(ctx context.Context, chatSession db.ChatSession, agentID pgtype.UUID, taskContexts ...[]byte) (db.AgentTaskQueue, error) {
+	return s.enqueueChatTaskForAgent(ctx, chatSession, agentID, true, taskContexts...)
+}
+
+func (s *TaskService) enqueueChatTaskForAgent(ctx context.Context, chatSession db.ChatSession, agentID pgtype.UUID, forceFreshSession bool, taskContexts ...[]byte) (db.AgentTaskQueue, error) {
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "error", err)
@@ -462,11 +470,12 @@ func (s *TaskService) EnqueueChatTaskForAgent(ctx context.Context, chatSession d
 		taskContext = taskContexts[0]
 	}
 	task, err := s.Queries.CreateChatTask(ctx, db.CreateChatTaskParams{
-		AgentID:       agentID,
-		RuntimeID:     agent.RuntimeID,
-		Priority:      2, // medium priority for chat
-		ChatSessionID: chatSession.ID,
-		Context:       taskContext,
+		AgentID:           agentID,
+		RuntimeID:         agent.RuntimeID,
+		Priority:          2, // medium priority for chat
+		ChatSessionID:     chatSession.ID,
+		Context:           taskContext,
+		ForceFreshSession: pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
 	})
 	if err != nil {
 		slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "error", err)
@@ -479,6 +488,7 @@ func (s *TaskService) EnqueueChatTaskForAgent(ctx context.Context, chatSession d
 		"agent_id", util.UUIDToString(agentID),
 		"team_session", chatSession.TeamID.Valid,
 		"work_mode", agent.WorkMode,
+		"force_fresh_session", forceFreshSession,
 	)
 	// Mailbox-mode agents need a user-facing report row + a "received,
 	// processing" system message; live-mode agents are no-ops here.
@@ -1923,7 +1933,10 @@ func (s *TaskService) senderAgentForChatSession(ctx context.Context, task db.Age
 	// Council session check: even outside the team_id path, a chat_session
 	// can be the source of a running council; in that case every assistant
 	// reply belongs to a specific participant and the UI needs the avatar.
-	if _, err := s.Queries.GetRunningCouncilSessionBySourceChat(ctx, task.ChatSessionID); err == nil {
+	if _, err := s.Queries.GetRunningCouncilSessionBySourceChat(ctx, db.GetRunningCouncilSessionBySourceChatParams{
+		SourceChatSessionID: task.ChatSessionID,
+		WorkspaceID:         session.WorkspaceID,
+	}); err == nil {
 		return task.AgentID
 	}
 	return pgtype.UUID{}
@@ -2438,22 +2451,11 @@ func (s *TaskService) createTeamMentionIssue(ctx context.Context, session db.Cha
 }
 
 // MirrorIssueCompletionToTeamSession runs when a delegated-from-team-chat
-// issue lands in in_review / done. Two things happen:
-//
-//  1. The assignee agent's last comment on the issue is mirrored back into
-//     the team chat as a normal assistant chat_message, attributed to that
-//     agent via sender_agent_id. This is what makes the @-mentioned member's
-//     reply actually appear in the group chat. Before 2026-05-21 the
-//     delegated answer only lived inside the issue comment timeline, which
-//     left the user staring at "captain has dispatched 7 task cards" and
-//     never seeing the actual replies — the entire D-方案 D-plan looked
-//     broken from the user's perspective.
-//
-//  2. The team_task_completed event is still published so the delegation
-//     board / task card UI can refresh independently of the chat scroll.
-//
-// Idempotency: if a chat_message with the same task_id (resolved from the
-// mirrored comment's task) is already present we skip the insert.
+// issue lands in in_review / done. It emits a compact team_task_completed
+// event so the delegation board / task card UI can refresh. The assignee's
+// detailed output stays in issue comments and task-card detail; mirroring it
+// into the main chat duplicates long result bodies and makes the group thread
+// noisy.
 func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, issue db.Issue) {
 	if !issue.SourceTeamSessionID.Valid {
 		return
@@ -2464,78 +2466,6 @@ func (s *TaskService) MirrorIssueCompletionToTeamSession(ctx context.Context, is
 	}
 	if !session.TeamID.Valid {
 		return
-	}
-
-	// Mirror the assignee's last comment back into the team chat. We pull
-	// the full comment list (this is the same query the issue page uses; the
-	// row count is tiny in practice — one delegated issue = ~1 agent reply).
-	if issue.AssigneeID.Valid {
-		comments, err := s.Queries.ListComments(ctx, db.ListCommentsParams{
-			IssueID:     issue.ID,
-			WorkspaceID: issue.WorkspaceID,
-		})
-		if err == nil {
-			var lastAgentComment *db.Comment
-			assigneeID := util.UUIDToString(issue.AssigneeID)
-			for i := range comments {
-				c := comments[i]
-				if c.AuthorType != "agent" {
-					continue
-				}
-				if util.UUIDToString(c.AuthorID) != assigneeID {
-					continue
-				}
-				lastAgentComment = &c
-			}
-			if lastAgentComment != nil && strings.TrimSpace(lastAgentComment.Content) != "" {
-				msg, msgErr := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
-					ChatSessionID: session.ID,
-					Role:          "assistant",
-					Content:       lastAgentComment.Content,
-					SenderAgentID: issue.AssigneeID,
-				})
-				if msgErr != nil {
-					slog.Warn("mirror issue completion: chat message insert failed",
-						"issue_id", util.UUIDToString(issue.ID),
-						"chat_session_id", util.UUIDToString(session.ID),
-						"assignee_id", assigneeID,
-						"error", msgErr)
-				} else {
-					if touchErr := s.Queries.TouchChatSession(ctx, session.ID); touchErr != nil {
-						slog.Debug("mirror issue completion: touch session failed",
-							"chat_session_id", util.UUIDToString(session.ID),
-							"error", touchErr)
-					}
-					// Broadcast chat:message so the group chat scroll
-					// refreshes and the user sees the agent's reply land
-					// without having to dig into the issue card.
-					s.Bus.Publish(events.Event{
-						Type:          protocol.EventChatMessage,
-						WorkspaceID:   util.UUIDToString(session.WorkspaceID),
-						ActorType:     "agent",
-						ActorID:       assigneeID,
-						ChatSessionID: util.UUIDToString(session.ID),
-						Payload: protocol.ChatMessagePayload{
-							ChatSessionID: util.UUIDToString(session.ID),
-							MessageID:     util.UUIDToString(msg.ID),
-							Role:          "assistant",
-							Content:       lastAgentComment.Content,
-							CreatedAt:     msg.CreatedAt.Time.UTC().Format(time.RFC3339Nano),
-						},
-					})
-					slog.Info("mirror issue completion: agent reply pushed to team chat",
-						"issue_id", util.UUIDToString(issue.ID),
-						"chat_session_id", util.UUIDToString(session.ID),
-						"assignee_id", assigneeID,
-						"content_len", len(lastAgentComment.Content),
-					)
-				}
-			}
-		} else {
-			slog.Warn("mirror issue completion: list comments failed",
-				"issue_id", util.UUIDToString(issue.ID),
-				"error", err)
-		}
 	}
 
 	payload := map[string]any{

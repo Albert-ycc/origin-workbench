@@ -39,12 +39,13 @@ type RoomChatEnqueuer interface {
 //
 // 内部流程：
 //  1. 查 room_member 得到 active agent 列表
-//  2. 根据 triggerMsg.Mentions 决定 fan-out 目标
-//     - 包含 "all" → 所有 active agent 响应
-//     - 包含特定 agent_id → 仅被 @ 的 agent 响应
-//  3. 对每个目标 agent，find-or-create ephemeral chat_session（is_room_internal=true）
-//  4. 构建 CouncilBroadcastContext（复用已有 council fan-out 格式）
-//  5. 调用 EnqueueChatTaskForAgent 复用现有任务通路（daemon 不知道 room 存在）
+//  2. 根据 triggerMsg.Mentions 决定接力目标
+//     - 无 mentions → 所有 active agent 参与接力
+//     - 包含 "all" → 所有 active agent 参与接力
+//     - 包含特定 agent_id → 仅被 @ 的 agent 参与接力
+//  3. 只为第一位目标 agent 创建开场任务，后续由 salon relay 串行接力
+//  4. 构建 CouncilBroadcastContext（复用已有 council salon 格式）
+//  5. 调用 EnqueueFreshChatTaskForAgent 复用现有任务通路（daemon 不知道 room 存在）
 func (s *TaskService) EnqueueRoomChatTasks(
 	ctx context.Context,
 	q *db.Queries,
@@ -67,7 +68,7 @@ func (s *TaskService) EnqueueRoomChatTasks(
 
 	// 2. 根据 mentions 决定 fan-out 目标
 	// triggerMsg.Mentions 存放 agent_id 字符串或 "all"
-	mentionAll := false
+	mentionAll := len(triggerMsg.Mentions) == 0
 	mentionSet := make(map[string]bool, len(triggerMsg.Mentions))
 	for _, m := range triggerMsg.Mentions {
 		if m == "all" {
@@ -92,11 +93,18 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		return nil
 	}
 
-	// 构建 roster 信息（让每个 agent 的 broadcast context 知道"客厅里还有谁"）
-	rosterInfo := make([]CouncilBroadcastMemberInfo, 0, len(agentMembers))
-	for _, am := range agentMembers {
+	// 构建接力 roster。这里必须使用 targetMembers，而不是全 room 成员；
+	// 否则单 @某个 agent 也会在后续 relay 中扩散到未被 @ 的成员。
+	rosterInfo := make([]CouncilBroadcastMemberInfo, 0, len(targetMembers))
+	agentByID := make(map[string]db.Agent, len(targetMembers))
+	for _, am := range targetMembers {
 		agent, err := q.GetAgent(ctx, am.MemberID)
 		if err != nil {
+			continue
+		}
+		if agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
+			slog.Debug("room relay: skip archived/no-runtime agent",
+				"agent_id", util.UUIDToString(am.MemberID))
 			continue
 		}
 		rosterInfo = append(rosterInfo, CouncilBroadcastMemberInfo{
@@ -104,6 +112,12 @@ func (s *TaskService) EnqueueRoomChatTasks(
 			Name:    agent.Name,
 			Role:    am.Role,
 		})
+		agentByID[util.UUIDToString(am.MemberID)] = agent
+	}
+	if len(rosterInfo) == 0 {
+		slog.Debug("room relay: no target agents could be loaded",
+			"room_id", util.UUIDToString(room.ID))
+		return nil
 	}
 
 	userUUID, err := util.ParseUUID(userID)
@@ -111,77 +125,58 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		return fmt.Errorf("parse user id %q: %w", userID, err)
 	}
 
-	var failCount int
+	openerID := rosterInfo[0].AgentID
+	agent, ok := agentByID[openerID]
+	if !ok {
+		return fmt.Errorf("room relay: opener agent %s was not loaded", openerID)
+	}
+	var opener db.RoomMember
 	for _, am := range targetMembers {
-		agent, err := q.GetAgent(ctx, am.MemberID)
-		if err != nil {
-			slog.Warn("room fan-out: skip agent — load failed",
-				"room_id", util.UUIDToString(room.ID),
-				"agent_id", util.UUIDToString(am.MemberID),
-				"error", err)
-			failCount++
-			continue
+		if util.UUIDToString(am.MemberID) == openerID {
+			opener = am
+			break
 		}
-		if agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
-			slog.Debug("room fan-out: skip archived/no-runtime agent",
-				"agent_id", util.UUIDToString(am.MemberID))
-			continue
-		}
-
-		// 3. find-or-create ephemeral room internal chat_session
-		chatSession, err := s.findOrCreateRoomInternalSession(ctx, q, room, am.MemberID, userUUID)
-		if err != nil {
-			slog.Warn("room fan-out: skip agent — session create failed",
-				"room_id", util.UUIDToString(room.ID),
-				"agent_id", util.UUIDToString(am.MemberID),
-				"error", err)
-			failCount++
-			continue
-		}
-
-		// 4. 构建 CouncilBroadcastContext，把 room 当 council 对待
-		broadcastCtx := CouncilBroadcastContext{
-			Type:             CouncilBroadcastContextType,
-			CouncilSessionID: util.UUIDToString(room.ID), // room.ID 充当 council session id
-			CouncilTopic:     room.Name,
-			ChatSessionID:    util.UUIDToString(chatSession.ID),
-			BroadcasterKind:  "user",
-			BroadcasterName:  "用户",
-			UserMessage:      triggerMsg.Content,
-			Participants:     rosterInfo,
-			SelfAgentID:      util.UUIDToString(am.MemberID),
-			SelfAgentName:    agent.Name,
-		}
-		contextJSON, err := json.Marshal(broadcastCtx)
-		if err != nil {
-			slog.Warn("room fan-out: marshal broadcast context failed",
-				"agent_id", util.UUIDToString(am.MemberID),
-				"error", err)
-			failCount++
-			continue
-		}
-
-		// 5. 复用 EnqueueChatTaskForAgent，daemon 协议完全不变
-		_, err = s.EnqueueChatTaskForAgent(ctx, chatSession, am.MemberID, contextJSON)
-		if err != nil {
-			slog.Warn("room fan-out: enqueue task failed",
-				"room_id", util.UUIDToString(room.ID),
-				"agent_id", util.UUIDToString(am.MemberID),
-				"error", err)
-			failCount++
-			continue
-		}
-
-		slog.Info("room chat task enqueued",
-			"room_id", util.UUIDToString(room.ID),
-			"agent_id", util.UUIDToString(am.MemberID),
-			"chat_session_id", util.UUIDToString(chatSession.ID),
-		)
 	}
 
-	if failCount > 0 {
-		return fmt.Errorf("room fan-out: %d/%d targets failed", failCount, len(targetMembers))
+	// 3. find-or-create ephemeral room internal chat_session for the opener.
+	chatSession, err := s.findOrCreateRoomInternalSession(ctx, q, room, opener.MemberID, userUUID)
+	if err != nil {
+		return fmt.Errorf("room relay: opener session create failed: %w", err)
 	}
+
+	// 4. 构建 CouncilBroadcastContext，把 room 当 salon 对待。
+	broadcastCtx := CouncilBroadcastContext{
+		Type:             CouncilBroadcastContextType,
+		CouncilSessionID: util.UUIDToString(room.ID), // room.ID 充当 council session id
+		CouncilTopic:     room.Name,
+		ChatSessionID:    util.UUIDToString(chatSession.ID),
+		BroadcasterKind:  "user",
+		BroadcasterName:  "用户",
+		UserMessage:      triggerMsg.Content,
+		Participants:     rosterInfo,
+		SelfAgentID:      openerID,
+		SelfAgentName:    agent.Name,
+		Role:             CouncilBroadcastRoleSalon,
+		TurnIndex:        1,
+		MaxTurns:         len(rosterInfo),
+	}
+	contextJSON, err := json.Marshal(broadcastCtx)
+	if err != nil {
+		return fmt.Errorf("room relay: marshal broadcast context: %w", err)
+	}
+
+	// 5. Room/salon prompt must not inherit old daemon sessions that may
+	// contain council or CLI workflow instructions from earlier task shapes.
+	if _, err = s.EnqueueFreshChatTaskForAgent(ctx, chatSession, opener.MemberID, contextJSON); err != nil {
+		return fmt.Errorf("room relay: enqueue opening task: %w", err)
+	}
+
+	slog.Info("room chat opening task enqueued",
+		"room_id", util.UUIDToString(room.ID),
+		"agent_id", util.UUIDToString(opener.MemberID),
+		"chat_session_id", util.UUIDToString(chatSession.ID),
+		"target_count", len(rosterInfo),
+	)
 	return nil
 }
 
