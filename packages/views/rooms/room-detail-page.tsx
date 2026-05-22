@@ -52,7 +52,7 @@ import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { ActorAvatar } from "../common/actor-avatar";
 import { toast } from "sonner";
-import type { Room } from "@multica/core/types";
+import type { Room, RoomMessage } from "@multica/core/types";
 
 interface RoomDetailPageProps {
   roomId?: string;
@@ -67,6 +67,7 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<RoomMessage | null>(null);
   const deleteRoom = useDeleteRoom();
 
   const id = roomId;
@@ -148,8 +149,12 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
 
         {/* Center: message list + input */}
         <div className="flex flex-col flex-1 min-w-0">
-          <RoomMessageList roomId={id} />
-          <RoomMessageInput roomId={id} />
+          <RoomMessageList roomId={id} onReply={setReplyToMessage} />
+          <RoomMessageInput
+            roomId={id}
+            replyToMessage={replyToMessage}
+            onCancelReply={() => setReplyToMessage(null)}
+          />
         </div>
       </div>
 

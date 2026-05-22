@@ -422,6 +422,8 @@ export interface RoomMessagePayload {
   sender_id: string;
   sender_name?: string;
   content: string;
+  reply_to_message_id?: string | null;
+  mentions?: string[];
   is_autonomous: boolean;
   created_at: string;
 }

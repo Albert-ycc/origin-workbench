@@ -601,13 +601,15 @@ func (h *Handler) SendRoomMessage(w http.ResponseWriter, r *http.Request) {
 
 	// 3. 推 room:message ws 事件给所有 workspace 订阅者
 	h.publish(protocol.EventRoomMessage, workspaceID, "member", userID, protocol.RoomMessagePayload{
-		RoomID:       uuidToString(room.ID),
-		MessageID:    uuidToString(msg.ID),
-		SenderType:   "user",
-		SenderID:     userID,
-		Content:      req.Content,
-		IsAutonomous: false,
-		CreatedAt:    timestampToString(msg.CreatedAt),
+		RoomID:           uuidToString(room.ID),
+		MessageID:        uuidToString(msg.ID),
+		SenderType:       "user",
+		SenderID:         userID,
+		Content:          req.Content,
+		ReplyToMessageID: uuidToPtr(msg.ReplyToMessageID),
+		Mentions:         mentions,
+		IsAutonomous:     false,
+		CreatedAt:        timestampToString(msg.CreatedAt),
 	})
 
 	// 4. touch room last_active_at

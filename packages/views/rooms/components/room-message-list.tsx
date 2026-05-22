@@ -7,18 +7,21 @@ import { useAutoScroll } from "@multica/ui/hooks/use-auto-scroll";
 import { roomMessagesOptions } from "@multica/core/rooms";
 import { RoomMessageBubble } from "./room-message-bubble";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import type { RoomMessage } from "@multica/core/types";
 
 interface RoomMessageListProps {
   roomId: string;
+  onReply?: (message: RoomMessage) => void;
 }
 
-export function RoomMessageList({ roomId }: RoomMessageListProps) {
+export function RoomMessageList({ roomId, onReply }: RoomMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fadeStyle = useScrollFade(scrollRef);
   useAutoScroll(scrollRef);
 
   const { data, isPending, isError, refetch } = useQuery(roomMessagesOptions(roomId));
   const messages = data?.messages ?? [];
+  const messageById = new Map(messages.map((message) => [message.id, message]));
 
   if (isPending) {
     return (
@@ -82,7 +85,17 @@ export function RoomMessageList({ roomId }: RoomMessageListProps) {
           const isMerged = msg.sender_id === prevSenderId;
           prevSenderId = msg.sender_id;
           return (
-            <RoomMessageBubble key={msg.id} message={msg} isMerged={isMerged} />
+            <RoomMessageBubble
+              key={msg.id}
+              message={msg}
+              isMerged={isMerged}
+              replyToMessage={
+                msg.reply_to_message_id
+                  ? messageById.get(msg.reply_to_message_id)
+                  : undefined
+              }
+              onReply={onReply}
+            />
           );
         })}
       </div>

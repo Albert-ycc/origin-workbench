@@ -701,6 +701,8 @@ export function useRealtimeSync(
             sender_id: payload.sender_id,
             sender_name: payload.sender_name ?? null,
             content: payload.content,
+            reply_to_message_id: payload.reply_to_message_id ?? null,
+            mentions: payload.mentions ?? [],
             is_autonomous: payload.is_autonomous,
             created_at: payload.created_at,
           };

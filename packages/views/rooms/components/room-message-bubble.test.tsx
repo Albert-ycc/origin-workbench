@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RoomMessage } from "@multica/core/types";
 
@@ -52,5 +53,39 @@ describe("RoomMessageBubble", () => {
     expect(avatar).toHaveAttribute("data-actor-id", "agent-1");
     expect(screen.getByText("前端开发工程师")).toBeInTheDocument();
     expect(screen.getByText("我来看看这个交互。")).toBeInTheDocument();
+  });
+
+  it("lets users quote an agent message", async () => {
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+
+    render(<RoomMessageBubble message={createMessage()} onReply={onReply} />);
+
+    await user.click(screen.getByRole("button", { name: "引用前端开发工程师的消息" }));
+
+    expect(onReply).toHaveBeenCalledWith(createMessage());
+  });
+
+  it("renders the quoted message preview above a reply", () => {
+    render(
+      <RoomMessageBubble
+        message={createMessage({
+          sender_type: "user",
+          sender_name: "我",
+          sender_id: "user-1",
+          content: "收到，我继续追问。",
+          reply_to_message_id: "message-0",
+        })}
+        replyToMessage={createMessage({
+          id: "message-0",
+          sender_name: "产品经理",
+          content: "先把问题说清楚。",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("引用 产品经理")).toBeInTheDocument();
+    expect(screen.getByText("先把问题说清楚。")).toBeInTheDocument();
+    expect(screen.getByText("收到，我继续追问。")).toBeInTheDocument();
   });
 });

@@ -57,7 +57,7 @@ type TaskMessageChunkPayload struct {
 	TaskID        string `json:"task_id"`
 	ChatSessionID string `json:"chat_session_id,omitempty"`
 	MessageID     string `json:"message_id"` // 流中所有 chunk 共享同一 message_id
-	Chunk         string `json:"chunk"`       // 本次增量文本
+	Chunk         string `json:"chunk"`      // 本次增量文本
 }
 
 // TaskMessageCompletePayload 是流式输出完成后发送一次的 WS payload。
@@ -67,7 +67,7 @@ type TaskMessageCompletePayload struct {
 	TaskID        string `json:"task_id"`
 	ChatSessionID string `json:"chat_session_id,omitempty"`
 	MessageID     string `json:"message_id"` // 与 chunk 事件相同 message_id
-	Content       string `json:"content"`     // 完整消息文本
+	Content       string `json:"content"`    // 完整消息文本
 	InputTokens   int64  `json:"input_tokens,omitempty"`
 	OutputTokens  int64  `json:"output_tokens,omitempty"`
 }
@@ -159,12 +159,14 @@ type DaemonHeartbeatPendingLocalSkillImport struct {
 // agent 流式回复的 token 增量仍走 task:message_chunk / task:message_complete，
 // 前端通过 message_id 匹配客厅消息占位气泡后替换内容。
 type RoomMessagePayload struct {
-	RoomID       string `json:"room_id"`
-	MessageID    string `json:"message_id"`
-	SenderType   string `json:"sender_type"`
-	SenderID     string `json:"sender_id"`
-	SenderName   string `json:"sender_name,omitempty"`
-	Content      string `json:"content"`
-	IsAutonomous bool   `json:"is_autonomous"`
-	CreatedAt    string `json:"created_at"`
+	RoomID           string   `json:"room_id"`
+	MessageID        string   `json:"message_id"`
+	SenderType       string   `json:"sender_type"`
+	SenderID         string   `json:"sender_id"`
+	SenderName       string   `json:"sender_name,omitempty"`
+	Content          string   `json:"content"`
+	ReplyToMessageID *string  `json:"reply_to_message_id,omitempty"`
+	Mentions         []string `json:"mentions,omitempty"`
+	IsAutonomous     bool     `json:"is_autonomous"`
+	CreatedAt        string   `json:"created_at"`
 }
