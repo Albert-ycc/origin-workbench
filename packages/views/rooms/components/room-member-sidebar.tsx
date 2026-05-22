@@ -37,19 +37,12 @@ export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProp
 
   return (
     <div
-      className="flex flex-col w-[200px] shrink-0 border-r h-full overflow-y-auto"
-      style={{ borderColor: "var(--living-border-line, #E8E8E8)" }}
+      className="room-member-sidebar flex h-full w-[200px] shrink-0 flex-col overflow-y-auto border-r"
     >
-      <div
-        className="flex items-center justify-between px-3 py-3 border-b"
-        style={{ borderColor: "var(--living-border-line, #E8E8E8)" }}
-      >
+      <div className="flex items-center justify-between border-b px-3 py-3">
         <div className="flex items-center gap-1.5">
-          <Users className="size-3.5" style={{ color: "var(--living-text-secondary, #86909C)" }} />
-          <span
-            className="text-xs font-semibold uppercase tracking-wider"
-            style={{ color: "var(--living-text-secondary, #86909C)" }}
-          >
+          <Users className="size-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             成员
           </span>
         </div>
@@ -68,10 +61,7 @@ export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProp
             <MemberRowSkeleton />
           </>
         ) : members.length === 0 ? (
-          <p
-            className="text-xs italic px-2 py-2"
-            style={{ color: "var(--living-text-secondary, #86909C)" }}
-          >
+          <p className="px-2 py-2 text-xs italic text-muted-foreground">
             还没有成员
           </p>
         ) : (
@@ -86,11 +76,7 @@ export function RoomMemberSidebar({ roomId, onAddMember }: RoomMemberSidebarProp
                   size={24}
                   showStatusDot
                 />
-                <span
-                  className="text-xs truncate flex-1"
-                  style={{ color: "var(--living-text-primary, #1F2329)" }}
-                  title={agent?.name ?? agentId}
-                >
+                <span className="flex-1 truncate text-xs text-foreground" title={agent?.name ?? agentId}>
                   {agent?.name ?? agentId}
                 </span>
                 {member.member_type === "agent" && (

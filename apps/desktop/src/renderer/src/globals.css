@@ -19,9 +19,6 @@
 :root {
   --living-accent-blue:   #1677FF;   /* Ant Design 蓝，active 状态 */
   --living-accent-orange: #F59E0B;   /* 自发发言 / 橙标 */
-  --living-text-primary:  #1F2329;   /* 主文字 */
-  --living-text-secondary:#86909C;   /* 次文字/时间戳 */
-  --living-border-line:   #E8E8E8;   /* 1px 气泡描边 */
   --living-dot-active:    #6BBF8A;   /* 心境活跃绿 */
   --living-dot-quiet:     #D4AE5E;   /* 心境安静黄 */
   --living-dot-away:      #C0C4CC;   /* 心境离开灰 */
@@ -40,12 +37,12 @@
 /* 自发发言气泡呼吸光晕 3.2s */
 @keyframes living-breath {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.0);
-    border-left-color: rgba(245, 158, 11, 0.45);
+    box-shadow: 0 0 0 0 transparent;
+    border-left-color: color-mix(in oklab, var(--living-accent-orange) 45%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
-    border-left-color: rgba(245, 158, 11, 0.75);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--living-accent-orange) 14%, transparent);
+    border-left-color: color-mix(in oklab, var(--living-accent-orange) 80%, transparent);
   }
 }
 
@@ -68,11 +65,160 @@
 /* 茶水间模块 brand-spec v2 namespace — 只作用于 .living-room-scope 内部 */
 .living-room-scope {
   font-family: "Noto Sans SC", "PingFang SC", sans-serif;
-  background: #FFFFFF;
+  --living-accent: var(--living-accent-blue);
+  --living-accent-contrast: white;
+  --living-text-primary: var(--foreground);
+  --living-text-secondary: var(--muted-foreground);
+  --living-border-line: var(--border);
+  --living-bg-start: var(--background);
+  --living-bg-end: var(--background);
+  --living-panel: var(--background);
+  --living-panel-muted: var(--muted);
+  --living-card: var(--card);
+  --living-bubble-bg: var(--card);
+  --living-user-bubble: var(--primary);
+  --living-user-bubble-foreground: var(--primary-foreground);
+  --living-soft-accent: color-mix(in oklab, var(--accent) 82%, var(--living-accent) 18%);
+  --living-soft-accent-strong: color-mix(in oklab, var(--accent) 72%, var(--living-accent) 28%);
+  --living-shadow: none;
+  color: var(--living-text-primary);
+  background: var(--living-bg-end);
+}
+
+.dark .living-room-scope {
+  --living-border-line: var(--border);
+  --living-bg-start: var(--background);
+  --living-panel: var(--background);
+  --living-panel-muted: var(--muted);
+  --living-card: var(--card);
+  --living-bubble-bg: var(--card);
+  --living-soft-accent: color-mix(in oklab, var(--accent) 88%, var(--living-accent) 12%);
+  --living-soft-accent-strong: color-mix(in oklab, var(--accent) 78%, var(--living-accent) 22%);
+  --living-shadow: none;
+}
+
+.living-room-scope[data-room-theme="morning"] {
+  --living-accent: #C98231;
+  --living-accent-blue: #2D7A78;
+}
+
+.living-room-scope[data-room-theme="day"] {
+  --living-accent: #1677FF;
+  --living-accent-blue: #1677FF;
+}
+
+.living-room-scope[data-room-theme="evening"] {
+  --living-accent: #B65F43;
+  --living-accent-blue: #6E7FD8;
+}
+
+.living-room-scope[data-room-theme="night"] {
+  --living-accent: var(--muted-foreground);
+  --living-accent-blue: var(--muted-foreground);
+}
+
+.room-shell-header,
+.room-detail-header,
+.room-message-input-bar {
+  border-color: var(--living-border-line);
+  background: var(--living-panel);
+  backdrop-filter: blur(16px);
+}
+
+.room-list-body,
+.room-detail-body {
+  color: var(--living-text-primary);
+}
+
+.room-header-mark,
+.room-card-icon {
+  color: var(--living-accent);
+  background: var(--living-soft-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--living-accent) 18%, transparent);
+}
+
+.room-time-pill,
+.room-count-pill,
+.room-autonomous-badge {
+  color: var(--living-accent);
+  background: var(--living-soft-accent);
+  border: 1px solid color-mix(in oklab, var(--living-accent) 24%, transparent);
+}
+
+.room-card,
+.room-empty-preview,
+.room-quiet-state,
+.room-composer {
+  border-color: var(--living-border-line);
+  background: var(--living-card);
+  box-shadow: var(--living-shadow);
+}
+
+.room-card {
+  min-height: 172px;
+}
+
+.room-card:hover {
+  border-color: color-mix(in oklab, var(--living-accent) 45%, var(--living-border-line));
+  transform: translateY(-1px);
+}
+
+.room-empty-preview {
+  width: min(100%, 540px);
+  justify-self: end;
+  background: var(--living-card);
+  box-shadow: var(--living-shadow);
+}
+
+.room-preview-bubble {
+  max-width: 68%;
+  border: 1px solid var(--living-border-line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--living-text-primary);
+  background: var(--living-bubble-bg);
+}
+
+.room-preview-bubble.is-user {
+  color: var(--living-user-bubble-foreground);
+  background: var(--living-user-bubble);
+  border-color: transparent;
+}
+
+.room-member-sidebar {
+  border-color: var(--living-border-line);
+  background: var(--living-panel);
+}
+
+.room-member-sidebar [class*="border-b"] {
+  border-color: var(--living-border-line);
+}
+
+.room-message-list {
+  background: transparent;
+}
+
+.room-message-input-bar {
+  background: var(--living-panel);
+}
+
+.room-composer {
+  background: var(--living-card);
+}
+
+.room-composer.is-focused {
+  border-color: color-mix(in oklab, var(--living-accent) 62%, var(--living-border-line));
+  box-shadow: 0 0 0 3px var(--living-soft-accent);
 }
 
 .living-room-scope .room-message-bubble {
-  background: #FFFFFF;
-  border: 1px solid var(--living-border-line, #E8E8E8);
+  color: var(--living-text-primary);
+  background: var(--living-bubble-bg);
+  border: 1px solid var(--living-border-line);
   border-radius: 8px;
+  box-shadow: none;
+}
+
+.living-room-scope .room-message-bubble .prose {
+  color: inherit;
 }

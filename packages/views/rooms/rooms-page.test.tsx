@@ -120,6 +120,18 @@ describe("RoomsPage", () => {
     expect(screen.getByText("验证列表契约")).toBeInTheDocument();
   });
 
+  it("marks the page with the current ambient theme", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-05-22T23:30:00+08:00"));
+      const { container } = renderRoomsPage();
+
+      expect(container.firstElementChild).toHaveAttribute("data-room-theme", "night");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("submits selected agents when creating a room", async () => {
     const user = userEvent.setup();
     api.listAgents.mockResolvedValue([createAgent()]);

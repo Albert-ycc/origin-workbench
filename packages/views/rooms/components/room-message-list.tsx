@@ -25,7 +25,7 @@ export function RoomMessageList({ roomId, onReply }: RoomMessageListProps) {
 
   if (isPending) {
     return (
-      <div className="flex-1 overflow-hidden">
+      <div className="room-message-list flex-1 overflow-hidden">
         <div className="mx-auto w-full max-w-3xl px-5 py-4 space-y-4">
           <div className="space-y-2">
             <Skeleton className="h-3.5 w-3/4" />
@@ -65,13 +65,10 @@ export function RoomMessageList({ roomId, onReply }: RoomMessageListProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <p
-          className="text-sm text-center"
-          style={{ color: "var(--living-text-secondary, #86909C)" }}
-        >
+      <div className="room-message-list flex flex-1 items-center justify-center px-5">
+        <div className="room-quiet-state rounded-lg border px-5 py-4 text-center text-sm text-muted-foreground">
           茶水间里还很安静，发一条消息开始聊吧
-        </p>
+        </div>
       </div>
     );
   }
@@ -79,7 +76,7 @@ export function RoomMessageList({ roomId, onReply }: RoomMessageListProps) {
   let prevSenderId: string | null = null;
 
   return (
-    <div ref={scrollRef} style={fadeStyle} className="flex-1 overflow-y-auto">
+    <div ref={scrollRef} style={fadeStyle} className="room-message-list flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-5 py-4 space-y-0">
         {messages.map((msg) => {
           const isMerged = msg.sender_id === prevSenderId;

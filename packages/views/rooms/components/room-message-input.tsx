@@ -214,13 +214,13 @@ export function RoomMessageInput({
   };
 
   return (
-    <div className="border-t bg-background px-5 py-3">
+    <div className="room-message-input-bar border-t px-5 py-3">
       <div className="mx-auto flex max-w-3xl items-end gap-2">
         <div
           className={cn(
-            "relative flex-1 rounded-lg border bg-card transition-shadow",
+            "room-composer relative flex-1 rounded-lg border transition-shadow",
             isFocused
-              ? "border-ring shadow-[0_0_0_2px_hsl(var(--ring)/0.15)]"
+              ? "is-focused"
               : "border-border",
           )}
         >

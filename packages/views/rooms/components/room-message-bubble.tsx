@@ -88,14 +88,7 @@ export function RoomMessageBubble({
             </span>
             <span>{formatTime(message.created_at)}</span>
             {message.is_autonomous && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded"
-                style={{
-                  color: "var(--living-accent-orange, #F59E0B)",
-                  background: "rgba(245,158,11,0.08)",
-                  border: "1px solid rgba(245,158,11,0.2)",
-                }}
-              >
+              <span className="room-autonomous-badge rounded px-1.5 py-0.5 text-[10px]">
                 自言自语
               </span>
             )}
@@ -106,7 +99,7 @@ export function RoomMessageBubble({
             "room-message-bubble relative rounded-2xl px-3.5 py-2 text-sm",
             message.is_autonomous && "autonomous-bubble",
           )}
-          style={message.is_autonomous ? { borderLeft: "4px solid #F59E0B" } : undefined}
+          style={message.is_autonomous ? { borderLeftWidth: 4 } : undefined}
         >
           <QuotedMessagePreview message={replyToMessage} />
           <div className="text-sm leading-relaxed prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">

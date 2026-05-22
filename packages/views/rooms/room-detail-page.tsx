@@ -53,6 +53,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { ActorAvatar } from "../common/actor-avatar";
 import { toast } from "sonner";
 import type { Room, RoomMessage } from "@multica/core/types";
+import { useRoomAmbientTheme } from "./room-ambient-theme";
 
 interface RoomDetailPageProps {
   roomId?: string;
@@ -62,6 +63,7 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
   const wsId = useWorkspaceId();
   const p = useWorkspacePaths();
   const navigation = useNavigation();
+  const ambientTheme = useRoomAmbientTheme();
   const memberSidebarOpen = useRoomsStore((s) => s.memberSidebarOpen);
   const setMemberSidebarOpen = useRoomsStore((s) => s.setMemberSidebarOpen);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
@@ -76,13 +78,9 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
   if (!id) return null;
 
   return (
-    <div className="living-room-scope flex flex-col h-full w-full">
+    <div className="living-room-scope flex h-full w-full flex-col" data-room-theme={ambientTheme}>
       <DragStrip />
-      {/* Top bar */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
-        style={{ borderColor: "var(--living-border-line, #E8E8E8)" }}
-      >
+      <div className="room-detail-header flex shrink-0 items-center gap-3 border-b px-4 py-3">
         <Button
           variant="ghost"
           size="icon"
@@ -94,14 +92,11 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
           <ChevronLeft className="size-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div
-            className="text-sm font-semibold truncate"
-            style={{ color: "var(--living-text-primary, #1F2329)" }}
-          >
+          <div className="truncate text-sm font-semibold">
             {isPending ? "加载中…" : (room?.name ?? "未知茶水间")}
           </div>
-        {room?.description && (
-            <div className="text-xs truncate" style={{ color: "var(--living-text-secondary, #86909C)" }}>
+          {room?.description && (
+            <div className="truncate text-xs text-muted-foreground">
               {room.description}
             </div>
           )}
@@ -140,15 +135,12 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
         </Button>
       </div>
 
-      {/* Three-column body: left gutter (80px) + main + right gutter (80px, hidden) */}
-      {/* Left member sidebar (200px) + center message area */}
-      <div className="flex flex-1 min-h-0">
+      <div className="room-detail-body flex min-h-0 flex-1">
         {memberSidebarOpen && (
           <RoomMemberSidebar roomId={id} onAddMember={() => setAddMemberOpen(true)} />
         )}
 
-        {/* Center: message list + input */}
-        <div className="flex flex-col flex-1 min-w-0">
+        <div className="flex min-w-0 flex-1 flex-col">
           <RoomMessageList roomId={id} onReply={setReplyToMessage} />
           <RoomMessageInput
             roomId={id}
