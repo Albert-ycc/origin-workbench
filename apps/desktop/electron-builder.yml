@@ -4,12 +4,19 @@ directories:
   buildResources: build
   output: dist-local
 files:
+  - "out/**/*"
+  - "resources/**/*"
+  - "package.json"
   - "!**/.vscode/*"
+  - "!.turbo{,/**/*}"
   - "!dist-local{,/**/*}"
   - "!dist{,/**/*}"
   - "!node_modules/.cache{,/**/*}"
-  - "!src/*"
+  - "!scripts{,/**/*}"
+  - "!test{,/**/*}"
+  - "!src{,/**/*}"
   - "!electron.vite.config.*"
+  - "!*.config.*"
   - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
   - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
 protocols:
