@@ -3,9 +3,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
-import type { Agent } from "@multica/core/types";
+import userEvent from "@testing-library/user-event";
+import type { Agent, Skill } from "@multica/core/types";
 
 const mockListSkills = vi.hoisted(() => vi.fn());
+const mockSetAgentSkills = vi.hoisted(() => vi.fn());
 
 vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
@@ -14,7 +16,7 @@ vi.mock("@multica/core/hooks", () => ({
 vi.mock("@multica/core/api", () => ({
   api: {
     listSkills: (...args: unknown[]) => mockListSkills(...args),
-    setAgentSkills: vi.fn(),
+    setAgentSkills: (...args: unknown[]) => mockSetAgentSkills(...args),
   },
 }));
 
@@ -44,9 +46,6 @@ const agent: Agent = {
   status: "idle",
   max_concurrent_tasks: 1,
   model: "",
-  work_mode: "live",
-  mailbox_budget_seconds: 3600,
-  notify_policy: "both",
   owner_id: "user-1",
   skills: [],
   created_at: "2026-04-16T00:00:00Z",
@@ -55,7 +54,22 @@ const agent: Agent = {
   archived_by: null,
 };
 
-function renderSkillsTab() {
+function skill(id: string, name: string): Skill {
+  return {
+    id,
+    workspace_id: "ws-1",
+    name,
+    description: "",
+    content: "",
+    config: {},
+    files: [],
+    created_by: null,
+    created_at: "2026-04-16T00:00:00Z",
+    updated_at: "2026-04-16T00:00:00Z",
+  };
+}
+
+function renderSkillsTab(overrides?: Partial<Agent>) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -66,7 +80,7 @@ function renderSkillsTab() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <SkillsTab agent={agent} />
+      <SkillsTab agent={{ ...agent, ...overrides }} />
     </QueryClientProvider>,
   );
 }
@@ -104,5 +118,46 @@ describe("SkillsTab", () => {
     // already deleted from the mock setup above; this assertion is
     // implicit — the test file would fail to import if the component
     // still referenced runtimeListOptions / runtimeLocalSkillsOptions.)
+  });
+
+  it("adds multiple selected skills in one assignment update", async () => {
+    const user = userEvent.setup();
+    mockListSkills.mockResolvedValue([
+      skill("skill-1", "需求拆解"),
+      skill("skill-2", "测试设计"),
+      skill("skill-3", "周报整理"),
+    ]);
+    mockSetAgentSkills.mockResolvedValue(undefined);
+
+    renderSkillsTab();
+
+    await user.click(await screen.findByRole("button", { name: "批量添加技能" }));
+    await user.click(await screen.findByRole("button", { name: /需求拆解/ }));
+    await user.click(await screen.findByRole("button", { name: /测试设计/ }));
+    await user.click(screen.getByRole("button", { name: "添加选中的 2 项" }));
+
+    expect(mockSetAgentSkills).toHaveBeenCalledWith("agent-1", {
+      skill_ids: ["skill-1", "skill-2"],
+    });
+  });
+
+  it("can select all available skills in the batch add dialog", async () => {
+    const user = userEvent.setup();
+    mockListSkills.mockResolvedValue([
+      skill("skill-1", "需求拆解"),
+      skill("skill-2", "测试设计"),
+      skill("skill-3", "周报整理"),
+    ]);
+    mockSetAgentSkills.mockResolvedValue(undefined);
+
+    renderSkillsTab();
+
+    await user.click(await screen.findByRole("button", { name: "批量添加技能" }));
+    await user.click(screen.getByRole("button", { name: "全选" }));
+    await user.click(screen.getByRole("button", { name: "添加选中的 3 项" }));
+
+    expect(mockSetAgentSkills).toHaveBeenCalledWith("agent-1", {
+      skill_ids: ["skill-1", "skill-2", "skill-3"],
+    });
   });
 });

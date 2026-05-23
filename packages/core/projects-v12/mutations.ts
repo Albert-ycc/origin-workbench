@@ -1,5 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { explorationKeys } from "../explorations/queries";
+import { ideaKeys } from "../ideas/queries";
+import { meetingKeys } from "../meetings/queries";
+import { missionKeys } from "../missions/queries";
+import { toolBindingKeys } from "../tool-bindings/queries";
 import type {
   CreateProjectV12Request,
   UpdateProjectV12Request,
@@ -49,6 +54,11 @@ export function useDeleteProjectV12(wsId: string) {
       qc.removeQueries({ queryKey: projectV12Keys.mainChatMessages(wsId, id) });
       qc.removeQueries({ queryKey: projectV12Keys.archivedSessions(wsId, id) });
       qc.invalidateQueries({ queryKey: projectV12Keys.all(wsId) });
+      qc.invalidateQueries({ queryKey: missionKeys.all(wsId) });
+      qc.invalidateQueries({ queryKey: ideaKeys.all(wsId) });
+      qc.invalidateQueries({ queryKey: explorationKeys.all(wsId) });
+      qc.invalidateQueries({ queryKey: meetingKeys.all(wsId) });
+      qc.invalidateQueries({ queryKey: toolBindingKeys.all(wsId) });
     },
   });
 }

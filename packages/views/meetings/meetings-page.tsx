@@ -12,6 +12,7 @@ import {
   FileText,
   MessageSquareText,
   Mic,
+  MoreHorizontal,
   Pencil,
   Play,
   Plus,
@@ -71,6 +72,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@multica/ui/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@multica/ui/components/ui/dropdown-menu";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import {
@@ -89,6 +97,25 @@ import { useNavigation } from "../navigation";
 import { useLiveTranscription } from "./live-transcription";
 
 const EMPTY_PROJECTS: ProjectV12[] = [];
+
+export const meetingPrimarySurfaces = ["实时转写流", "关键洞察 / 旁听提示"] as const;
+
+export const meetingNavigationCopy = {
+  routeTitle: "会议",
+  globalTitle: "会议工作台",
+  projectTitle: "项目会议",
+  capabilitySubtitle: "会议 Copilot 能力用于录音转写、Agent 旁听分析和会后沉淀",
+} as const;
+
+export const meetingPrimaryActions = ["开始", "结束"] as const;
+
+export const meetingSecondaryActions = ["会议设置", "导入转写", "纪要生成 / 查看"] as const;
+
+export const meetingDangerActions = ["归档", "删除"] as const;
+
+export const meetingDangerConfirmations = {
+  meetingDelete: "alert-dialog",
+} as const;
 
 type MeetingTemplate = {
   id: string;
@@ -259,14 +286,14 @@ export function MeetingsPage({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-semibold">
-                {isProjectScoped ? project?.title ?? "项目会议" : "会议 Copilot"}
+                {isProjectScoped ? project?.title ?? meetingNavigationCopy.projectTitle : meetingNavigationCopy.globalTitle}
               </span>
               <Badge variant="secondary" className="shrink-0">
                 {isProjectScoped ? "项目会议" : "全部会议"}
               </Badge>
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
-              会议只保留录音转写、Agent 旁听分析和会后沉淀
+              {meetingNavigationCopy.capabilitySubtitle}
             </div>
           </div>
           {projectId && (
@@ -365,6 +392,9 @@ function MeetingSessionView({
   const [importText, setImportText] = useState("");
   const [manualFallbackMeetingId, setManualFallbackMeetingId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const segments = transcriptPage?.segments ?? [];
   const cards = insightPage?.cards ?? [];
@@ -647,20 +677,6 @@ function MeetingSessionView({
         <MetricPill icon={Clock3} label={formatDuration(durationSeconds)} />
         <MetricPill icon={MessageSquareText} label={`${segments.length} 段转写`} />
         <MetricPill icon={Bot} label={`${openCards.length} 条待处理`} />
-        <div className="flex items-center gap-2 rounded-md border px-2 py-1.5">
-          {meeting.sound_enabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
-          <Switch
-            checked={meeting.sound_enabled}
-            onCheckedChange={(checked) =>
-              updateMeeting.mutate({ id: meeting.id, data: { sound_enabled: checked } })
-            }
-            aria-label="提示音"
-          />
-        </div>
-        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-          <Pencil className="size-4" />
-          设置
-        </Button>
         {meeting.status === "running" ? (
           <Button size="sm" variant="outline" onClick={stopSession} disabled={stopMeeting.isPending}>
             <Square className="size-4" />
@@ -672,14 +688,18 @@ function MeetingSessionView({
             开始
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={archiveCurrentMeeting}>
-          <Archive className="size-4" />
-          归档
-        </Button>
-        <DeleteMeetingButton
-          meetingTitle={meeting.title}
-          disabled={deleteMeeting.isPending}
-          onDelete={() => void deleteCurrentMeeting()}
+        <MeetingMoreMenu
+          soundEnabled={meeting.sound_enabled}
+          onSoundChange={(checked) =>
+            updateMeeting.mutate({ id: meeting.id, data: { sound_enabled: checked } })
+          }
+          onSettings={() => setEditing(true)}
+          onImport={() => setImportOpen(true)}
+          onSummary={() => setSummaryOpen(true)}
+          onArchive={archiveCurrentMeeting}
+          onDelete={() => setDeleteOpen(true)}
+          archiveDisabled={archiveMeeting.isPending}
+          deleteDisabled={deleteMeeting.isPending}
         />
       </div>
 
@@ -700,13 +720,6 @@ function MeetingSessionView({
             />
           </div>
           <div className="border-t p-4">
-            <SourceImportPanel
-              text={importText}
-              onTextChange={setImportText}
-              onUploadClick={() => fileInputRef.current?.click()}
-              onSave={saveImportText}
-              disabled={addSegment.isPending}
-            />
             <input
               ref={fileInputRef}
               type="file"
@@ -741,7 +754,7 @@ function MeetingSessionView({
         </section>
 
         <aside className="flex min-h-0 min-w-0 flex-col">
-          <section className="flex min-h-0 flex-[1.05] flex-col border-b">
+          <section className="flex min-h-0 flex-1 flex-col">
             <PanelTitle icon={Bot} title="旁听 Agent" count={cards.length} aside="实时分析问题" />
             {activeStrongAlert && (
               <ActiveStrongAlertBanner
@@ -778,24 +791,42 @@ function MeetingSessionView({
               )}
             </div>
           </section>
-          <section className="flex min-h-0 flex-1 flex-col">
-            <PanelTitle icon={FileText} title="会后纪要" count={summary ? 1 : 0} aside="自动沉淀" />
-            <SummaryPanel
-              summary={summary}
-              segmentCount={segments.length}
-              pending={generateSummary.isPending}
-              onGenerate={async () => {
-                try {
-                  await generateSummary.mutateAsync(meeting.id);
-                  toast.success("纪要已更新");
-                } catch (error) {
-                  toast.error(error instanceof Error ? error.message : "纪要生成失败");
-                }
-              }}
-            />
-          </section>
         </aside>
       </div>
+
+      <ImportTranscriptDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        text={importText}
+        onTextChange={setImportText}
+        onUploadClick={() => fileInputRef.current?.click()}
+        onSave={saveImportText}
+        disabled={addSegment.isPending}
+      />
+
+      <SummaryDialog
+        open={summaryOpen}
+        onOpenChange={setSummaryOpen}
+        summary={summary}
+        segmentCount={segments.length}
+        pending={generateSummary.isPending}
+        onGenerate={async () => {
+          try {
+            await generateSummary.mutateAsync(meeting.id);
+            toast.success("纪要已更新");
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "纪要生成失败");
+          }
+        }}
+      />
+
+      <DeleteMeetingDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        meetingTitle={meeting.title}
+        disabled={deleteMeeting.isPending}
+        onDelete={() => void deleteCurrentMeeting()}
+      />
 
       {editing && (
         <EditMeetingDialog
@@ -1155,50 +1186,175 @@ function QuickLaunchStrip({
   );
 }
 
-function DeleteMeetingButton({
+function MeetingMoreMenu({
+  soundEnabled,
+  onSoundChange,
+  onSettings,
+  onImport,
+  onSummary,
+  onArchive,
+  onDelete,
+  archiveDisabled,
+  deleteDisabled,
+}: {
+  soundEnabled: boolean;
+  onSoundChange: (checked: boolean) => void;
+  onSettings: () => void;
+  onImport: () => void;
+  onSummary: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+  archiveDisabled: boolean;
+  deleteDisabled: boolean;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+        <MoreHorizontal className="size-4" />
+        更多
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={onSettings}>
+          <Pencil className="size-4" />
+          会议设置
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onImport}>
+          <Upload className="size-4" />
+          导入转写
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onSummary}>
+          <FileText className="size-4" />
+          纪要生成 / 查看
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <div className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+          <span className="flex items-center gap-2">
+            {soundEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+            提示音
+          </span>
+          <Switch checked={soundEnabled} onCheckedChange={onSoundChange} aria-label="提示音" />
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onArchive} disabled={archiveDisabled}>
+          <Archive className="size-4" />
+          归档
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onClick={onDelete}
+          disabled={deleteDisabled}
+        >
+          <Trash2 className="size-4" />
+          删除
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ImportTranscriptDialog({
+  open,
+  onOpenChange,
+  text,
+  onTextChange,
+  onUploadClick,
+  onSave,
+  disabled,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  text: string;
+  onTextChange: (value: string) => void;
+  onUploadClick: () => void;
+  onSave: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>导入转写</DialogTitle>
+        </DialogHeader>
+        <SourceImportPanel
+          text={text}
+          onTextChange={onTextChange}
+          onUploadClick={onUploadClick}
+          onSave={onSave}
+          disabled={disabled}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SummaryDialog({
+  open,
+  onOpenChange,
+  summary,
+  segmentCount,
+  pending,
+  onGenerate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  summary?: MeetingSummary;
+  segmentCount: number;
+  pending: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[82vh] max-w-3xl overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>会议纪要</DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto">
+          <SummaryPanel
+            summary={summary}
+            segmentCount={segmentCount}
+            pending={pending}
+            onGenerate={onGenerate}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteMeetingDialog({
+  open,
+  onOpenChange,
   meetingTitle,
   disabled,
   onDelete,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   meetingTitle: string;
   disabled: boolean;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="text-muted-foreground hover:text-destructive"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-      >
-        <Trash2 className="size-4" />
-        删除
-      </Button>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除「{meetingTitle}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              此操作无法撤销。会议转写、洞察卡片和纪要会一并删除。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disabled}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onDelete}
-              disabled={disabled}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {disabled ? "删除中…" : "确认删除"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除「{meetingTitle}」？</AlertDialogTitle>
+          <AlertDialogDescription>
+            此操作无法撤销。会议转写、洞察卡片和纪要会一并删除。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={disabled}>取消</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onDelete}
+            disabled={disabled}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {disabled ? "删除中…" : "确认删除"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -21,7 +21,7 @@ export const demoRisks: RiskItem[] = [
 export const demoMissions: Mission[] = [
   {
     id: "mission-mobile-v01",
-    title: "Origin Mobile v0.1 页面骨架",
+    title: "Origin Mobile v1.1 页面骨架",
     summary: "补齐移动端核心页面，先让 App.tsx 能集成可演示的工作流。",
     ownerAgentId: "agent-frontend-b",
     status: "running",
@@ -91,7 +91,7 @@ export const demoAgents: OriginAgent[] = [
     name: "前端 Agent B",
     role: "移动页面组件",
     status: "working",
-    currentMission: "Origin Mobile v0.1 页面骨架",
+    currentMission: "Origin Mobile v1.1 页面骨架",
     workloadLabel: "2 个任务",
     capabilities: [
       { id: "cap-react", label: "React" },

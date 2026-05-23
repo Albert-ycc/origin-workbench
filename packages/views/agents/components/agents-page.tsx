@@ -20,9 +20,7 @@ import {
 } from "@multica/core/agents";
 import { api } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
-import { useChatStore } from "@multica/core/chat";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { canAssignAgentToIssue } from "@multica/core/permissions";
 import { useWorkspacePaths } from "@multica/core/paths";
 import {
   agentListOptions,
@@ -42,15 +40,14 @@ import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { availabilityConfig, availabilityOrder } from "../presence";
-import { CreateAgentDialog } from "./create-agent-dialog";
-import { type AgentRow } from "./agent-columns";
 import { AgentCard } from "./agent-card";
+import { CreateAgentDialog } from "./create-agent-dialog";
+import type { AgentRow } from "./agent-columns";
 
 // Filter axes:
 //
 //   View         = active vs archived dataset. Archived is low-frequency,
 //                  accessed through a ghost link in the toolbar.
-//   Scope        = ownership lens (All vs Mine). Layer-1 segment.
 //   Availability = "Can the agent take work right now?" — 3-state chip
 //                  group (online / unstable / offline) sourced from
 //                  AgentAvailability. The only chip filter we keep —
@@ -58,7 +55,6 @@ import { AgentCard } from "./agent-card";
 //                  "queued / failed / cancelled" buckets became
 //                  meaningless once Failed left the workload model.
 type View = "active" | "archived";
-type Scope = "all" | "mine";
 type AvailabilityFilter = "all" | AgentAvailability;
 
 type SortKey = "recent" | "name" | "runs" | "created";
@@ -70,15 +66,24 @@ const SORT_LABEL: Record<SortKey, string> = {
   created: "最近创建",
 };
 
+export const agentPageSubtitle = "配置智能体角色、运行来源和工作状态。";
+
+export const agentPrimarySurface = {
+  title: "智能体",
+  primaryCta: "新建智能体",
+  controls: ["搜索", "状态筛选", "排序"],
+} as const;
+
+export const agentListLayout = "badge-grid" as const;
+export const agentBadgeGridClassName =
+  "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" as const;
+
 export function AgentsPage() {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
-  const setChatOpen = useChatStore((s) => s.setOpen);
-  const setChatAgent = useChatStore((s) => s.setSelectedAgentId);
-  const setChatSession = useChatStore((s) => s.setActiveSession);
 
   const {
     data: agents = [],
@@ -100,10 +105,6 @@ export function AgentsPage() {
   const { byAgent: activityMap } = useWorkspaceActivityMap(wsId);
 
   const [view, setView] = useState<View>("active");
-  // Default to "mine" — matches runtimes page convention and the visual
-  // ordering (Mine first). All is one click away when users want the
-  // workspace-wide view.
-  const [scope, setScope] = useState<Scope>("mine");
   const [availabilityFilter, setAvailabilityFilter] =
     useState<AvailabilityFilter>("all");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -129,15 +130,6 @@ export function AgentsPage() {
     return m;
   }, [runCountsRaw]);
 
-  // Workspace role of the current user, used to gate row-level "manage"
-  // operations (archive / cancel-tasks). Mirrors the back-end's
-  // canManageAgent rule: workspace owner/admin OR the agent's owner.
-  const myRole = useMemo(() => {
-    if (!currentUser) return null;
-    return members.find((m) => m.user_id === currentUser.id)?.role ?? null;
-  }, [members, currentUser]);
-  const isWorkspaceAdmin = myRole === "owner" || myRole === "admin";
-
   // Layer 1a — view (active / archived).
   const inView = useMemo(
     () =>
@@ -147,47 +139,10 @@ export function AgentsPage() {
     [agents, view],
   );
 
-  // Layer 1b — visibility. Personal (visibility=private) agents owned by
-  // someone else are hidden from regular members; workspace owners/admins
-  // still see everything. Mirrors the assign-to-issue gate so the list
-  // only ever shows agents the user could actually act on. Backend keeps
-  // returning all agents, so admin tools (and the API itself) are
-  // unaffected — this is a UI-only filter.
-  const visibleInView = useMemo(() => {
-    return inView.filter((a) =>
-      canAssignAgentToIssue(a, {
-        userId: currentUser?.id ?? null,
-        role: myRole,
-      }).allowed,
-    );
-  }, [inView, currentUser?.id, myRole]);
-
-  // Layer 1c — ownership scope. Counts shown on the segment are
-  // computed against the visibleInView set so the numbers always reflect
-  // "what would I see if I clicked this".
-  const scopeCounts = useMemo(() => {
-    let mine = 0;
-    if (currentUser) {
-      for (const a of visibleInView) {
-        if (a.owner_id === currentUser.id) mine += 1;
-      }
-    }
-    return { all: visibleInView.length, mine };
-  }, [visibleInView, currentUser]);
-
-  const inScope = useMemo(() => {
-    // Archived view ignores Mine / All — its toolbar has no scope
-    // segment, so silently filtering by `scope` would hide other
-    // people's archived agents without any UI to explain why.
-    if (view === "archived") return visibleInView;
-    if (scope === "all" || !currentUser) return visibleInView;
-    return visibleInView.filter((a) => a.owner_id === currentUser.id);
-  }, [visibleInView, scope, currentUser, view]);
-
   // Final cut — availability chip + search.
   const filteredAgents = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return inScope.filter((a) => {
+    return inView.filter((a) => {
       // Availability chip filter only applies to the Active view —
       // archived agents have no presence to match against.
       if (view === "active" && availabilityFilter !== "all") {
@@ -208,10 +163,10 @@ export function AgentsPage() {
       }
       return true;
     });
-  }, [inScope, view, availabilityFilter, presenceMap, search]);
+  }, [inView, view, availabilityFilter, presenceMap, search]);
 
   // Per-availability counts for the chip badges. Computed against
-  // `inScope` (ignoring the availability filter itself) so the numbers
+  // `inView` (ignoring the availability filter itself) so the numbers
   // reflect "if I clicked this chip, this many agents would match"
   // rather than collapsing to 0 for the unselected chips.
   const availabilityCounts = useMemo(() => {
@@ -220,13 +175,13 @@ export function AgentsPage() {
       unstable: 0,
       offline: 0,
     };
-    for (const a of inScope) {
+    for (const a of inView) {
       const detail = presenceMap.get(a.id);
       if (!detail) continue;
       counts[detail.availability] += 1;
     }
     return counts;
-  }, [inScope, presenceMap]);
+  }, [inView, presenceMap]);
 
   const sortedAgents = useMemo(() => {
     const xs = [...filteredAgents];
@@ -320,45 +275,22 @@ export function AgentsPage() {
     setShowCreate(true);
   }, []);
 
-  const handleChat = useCallback(
-    (agent: Agent) => {
-      setChatAgent(agent.id);
-      setChatSession(null);
-      setChatOpen(true);
-    },
-    [setChatAgent, setChatOpen, setChatSession],
-  );
-
   // Assemble per-row data once per render — agent + runtime + presence +
   // activity + role flags. The columns reach into `row.original` and never
   // pull their own queries, which keeps each cell a pure function.
   const agentRows = useMemo<AgentRow[]>(() => {
     return sortedAgents.map((agent) => {
-      const isOwner =
-        !!currentUser?.id && agent.owner_id === currentUser.id;
-      const canManage = isWorkspaceAdmin || isOwner;
-      const ownerIdToShow =
-        scope === "all" &&
-        agent.owner_id &&
-        agent.owner_id !== currentUser?.id
-          ? agent.owner_id
-          : null;
       return {
         agent,
         runtime: runtimesById.get(agent.runtime_id) ?? null,
         presence: presenceMap.get(agent.id) ?? null,
         activity: activityMap.get(agent.id) ?? null,
         runCount: runCountsById.get(agent.id) ?? 0,
-        ownerIdToShow,
-        isOwnedByMe: isOwner,
-        canManage,
+        canManage: true,
       };
     });
   }, [
     sortedAgents,
-    currentUser,
-    isWorkspaceAdmin,
-    scope,
     runtimesById,
     presenceMap,
     activityMap,
@@ -381,9 +313,11 @@ export function AgentsPage() {
               <Skeleton className="h-6 w-24 rounded-full" />
               <Skeleton className="h-6 w-20 rounded-full" />
             </div>
-            <div className="grid gap-4 p-5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+            <div
+              className={`${agentBadgeGridClassName} min-h-0 flex-1 overflow-y-auto p-5`}
+            >
               {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-[230px] rounded-2xl" />
+                <Skeleton key={i} className="h-[18rem] rounded-lg" />
               ))}
             </div>
           </div>
@@ -435,19 +369,16 @@ export function AgentsPage() {
             <EmptyState onCreate={() => setShowCreate(true)} />
           </div>
         ) : (
-          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-2xl border bg-background">
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border bg-background">
             {view === "active" ? (
               <>
                 <ActiveToolbarRow
-                  scope={scope}
-                  setScope={setScope}
-                  scopeCounts={scopeCounts}
                   sort={sort}
                   setSort={setSort}
                   search={search}
                   setSearch={setSearch}
                   visibleCount={sortedAgents.length}
-                  totalCount={inScope.length}
+                  totalCount={inView.length}
                   archivedCount={archivedCount}
                   onShowArchived={() => setView("archived")}
                 />
@@ -455,7 +386,7 @@ export function AgentsPage() {
                   value={availabilityFilter}
                   onChange={setAvailabilityFilter}
                   counts={availabilityCounts}
-                  totalCount={inScope.length}
+                  totalCount={inView.length}
                 />
               </>
             ) : (
@@ -471,9 +402,7 @@ export function AgentsPage() {
               view={view}
               rows={agentRows}
               search={search}
-              scope={scope}
               onOpen={(agent) => navigation.push(paths.agentDetail(agent.id))}
-              onChat={handleChat}
               onDuplicate={handleDuplicate}
             />
           </div>
@@ -503,45 +432,43 @@ function AgentGrid({
   view,
   rows,
   search,
-  scope,
   onOpen,
-  onChat,
   onDuplicate,
 }: {
   view: View;
   rows: AgentRow[];
   search: string;
-  scope: Scope;
   onOpen: (agent: Agent) => void;
-  onChat: (agent: Agent) => void;
   onDuplicate: (agent: Agent) => void;
 }) {
   if (rows.length === 0 && view !== "active") {
-    return <NoMatches view={view} search={search} scope={scope} />;
+    return <NoMatches view={view} search={search} />;
   }
 
   if (rows.length === 0 && search.trim()) {
-    return <NoMatches view={view} search={search} scope={scope} />;
+    return <NoMatches view={view} search={search} />;
+  }
+
+  if (rows.length === 0 && view === "active") {
+    return (
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        当前筛选条件下还没有智能体，可以先新建一个。
+      </p>
+    );
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-5">
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+    <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className={agentBadgeGridClassName}>
         {rows.map((row) => (
           <AgentCard
             key={row.agent.id}
             row={row}
             onOpen={() => onOpen(row.agent)}
-            onChat={() => onChat(row.agent)}
             onDuplicate={() => onDuplicate(row.agent)}
           />
         ))}
       </div>
-      {rows.length === 0 && view === "active" && (
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          当前筛选范围内还没有智能体，可以先新建一个。
-        </p>
-      )}
     </div>
   );
 }
@@ -568,12 +495,10 @@ function PageHeaderBar({
           </span>
         )}
         {/* Tagline next to the title — mirrors Runtimes / Skills. Single
-            sentence + docs link, hidden below md so it never collides with
-            the title on narrow screens. The presence chip row below carries
-            the state-legend job, so the tagline only needs to anchor what
-            an agent IS, not what each colour means. */}
+            sentence, hidden below md so it never collides with
+            the title on narrow screens. */}
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
-          一个智能体 = 一个角色 + 一份指令 + 一条本地 CLI 通路。挂上技能和工作上下文之后，就能接 Mission、加入会议室、跑分叉探索。
+          {agentPageSubtitle}
         </p>
       </div>
       <Button type="button" size="sm" onClick={onCreate}>
@@ -585,13 +510,10 @@ function PageHeaderBar({
 }
 
 // ---------------------------------------------------------------------------
-// Active view — Layer 1: scope segment + sort + search + archived link + live
+// Active view — search + sort + archived link + live count.
 // ---------------------------------------------------------------------------
 
 function ActiveToolbarRow({
-  scope,
-  setScope,
-  scopeCounts,
   sort,
   setSort,
   search,
@@ -601,9 +523,6 @@ function ActiveToolbarRow({
   archivedCount,
   onShowArchived,
 }: {
-  scope: Scope;
-  setScope: (v: Scope) => void;
-  scopeCounts: { all: number; mine: number };
   sort: SortKey;
   setSort: (v: SortKey) => void;
   search: string;
@@ -613,8 +532,8 @@ function ActiveToolbarRow({
   archivedCount: number;
   onShowArchived: () => void;
 }) {
-  // Layout: [Search] [Mine|All] ......... [Show archived] [N of M] [Sort ▼]
-  // Filter chips were removed (status / workload chips on a small team
+  // Layout: [Search] ......... [Show archived] [N of M] [Sort ▼]
+  // Filter chips were removed (status / workload chips in this dense list
   // gain less than they cost), so the toolbar collapses to a single row.
   // Visible/total count and the archived link inherit their old position
   // from the deleted PresenceFilterRows.
@@ -629,7 +548,6 @@ function ActiveToolbarRow({
           className="h-8 w-64 pl-8 text-sm"
         />
       </div>
-      <ScopeSegment scope={scope} setScope={setScope} counts={scopeCounts} />
       <div className="ml-auto flex items-center gap-3">
         {archivedCount > 0 && (
           <button
@@ -646,68 +564,6 @@ function ActiveToolbarRow({
         <SortDropdown sort={sort} setSort={setSort} />
       </div>
     </div>
-  );
-}
-
-function ScopeSegment({
-  scope,
-  setScope,
-  counts,
-}: {
-  scope: Scope;
-  setScope: (v: Scope) => void;
-  counts: { all: number; mine: number };
-}) {
-  // Mine first — that's the more frequent scope (your own agents) and
-  // also the default selection, so it lives in the leading slot.
-  return (
-    <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
-      <ScopeButton
-        active={scope === "mine"}
-        label="我的"
-        count={counts.mine}
-        onClick={() => setScope("mine")}
-      />
-      <ScopeButton
-        active={scope === "all"}
-        label="全部"
-        count={counts.all}
-        onClick={() => setScope("all")}
-      />
-    </div>
-  );
-}
-
-function ScopeButton({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-        active
-          ? "bg-background text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <span>{label}</span>
-      <span
-        className={`font-mono tabular-nums ${
-          active ? "text-muted-foreground/80" : "text-muted-foreground/50"
-        }`}
-      >
-        {count}
-      </span>
-    </button>
   );
 }
 
@@ -871,7 +727,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       </div>
       <h2 className="mt-4 text-base font-semibold">还没有智能体</h2>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        从能力池里选一条本地 CLI（Claude Code / Codex / Hermes），写下职责和工作上下文，新建一个智能体——之后想法池升级 Mission、会议室拍板、分叉探索都靠它出力。
+        从能力池里选一条本地 CLI（Claude Code / Codex / Hermes），写下职责和工作上下文，新建一个智能体——之后想法池升级 Mission、多角色议事拍板、分叉探索都靠它出力。
       </p>
       <Button type="button" onClick={onCreate} size="sm" className="mt-5">
         <Plus className="h-3 w-3" />
@@ -884,17 +740,11 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 function NoMatches({
   view,
   search,
-  scope,
 }: {
   view: View;
   search: string;
-  scope: Scope;
 }) {
   const hasSearch = search.length > 0;
-  // "mine" is the only remaining narrowing dimension after chip filters
-  // were dropped — keep the wording aware of it so an empty Mine view
-  // doesn't suggest the workspace itself is empty.
-  const hasFilter = scope === "mine";
 
   let body: string;
   if (view === "archived") {
@@ -902,7 +752,7 @@ function NoMatches({
       ? `没有匹配“${search}”的已归档智能体。`
       : "还没有已归档智能体。";
   } else if (hasSearch) {
-    body = `没有匹配“${search}”的智能体${hasFilter ? "（当前筛选范围内）" : ""}。`;
+    body = `没有匹配“${search}”的智能体。`;
   } else {
     body = "没有符合当前筛选条件的智能体。";
   }

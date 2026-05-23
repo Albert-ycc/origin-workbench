@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Lightbulb,
   Loader2,
+  MoreHorizontal,
   Network,
   Plus,
   Sparkles,
@@ -26,6 +27,16 @@ import {
 } from "@multica/core/ideas";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import type { Agent, Idea, IdeaNurtureNote } from "@multica/core/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Checkbox } from "@multica/ui/components/ui/checkbox";
@@ -37,37 +48,87 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@multica/ui/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@multica/ui/components/ui/dropdown-menu";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@multica/ui/components/ui/native-select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@multica/ui/components/ui/sheet";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { AppLink, useNavigation } from "../navigation";
+import { useNavigation } from "../navigation";
+
+export const ideaHomeSections = [
+  { title: "快速捕捉" },
+  { title: "待孵化列表" },
+] as const;
+
+export const ideaDetailActions = {
+  primary: "升级 Mission",
+  secondary: ["添加笔记"],
+  more: ["归档", "删除"],
+} as const;
+
+export const ideaDeleteConfirmation = {
+  mechanism: "alert-dialog",
+  title: "删除想法",
+} as const;
+
+export function shouldLoadIdeaDetail(selectedId: string | null, drawerOpen: boolean) {
+  return !!selectedId && drawerOpen;
+}
+
+export function closeIdeaDetailAfterMutation({
+  onOpenChange,
+  setSelectedId,
+}: {
+  onOpenChange: (open: boolean) => void;
+  setSelectedId: (id: string | null) => void;
+}) {
+  onOpenChange(false);
+  setSelectedId(null);
+}
 
 export function IdeasPage() {
   const workspace = useCurrentWorkspace();
   const wsId = useWorkspaceId();
-  const p = useWorkspacePaths();
 
   const ideasQuery = useQuery(ideaListOptions(wsId, "active"));
   const ideas = ideasQuery.data ?? [];
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const selectedIdea = useMemo(
-    () => ideas.find((i) => i.id === selectedId) ?? ideas[0] ?? null,
+    () => ideas.find((i) => i.id === selectedId) ?? null,
     [ideas, selectedId],
   );
 
   const detailQuery = useQuery({
-    ...ideaDetailOptions(wsId, selectedIdea?.id ?? ""),
-    enabled: !!selectedIdea,
+    ...ideaDetailOptions(wsId, selectedId ?? ""),
+    enabled: shouldLoadIdeaDetail(selectedId, detailOpen),
   });
+  const detailIdea = detailQuery.data?.idea ?? selectedIdea;
+  const closeDetail = () =>
+    closeIdeaDetailAfterMutation({
+      onOpenChange: setDetailOpen,
+      setSelectedId,
+    });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -78,28 +139,33 @@ export function IdeasPage() {
         <span className="text-sm font-medium">想法池</span>
       </PageHeader>
       <main className="min-h-0 flex-1 overflow-y-auto p-5">
-        <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="flex flex-col gap-4">
-            <ComposeIdea />
-            <IdeasList
-              ideas={ideas}
-              loading={ideasQuery.isLoading}
-              selectedId={selectedIdea?.id ?? null}
-              onSelect={setSelectedId}
-              missionsHref={p.missions()}
-            />
-          </section>
-
-          <aside className="space-y-4">
-            <IdeaDetailPanel
-              idea={selectedIdea}
-              notes={detailQuery.data?.notes ?? []}
-              loading={detailQuery.isLoading}
-            />
-            <PhaseHint />
-          </aside>
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+          <ComposeIdea />
+          <IdeasList
+            ideas={ideas}
+            loading={ideasQuery.isLoading}
+            selectedId={detailOpen ? selectedId : null}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setDetailOpen(true);
+            }}
+          />
         </div>
       </main>
+      <IdeaDetailSheet
+        open={detailOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDetail();
+          } else {
+            setDetailOpen(true);
+          }
+        }}
+        idea={detailIdea}
+        notes={detailQuery.data?.notes ?? []}
+        loading={detailQuery.isLoading}
+        onActionComplete={closeDetail}
+      />
     </div>
   );
 }
@@ -173,13 +239,11 @@ function IdeasList({
   loading,
   selectedId,
   onSelect,
-  missionsHref,
 }: {
   ideas: Idea[];
   loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  missionsHref: string;
 }) {
   if (loading) {
     return (
@@ -194,11 +258,7 @@ function IdeasList({
       <section className="rounded-lg border bg-card p-8 text-center">
         <Sparkles className="mx-auto size-6 text-muted-foreground" />
         <p className="mt-3 text-sm text-muted-foreground">
-          还没有想法。先在上面写一个——养好了可以一键转 Mission，去
-          <AppLink href={missionsHref} className="ml-1 text-primary hover:underline">
-            任务中枢
-          </AppLink>
-          看后续进展。
+          还没有想法。直接在上面的快速捕捉框写第一条，先记下，后面再养护和升级。
         </p>
       </section>
     );
@@ -249,36 +309,74 @@ function IdeasList({
 // Detail panel
 // ────────────────────────────────────────────────────────────────────────
 
+function IdeaDetailSheet({
+  open,
+  onOpenChange,
+  idea,
+  notes,
+  loading,
+  onActionComplete,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  idea: Idea | null;
+  notes: IdeaNurtureNote[];
+  loading: boolean;
+  onActionComplete: () => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-[min(680px,96vw)] gap-0 p-0 sm:max-w-none">
+        <SheetHeader className="border-b px-5 py-4 pr-12">
+          <SheetTitle>{idea?.title ?? "想法详情"}</SheetTitle>
+          <SheetDescription>先养护，再决定是否升级为 Mission。</SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <IdeaDetailPanel
+            idea={idea}
+            notes={notes}
+            loading={loading}
+            onActionComplete={onActionComplete}
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function IdeaDetailPanel({
   idea,
   notes,
   loading,
+  onActionComplete,
 }: {
   idea: Idea | null;
   notes: IdeaNurtureNote[];
   loading: boolean;
+  onActionComplete: () => void;
 }) {
   const archiveIdea = useArchiveIdea();
   const deleteIdea = useDeleteIdea();
   const createNote = useCreateIdeaNote();
   const [noteText, setNoteText] = useState("");
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!idea) {
     return (
       <section className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        左侧选一个想法，这里看详情、加养护笔记、转 Mission 或归档。
+        正在准备想法详情。
       </section>
     );
   }
 
   return (
-    <section className="space-y-3 rounded-lg border bg-card p-4">
-      <div>
-        <div className="text-sm font-semibold">{idea.title}</div>
-        {idea.description ? (
-          <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{idea.description}</p>
-        ) : null}
+    <section className="space-y-4">
+      <div className="rounded-lg border bg-card p-4">
+        <div className="text-xs font-semibold text-muted-foreground">想法描述</div>
+        <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+          {idea.description || idea.title}
+        </p>
       </div>
 
       <PromoteIdeaDialog
@@ -286,49 +384,77 @@ function IdeaDetailPanel({
         notes={notes}
         open={promoteOpen}
         onOpenChange={setPromoteOpen}
+        onPromoted={onActionComplete}
       />
 
-      <div className="grid grid-cols-2 gap-2">
-        <Button size="sm" variant="outline" onClick={() => setPromoteOpen(true)}>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={() => setPromoteOpen(true)}>
           <Network className="size-3.5" />
           升级 Mission
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={async () => {
-            try {
-              await archiveIdea.mutateAsync(idea.id);
-              toast.success("已归档");
-            } catch (err) {
-              toast.error("归档失败", { description: err instanceof Error ? err.message : String(err) });
-            }
-          }}
-        >
-          <Archive className="size-3.5" />
-          归档
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+            <MoreHorizontal className="size-3.5" />
+            更多
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              onClick={async () => {
+                try {
+                  await archiveIdea.mutateAsync(idea.id);
+                  toast.success("已归档");
+                  onActionComplete();
+                } catch (err) {
+                  toast.error("归档失败", { description: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              <Archive className="size-3.5" />
+              归档
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="size-3.5" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <Button
-        size="sm"
-        variant="ghost"
-        className="text-destructive hover:text-destructive"
-        onClick={async () => {
-          if (!window.confirm(`删除「${idea.title}」？此操作不可撤销。`)) return;
-          try {
-            await deleteIdea.mutateAsync(idea.id);
-            toast.success("已删除");
-          } catch (err) {
-            toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
-          }
-        }}
-      >
-        <Trash2 className="size-3.5" />
-        删除
-      </Button>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除想法</AlertDialogTitle>
+            <AlertDialogDescription>
+              删除「{idea.title}」后无法撤销，相关养护笔记也会一并移除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteIdea.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteIdea.isPending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                try {
+                  await deleteIdea.mutateAsync(idea.id);
+                  toast.success("已删除");
+                  setDeleteOpen(false);
+                  onActionComplete();
+                } catch (err) {
+                  toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              {deleteIdea.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <div className="border-t pt-3">
+      <div className="rounded-lg border bg-card p-4">
         <div className="mb-2 text-xs font-semibold text-muted-foreground">养护笔记 ({notes.length})</div>
         {loading ? (
           <Skeleton className="h-10 w-full" />
@@ -381,17 +507,6 @@ function IdeaDetailPanel({
   );
 }
 
-function PhaseHint() {
-  return (
-    <section className="rounded-lg border bg-card p-4">
-      <Badge variant="outline">Phase 1 已落地</Badge>
-      <p className="mt-3 text-sm text-muted-foreground">
-        Idea CRUD + 养护笔记 + 升级 Mission 已接真实数据。下一步：Phase 2 加录入入口（⌘ ⇧ I 全局快捷键 + 命令面板）。
-      </p>
-    </section>
-  );
-}
-
 // ────────────────────────────────────────────────────────────────────────
 // Promote Idea → Mission dialog
 // ────────────────────────────────────────────────────────────────────────
@@ -401,11 +516,13 @@ function PromoteIdeaDialog({
   notes,
   open,
   onOpenChange,
+  onPromoted,
 }: {
   idea: Idea;
   notes: IdeaNurtureNote[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onPromoted: () => void;
 }) {
   const wsId = useWorkspaceId();
   const navigation = useNavigation();
@@ -456,6 +573,7 @@ function PromoteIdeaDialog({
         description: "已带入想法描述和养护笔记，团队房间第一条简报已发送。",
       });
       onOpenChange(false);
+      onPromoted();
       navigation.push(paths.missions());
     } catch (err) {
       toast.error("升级失败", {

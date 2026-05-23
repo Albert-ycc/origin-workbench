@@ -20,30 +20,27 @@ type ActivityLog struct {
 }
 
 type Agent struct {
-	ID                   pgtype.UUID        `json:"id"`
-	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
-	Name                 string             `json:"name"`
-	AvatarUrl            pgtype.Text        `json:"avatar_url"`
-	RuntimeMode          string             `json:"runtime_mode"`
-	RuntimeConfig        []byte             `json:"runtime_config"`
-	Visibility           string             `json:"visibility"`
-	Status               string             `json:"status"`
-	MaxConcurrentTasks   int32              `json:"max_concurrent_tasks"`
-	OwnerID              pgtype.UUID        `json:"owner_id"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	Description          string             `json:"description"`
-	RuntimeID            pgtype.UUID        `json:"runtime_id"`
-	Instructions         string             `json:"instructions"`
-	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
-	ArchivedBy           pgtype.UUID        `json:"archived_by"`
-	CustomEnv            []byte             `json:"custom_env"`
-	CustomArgs           []byte             `json:"custom_args"`
-	McpConfig            []byte             `json:"mcp_config"`
-	Model                pgtype.Text        `json:"model"`
-	WorkMode             string             `json:"work_mode"`
-	MailboxBudgetSeconds int32              `json:"mailbox_budget_seconds"`
-	NotifyPolicy         string             `json:"notify_policy"`
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	Name               string             `json:"name"`
+	AvatarUrl          pgtype.Text        `json:"avatar_url"`
+	RuntimeMode        string             `json:"runtime_mode"`
+	RuntimeConfig      []byte             `json:"runtime_config"`
+	Visibility         string             `json:"visibility"`
+	Status             string             `json:"status"`
+	MaxConcurrentTasks int32              `json:"max_concurrent_tasks"`
+	OwnerID            pgtype.UUID        `json:"owner_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	Description        string             `json:"description"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	Instructions       string             `json:"instructions"`
+	ArchivedAt         pgtype.Timestamptz `json:"archived_at"`
+	ArchivedBy         pgtype.UUID        `json:"archived_by"`
+	CustomEnv          []byte             `json:"custom_env"`
+	CustomArgs         []byte             `json:"custom_args"`
+	McpConfig          []byte             `json:"mcp_config"`
+	Model              pgtype.Text        `json:"model"`
 }
 
 type AgentEvent struct {
@@ -472,24 +469,6 @@ type IssueSubscriber struct {
 type IssueToLabel struct {
 	IssueID pgtype.UUID `json:"issue_id"`
 	LabelID pgtype.UUID `json:"label_id"`
-}
-
-type MailboxItem struct {
-	ID                   pgtype.UUID        `json:"id"`
-	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
-	AgentID              pgtype.UUID        `json:"agent_id"`
-	ChatSessionID        pgtype.UUID        `json:"chat_session_id"`
-	TaskID               pgtype.UUID        `json:"task_id"`
-	RawUserMessage       string             `json:"raw_user_message"`
-	Status               string             `json:"status"`
-	Result               string             `json:"result"`
-	BlockedDescription   string             `json:"blocked_description"`
-	SubmittedAt          pgtype.Timestamptz `json:"submitted_at"`
-	ProcessingStartedAt  pgtype.Timestamptz `json:"processing_started_at"`
-	ProcessingFinishedAt pgtype.Timestamptz `json:"processing_finished_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	ProjectID            pgtype.UUID        `json:"project_id"`
 }
 
 type MeetingInsightCard struct {

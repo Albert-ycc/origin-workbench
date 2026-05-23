@@ -7,12 +7,14 @@ import {
   Archive,
   ArchiveX,
   Bot,
+  ChevronRight,
   Compass,
   FileText,
   FolderOpen,
   Lightbulb,
   Loader2,
   Mic,
+  MoreHorizontal,
   Network,
   PanelLeft,
   PanelRightClose,
@@ -59,7 +61,10 @@ import type {
   Exploration,
   Idea,
   Mission,
+  MissionExecutionMode,
+  MissionRiskLevel,
   PinnedQuoteCandidate,
+  ProjectV12,
 } from "@multica/core/types";
 import { teamDetailOptions } from "@multica/core/teams";
 import { useCreateCouncilSession } from "@multica/core/councils";
@@ -86,6 +91,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@multica/ui/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@multica/ui/components/ui/dropdown-menu";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { ChatPane } from "../teams/team-detail-page";
@@ -102,6 +115,31 @@ import { useNavigation } from "../navigation";
 // scaffolded — the chokidar IPC bridge is Phase B+ work.
 
 type DocTab = "files" | "memory" | "items" | "archive";
+
+export const projectPrimaryActions = ["成员", "会议", "更多", "资料栏"] as const;
+
+export const projectMoreMenuGroups = [
+  { group: "协作类", items: ["多角色议事 / Council"] },
+  { group: "维护类", items: ["整理 + 重新出发"] },
+  { group: "危险类", items: ["归档", "删除"] },
+] as const;
+
+export const projectCouncilCopy = {
+  dialogTitle: "发起多角色议事",
+  success: "多角色议事已发起",
+  participantLabel: "参与角色",
+} as const;
+
+export const projectCreateFlowTypes = [
+  { type: "mission", label: "Mission" },
+  { type: "idea", label: "Idea" },
+  { type: "exploration", label: "Exploration" },
+] as const;
+
+export const projectResourcePanelDefault = {
+  title: "项目记忆摘要",
+  secondaryEntrypoints: ["文件", "项目入口", "会话归档"],
+} as const;
 
 export function ProjectWorkspacePage({
   projectId,
@@ -154,7 +192,8 @@ export function ProjectWorkspacePage({
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const updateProject = useUpdateProjectV12(wsId);
-  const [activeTab, setActiveTab] = useState<DocTab>("memory");
+  const [resourceOpen, setResourceOpen] = useState(false);
+  const [resourceTab, setResourceTab] = useState<DocTab>("memory");
   const [editingMemory, setEditingMemory] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
   // Right-side doc panel — collapsible like the project sidebar. Persisted so
@@ -230,6 +269,10 @@ export function ProjectWorkspacePage({
     await updateProject.mutateAsync({ id: project.id, data: { memory_doc: memoryDraft } });
     setEditingMemory(false);
   };
+  const openResource = (tab: DocTab) => {
+    setResourceTab(tab);
+    setResourceOpen(true);
+  };
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-background">
@@ -263,9 +306,6 @@ export function ProjectWorkspacePage({
           )}
         </div>
         <div className="flex max-w-[62%] shrink items-center gap-1.5 overflow-x-auto whitespace-nowrap pr-1">
-          <span className="text-[11px] text-muted-foreground">
-            第 {project.compaction_count} 次压缩
-          </span>
           {team && <ManageMembersButton team={team} />}
           <Button
             size="sm"
@@ -275,19 +315,14 @@ export function ProjectWorkspacePage({
             <Mic className="size-4" />
             会议
           </Button>
-          {mainChat && (
-            <ConveneCouncilButton
-              projectId={projectId}
-              chatSessionId={mainChat.chat_session_id}
-              memberAgents={memberAgents}
-              captain={captain}
-            />
-          )}
-          <CompactionButton projectId={projectId} />
-          {project.status !== "archived" && (
-            <ArchiveProjectButton projectId={project.id} projectTitle={project.title} />
-          )}
-          <DeleteProjectButton projectId={project.id} projectTitle={project.title} />
+          <ProjectMoreMenu
+            projectId={project.id}
+            projectTitle={project.title}
+            archived={project.status === "archived"}
+            mainChatSessionId={mainChat?.chat_session_id ?? null}
+            memberAgents={memberAgents}
+            captain={captain}
+          />
           <Button
             size="sm"
             variant="ghost"
@@ -387,128 +422,212 @@ export function ProjectWorkspacePage({
             lives in the PageHeader as PanelRightOpen. Width follows the
             available viewport instead of claiming a fixed 480px. */}
         {!docCollapsed && (
-          <aside className="flex w-[34vw] min-w-[300px] max-w-[420px] shrink-0 flex-col border-l 2xl:w-[480px] 2xl:max-w-[480px]">
-            <div className="flex h-11 items-center gap-1 overflow-x-auto border-b px-2.5">
-              <DocTabBtn
-                active={activeTab === "files"}
-                onClick={() => setActiveTab("files")}
-                icon={FolderOpen}
-              >
-                文件
-              </DocTabBtn>
-              <DocTabBtn
-                active={activeTab === "memory"}
-                onClick={() => setActiveTab("memory")}
-                icon={FileText}
-              >
-                记忆
-              </DocTabBtn>
-              <DocTabBtn
-                active={activeTab === "items"}
-                onClick={() => setActiveTab("items")}
-                icon={Network}
-              >
-                Mission
-              </DocTabBtn>
-              <DocTabBtn
-                active={activeTab === "archive"}
-                onClick={() => setActiveTab("archive")}
-                icon={Archive}
-              >
-                归档
-              </DocTabBtn>
-            </div>
-
-            {activeTab === "memory" && (
-              <div className="flex flex-1 flex-col overflow-y-auto">
-                {!editingMemory ? (
-                  <div className="flex-1 px-5 py-4">
-                    <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>
-                        {project.memory_doc_updated_at
-                          ? `最近更新 · ${new Date(project.memory_doc_updated_at).toLocaleString("zh-CN")}`
-                          : "尚未更新"}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 text-xs"
-                        onClick={startEdit}
-                      >
-                        编辑
-                      </Button>
-                    </div>
-                    {project.memory_doc ? (
-                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-                        {project.memory_doc}
-                      </pre>
-                    ) : (
-                      <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
-                        还没有写入项目记忆。Council 散会、Mission
-                        完成、用户钉住片段会自动追加到这里。
-                        也可以点上方「编辑」手动写一段项目目标作为开篇。
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-1 flex-col gap-2 p-3">
-                    <textarea
-                      className="flex-1 w-full resize-none rounded-md border bg-background p-3 font-mono text-xs leading-relaxed"
-                      value={memoryDraft}
-                      onChange={(e) => setMemoryDraft(e.target.value)}
-                      placeholder="# 项目记忆\n\n## 项目目标\n...\n\n## 当前状态\n..."
-                    />
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setEditingMemory(false)}
-                      >
-                        取消
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={saveMemory}
-                        disabled={updateProject.isPending}
-                      >
-                        保存
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === "files" && (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
-                <FolderOpen className="size-8 opacity-40" />
-                <p className="max-w-xs text-xs leading-relaxed">
-                  当前项目绑定的本地工作目录上下文是：
-                </p>
-                <code className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground">
-                  {project.local_dir || "（未设置）"}
-                </code>
-                <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground/80">
-                  该路径会传递给本地 runtime 作为工作目录上下文；这里不承诺额外的默认读写权限。
-                </p>
-              </div>
-            )}
-
-            {activeTab === "items" && (
-              <ProjectOriginItemsTab
-                projectId={projectId}
-                team={team}
-                captain={captain}
-                memberAgents={memberAgents}
-              />
-            )}
-
-            {activeTab === "archive" && (
-              <ArchivedSessionsTab projectId={projectId} />
-            )}
+          <aside className="flex w-[320px] shrink-0 flex-col border-l 2xl:w-[360px]">
+            <ProjectMemorySummaryPanel
+              project={project}
+              editingMemory={editingMemory}
+              memoryDraft={memoryDraft}
+              updatePending={updateProject.isPending}
+              onStartEdit={startEdit}
+              onChangeDraft={setMemoryDraft}
+              onCancelEdit={() => setEditingMemory(false)}
+              onSave={saveMemory}
+              onOpenResource={openResource}
+            />
           </aside>
         )}
       </div>
+
+      <ProjectResourcesDialog
+        open={resourceOpen}
+        onOpenChange={setResourceOpen}
+        activeTab={resourceTab}
+        onTabChange={setResourceTab}
+        projectId={projectId}
+        project={project}
+        team={team}
+        captain={captain}
+        memberAgents={memberAgents}
+      />
+    </div>
+  );
+}
+
+function ProjectMemorySummaryPanel({
+  project,
+  editingMemory,
+  memoryDraft,
+  updatePending,
+  onStartEdit,
+  onChangeDraft,
+  onCancelEdit,
+  onSave,
+  onOpenResource,
+}: {
+  project: ProjectV12;
+  editingMemory: boolean;
+  memoryDraft: string;
+  updatePending: boolean;
+  onStartEdit: () => void;
+  onChangeDraft: (value: string) => void;
+  onCancelEdit: () => void;
+  onSave: () => void;
+  onOpenResource: (tab: DocTab) => void;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-11 items-center justify-between border-b px-4">
+        <div className="flex items-center gap-2">
+          <FileText className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">{projectResourcePanelDefault.title}</h2>
+        </div>
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onStartEdit}>
+          编辑
+        </Button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {!editingMemory ? (
+          <>
+            <div className="mb-3 text-[11px] text-muted-foreground">
+              {project.memory_doc_updated_at
+                ? `最近更新 · ${new Date(project.memory_doc_updated_at).toLocaleString("zh-CN")}`
+                : "尚未更新"}
+            </div>
+            {project.memory_doc ? (
+              <pre className="max-h-[45vh] overflow-hidden whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+                {project.memory_doc}
+              </pre>
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
+                还没有写入项目记忆。Council 散会、Mission 完成、用户钉住片段会自动追加到这里。
+                也可以点上方「编辑」手动写一段项目目标作为开篇。
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex min-h-[360px] flex-col gap-2">
+            <textarea
+              className="flex-1 w-full resize-none rounded-md border bg-background p-3 font-mono text-xs leading-relaxed"
+              value={memoryDraft}
+              onChange={(e) => onChangeDraft(e.target.value)}
+              placeholder="# 项目记忆\n\n## 项目目标\n...\n\n## 当前状态\n..."
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={onCancelEdit}>
+                取消
+              </Button>
+              <Button size="sm" onClick={onSave} disabled={updatePending}>
+                保存
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t p-3">
+        <div className="grid gap-2">
+          <ResourceShortcut icon={FolderOpen} label="文件" onClick={() => onOpenResource("files")} />
+          <ResourceShortcut icon={Network} label="项目入口" onClick={() => onOpenResource("items")} />
+          <ResourceShortcut icon={Archive} label="会话归档" onClick={() => onOpenResource("archive")} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResourceShortcut({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Bot;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm transition-colors hover:bg-muted/40"
+    >
+      <span className="flex items-center gap-2">
+        <Icon className="size-4 text-muted-foreground" />
+        {label}
+      </span>
+      <ChevronRight className="size-4 text-muted-foreground" />
+    </button>
+  );
+}
+
+function ProjectResourcesDialog({
+  open,
+  onOpenChange,
+  activeTab,
+  onTabChange,
+  projectId,
+  project,
+  team,
+  captain,
+  memberAgents,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  activeTab: DocTab;
+  onTabChange: (tab: DocTab) => void;
+  projectId: string;
+  project: Pick<ProjectV12, "local_dir">;
+  team: Team | undefined;
+  captain: Agent | undefined;
+  memberAgents: Agent[];
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100vh-3rem)] overflow-hidden sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>项目资料</DialogTitle>
+        </DialogHeader>
+        <div className="flex gap-2 border-b pb-2">
+          <DocTabBtn active={activeTab === "files"} onClick={() => onTabChange("files")} icon={FolderOpen}>
+            文件
+          </DocTabBtn>
+          <DocTabBtn active={activeTab === "items"} onClick={() => onTabChange("items")} icon={Network}>
+            项目入口
+          </DocTabBtn>
+          <DocTabBtn active={activeTab === "archive"} onClick={() => onTabChange("archive")} icon={Archive}>
+            会话归档
+          </DocTabBtn>
+        </div>
+        <div className="min-h-[420px] overflow-y-auto">
+          {activeTab === "files" && <ProjectFilesPanel project={project} />}
+          {activeTab === "items" && (
+            <ProjectOriginItemsTab
+              projectId={projectId}
+              team={team}
+              captain={captain}
+              memberAgents={memberAgents}
+            />
+          )}
+          {activeTab === "archive" && <ArchivedSessionsTab projectId={projectId} />}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProjectFilesPanel({ project }: { project: Pick<ProjectV12, "local_dir"> }) {
+  return (
+    <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+      <FolderOpen className="size-8 opacity-40" />
+      <p className="max-w-xs text-xs leading-relaxed">
+        当前项目绑定的本地工作目录上下文是：
+      </p>
+      <code className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground">
+        {project.local_dir || "（未设置）"}
+      </code>
+      <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground/80">
+        该路径会传递给本地 runtime 作为工作目录上下文；这里不承诺额外的默认读写权限。
+      </p>
     </div>
   );
 }
@@ -540,9 +659,7 @@ function ProjectOriginItemsTab({
   const createMission = useCreateMission();
   const createIdea = useCreateIdea();
   const createExploration = useCreateExploration();
-  const [missionDraft, setMissionDraft] = useState("");
-  const [ideaDraft, setIdeaDraft] = useState("");
-  const [explorationDraft, setExplorationDraft] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const visibleMissions = useMemo(
     () => keepProjectItems(missions, projectId),
@@ -564,69 +681,6 @@ function ProjectOriginItemsTab({
     visibleIdeas.length > 0 ||
     visibleExplorations.length > 0;
 
-  const submitMission = async () => {
-    const prompt = missionDraft.trim();
-    if (!prompt) return;
-    if (!captain) {
-      toast.error("当前项目还没有负责人，无法创建 Mission");
-      return;
-    }
-    try {
-      await createMission.mutateAsync({
-        project_id: projectId,
-        team_id: team?.id,
-        captain_agent_id: captain.id,
-        member_agent_ids: memberAgents.map((agent) => agent.id),
-        title: titleFromProjectDraft(prompt, "未命名 Mission"),
-        prompt,
-        risk_level: "low",
-        execution_mode: "auto",
-      });
-      setMissionDraft("");
-      toast.success("Mission 已创建");
-    } catch (err) {
-      toast.error("Mission 创建失败", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    }
-  };
-
-  const submitIdea = async () => {
-    const description = ideaDraft.trim();
-    if (!description) return;
-    try {
-      await createIdea.mutateAsync({
-        project_id: projectId,
-        description,
-        source: "manual",
-      });
-      setIdeaDraft("");
-      toast.success("Idea 已记录");
-    } catch (err) {
-      toast.error("Idea 创建失败", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    }
-  };
-
-  const submitExploration = async () => {
-    const topic = explorationDraft.trim();
-    if (!topic) return;
-    try {
-      await createExploration.mutateAsync({
-        project_id: projectId,
-        topic: titleFromProjectDraft(topic, "未命名探索"),
-        question: topic,
-      });
-      setExplorationDraft("");
-      toast.success("Exploration 已创建");
-    } catch (err) {
-      toast.error("Exploration 创建失败", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    }
-  };
-
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <div className="space-y-4 p-4">
@@ -641,6 +695,10 @@ function ProjectOriginItemsTab({
             {visibleMissions.length + visibleIdeas.length + visibleExplorations.length}
           </Badge>
         </div>
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="size-3.5" />
+          新建
+        </Button>
 
         {error ? (
           <div className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
@@ -653,40 +711,6 @@ function ProjectOriginItemsTab({
             </div>
           </div>
         ) : null}
-
-        <QuickProjectItemComposer
-          icon={Target}
-          title="Mission"
-          value={missionDraft}
-          placeholder="要让项目团队执行什么？"
-          buttonLabel="创建"
-          disabled={!captain || createMission.isPending}
-          pending={createMission.isPending}
-          onChange={setMissionDraft}
-          onSubmit={submitMission}
-        />
-        <QuickProjectItemComposer
-          icon={Lightbulb}
-          title="Idea"
-          value={ideaDraft}
-          placeholder="先收进项目想法池..."
-          buttonLabel="记录"
-          disabled={createIdea.isPending}
-          pending={createIdea.isPending}
-          onChange={setIdeaDraft}
-          onSubmit={submitIdea}
-        />
-        <QuickProjectItemComposer
-          icon={Compass}
-          title="Exploration"
-          value={explorationDraft}
-          placeholder="要探索或比较什么方案？"
-          buttonLabel="探索"
-          disabled={createExploration.isPending}
-          pending={createExploration.isPending}
-          onChange={setExplorationDraft}
-          onSubmit={submitExploration}
-        />
 
         {loading ? (
           <div className="space-y-2 pt-1">
@@ -742,61 +766,255 @@ function ProjectOriginItemsTab({
           </div>
         )}
       </div>
+      <ProjectCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        projectId={projectId}
+        team={team}
+        captain={captain}
+        memberAgents={memberAgents}
+        createMission={createMission}
+        createIdea={createIdea}
+        createExploration={createExploration}
+      />
     </div>
   );
 }
 
-function QuickProjectItemComposer({
-  icon: Icon,
-  title,
-  value,
-  placeholder,
-  buttonLabel,
-  disabled,
-  pending,
-  onChange,
-  onSubmit,
+function ProjectCreateDialog({
+  open,
+  onOpenChange,
+  projectId,
+  team,
+  captain,
+  memberAgents,
+  createMission,
+  createIdea,
+  createExploration,
 }: {
-  icon: typeof Bot;
-  title: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  team: Team | undefined;
+  captain: Agent | undefined;
+  memberAgents: Agent[];
+  createMission: ReturnType<typeof useCreateMission>;
+  createIdea: ReturnType<typeof useCreateIdea>;
+  createExploration: ReturnType<typeof useCreateExploration>;
+}) {
+  const [type, setType] = useState<(typeof projectCreateFlowTypes)[number]["type"]>("mission");
+  const [draft, setDraft] = useState("");
+  const [riskLevel, setRiskLevel] = useState<MissionRiskLevel>("low");
+  const [executionMode, setExecutionMode] = useState<MissionExecutionMode>("auto");
+  const [memberIds, setMemberIds] = useState<string[]>(() => memberAgents.map((agent) => agent.id));
+
+  useEffect(() => {
+    if (!open) return;
+    setMemberIds(memberAgents.map((agent) => agent.id));
+  }, [open, memberAgents]);
+
+  const reset = () => {
+    setType("mission");
+    setDraft("");
+    setRiskLevel("low");
+    setExecutionMode("auto");
+    setMemberIds(memberAgents.map((agent) => agent.id));
+  };
+  const close = () => {
+    reset();
+    onOpenChange(false);
+  };
+  const pending = createMission.isPending || createIdea.isPending || createExploration.isPending;
+
+  const submit = async () => {
+    const value = draft.trim();
+    if (!value) return;
+    try {
+      if (type === "mission") {
+        if (!captain) {
+          toast.error("当前项目还没有负责人，无法创建 Mission");
+          return;
+        }
+        await createMission.mutateAsync({
+          project_id: projectId,
+          team_id: team?.id,
+          captain_agent_id: captain.id,
+          member_agent_ids: memberIds,
+          title: titleFromProjectDraft(value, "未命名 Mission"),
+          prompt: value,
+          risk_level: riskLevel,
+          execution_mode: executionMode,
+        });
+        toast.success("Mission 已创建");
+      } else if (type === "idea") {
+        await createIdea.mutateAsync({
+          project_id: projectId,
+          description: value,
+          source: "manual",
+        });
+        toast.success("Idea 已记录");
+      } else {
+        await createExploration.mutateAsync({
+          project_id: projectId,
+          topic: titleFromProjectDraft(value, "未命名探索"),
+          question: value,
+        });
+        toast.success("Exploration 已创建");
+      }
+      close();
+    } catch (err) {
+      const label = projectCreateFlowTypes.find((item) => item.type === type)?.label ?? "项目入口";
+      toast.error(`${label} 创建失败`, {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) close();
+        else onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>新建项目入口</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            {projectCreateFlowTypes.map((item) => (
+              <button
+                key={item.type}
+                type="button"
+                onClick={() => setType(item.type)}
+                className={cn(
+                  "rounded-md border px-3 py-2 text-sm transition-colors",
+                  type === item.type
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "bg-background text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-medium">
+              {type === "mission" ? "目标" : type === "idea" ? "想法" : "探索问题"}
+            </div>
+            <Textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={4}
+              className="min-h-28 resize-none"
+              placeholder={
+                type === "mission"
+                  ? "要让项目团队执行什么？"
+                  : type === "idea"
+                    ? "先收进项目想法池..."
+                    : "要探索或比较什么方案？"
+              }
+            />
+          </div>
+
+          {type === "mission" && (
+            <div className="space-y-4 rounded-md border bg-muted/20 p-3">
+              <div className="grid gap-3 text-xs md:grid-cols-2">
+                <div>
+                  <div className="font-medium">负责人</div>
+                  <div className="mt-1 text-muted-foreground">{captain?.name ?? "当前项目未设置负责人"}</div>
+                </div>
+                <div>
+                  <div className="font-medium">协作成员</div>
+                  <div className="mt-1 text-muted-foreground">{memberIds.length} 位</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {memberAgents.map((agent) => {
+                  const on = memberIds.includes(agent.id);
+                  return (
+                    <Button
+                      key={agent.id}
+                      size="sm"
+                      variant={on ? "default" : "outline"}
+                      onClick={() =>
+                        setMemberIds((curr) =>
+                          curr.includes(agent.id)
+                            ? curr.filter((id) => id !== agent.id)
+                            : [...curr, agent.id],
+                        )
+                      }
+                    >
+                      {agent.name}
+                    </Button>
+                  );
+                })}
+              </div>
+              <OptionButtons
+                label="风险级别"
+                value={riskLevel}
+                options={[
+                  ["low", "低风险"],
+                  ["medium", "中风险"],
+                  ["high", "高风险"],
+                ]}
+                onChange={(value) => setRiskLevel(value as MissionRiskLevel)}
+              />
+              <OptionButtons
+                label="执行模式"
+                value={executionMode}
+                options={[
+                  ["auto", "自动执行"],
+                  ["confirm", "关键确认"],
+                  ["step_confirm", "逐步确认"],
+                ]}
+                onChange={(value) => setExecutionMode(value as MissionExecutionMode)}
+              />
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button size="sm" variant="ghost" onClick={close} disabled={pending}>
+            取消
+          </Button>
+          <Button size="sm" onClick={submit} disabled={pending || !draft.trim() || (type === "mission" && !captain)}>
+            {pending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+            创建
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OptionButtons({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
   value: string;
-  placeholder: string;
-  buttonLabel: string;
-  disabled?: boolean;
-  pending?: boolean;
+  options: Array<[string, string]>;
   onChange: (value: string) => void;
-  onSubmit: () => void;
 }) {
   return (
-    <div className="rounded-md border bg-background p-3">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium">
-        <Icon className="size-3.5 text-muted-foreground" />
-        {title}
-      </div>
-      <Textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        rows={2}
-        className="min-h-16 resize-none text-xs"
-        disabled={disabled}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-            event.preventDefault();
-            if (!disabled && value.trim()) onSubmit();
-          }
-        }}
-      />
-      <div className="mt-2 flex justify-end">
-        <Button
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          onClick={onSubmit}
-          disabled={disabled || !value.trim()}
-        >
-          {pending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
-          {buttonLabel}
-        </Button>
+    <div>
+      <div className="mb-1 text-xs font-medium">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map(([optionValue, optionLabel]) => (
+          <Button
+            key={optionValue}
+            size="sm"
+            variant={value === optionValue ? "default" : "outline"}
+            onClick={() => onChange(optionValue)}
+          >
+            {optionLabel}
+          </Button>
+        ))}
       </div>
     </div>
   );
@@ -856,11 +1074,11 @@ function ProjectItemRow({
   );
 }
 
-function keepProjectItems<T extends { project_id?: string | null }>(
+export function keepProjectItems<T extends { project_id?: string | null }>(
   items: T[],
   projectId: string,
 ) {
-  return items.filter((item) => item.project_id === undefined || item.project_id === projectId);
+  return items.filter((item) => item.project_id === projectId);
 }
 
 function titleFromProjectDraft(value: string, fallback: string) {
@@ -957,9 +1175,106 @@ function ArchivedSessionsTab({ projectId }: { projectId: string }) {
   );
 }
 
-function CompactionButton({ projectId }: { projectId: string }) {
+function ProjectMoreMenu({
+  projectId,
+  projectTitle,
+  archived,
+  mainChatSessionId,
+  memberAgents,
+  captain,
+}: {
+  projectId: string;
+  projectTitle: string;
+  archived: boolean;
+  mainChatSessionId: string | null;
+  memberAgents: Agent[];
+  captain: Agent | undefined;
+}) {
+  const [councilOpen, setCouncilOpen] = useState(false);
+  const [compactOpen, setCompactOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+          <MoreHorizontal className="size-4" />
+          更多
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>协作类</DropdownMenuLabel>
+          <DropdownMenuItem
+            disabled={!mainChatSessionId}
+            onClick={() => setCouncilOpen(true)}
+          >
+            <Users className="size-3.5" />
+            多角色议事 / Council
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>维护类</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => setCompactOpen(true)}>
+            <Sparkles className="size-3.5" />
+            整理 + 重新出发
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>危险类</DropdownMenuLabel>
+          {!archived && (
+            <DropdownMenuItem onClick={() => setArchiveOpen(true)}>
+              <ArchiveX className="size-3.5" />
+              归档
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="size-3.5" />
+            删除
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {mainChatSessionId && (
+        <ConveneCouncilDialog
+          open={councilOpen}
+          onOpenChange={setCouncilOpen}
+          projectId={projectId}
+          chatSessionId={mainChatSessionId}
+          memberAgents={memberAgents}
+          captain={captain}
+        />
+      )}
+      <CompactionDialog
+        open={compactOpen}
+        onOpenChange={setCompactOpen}
+        projectId={projectId}
+      />
+      <ArchiveProjectDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        projectId={projectId}
+        projectTitle={projectTitle}
+      />
+      <DeleteProjectDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        projectId={projectId}
+        projectTitle={projectTitle}
+      />
+    </>
+  );
+}
+
+function CompactionDialog({
+  open,
+  onOpenChange,
+  projectId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+}) {
   const wsId = useWorkspaceId();
-  const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<CompactionPreview | null>(null);
   const [keyDecisions, setKeyDecisions] = useState("");
   const [deliverables, setDeliverables] = useState("");
@@ -1013,7 +1328,6 @@ function CompactionButton({ projectId }: { projectId: string }) {
   }, [previewJobQuery.data, previewJobId, hydratedJobId]);
 
   const start = async () => {
-    setOpen(true);
     setPreview(null);
     setPreviewJobId(null);
     setHydratedJobId(null);
@@ -1028,7 +1342,7 @@ function CompactionButton({ projectId }: { projectId: string }) {
           description: err instanceof Error ? err.message : String(err),
         });
       } catch (fallbackErr) {
-        setOpen(false);
+        onOpenChange(false);
         toast.error("无法预览压缩", {
           description: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
         });
@@ -1049,7 +1363,7 @@ function CompactionButton({ projectId }: { projectId: string }) {
         },
       });
       toast.success("项目记忆已更新，新主聊已开启");
-      setOpen(false);
+      onOpenChange(false);
       setPreview(null);
     } catch (err) {
       toast.error("压缩失败", {
@@ -1067,13 +1381,15 @@ function CompactionButton({ projectId }: { projectId: string }) {
     });
   };
 
+  useEffect(() => {
+    if (!open) return;
+    void start();
+    // Start a fresh preview each time the menu action opens the dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   return (
-    <>
-      <Button size="sm" variant="outline" onClick={start} disabled={startJobMut.isPending || previewMut.isPending}>
-        <Sparkles className="size-3" />
-        整理 + 重新出发
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>整理项目主聊（压缩预览）</DialogTitle>
@@ -1175,7 +1491,7 @@ function CompactionButton({ projectId }: { projectId: string }) {
             </div>
           )}
           <DialogFooter>
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+            <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
               取消
             </Button>
             <Button size="sm" onClick={confirm} disabled={confirmMut.isPending || !preview}>
@@ -1184,22 +1500,24 @@ function CompactionButton({ projectId }: { projectId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   );
 }
 
-function ConveneCouncilButton({
+function ConveneCouncilDialog({
+  open,
+  onOpenChange,
   projectId,
   chatSessionId,
   memberAgents,
   captain,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   projectId: string;
   chatSessionId: string;
   memberAgents: Agent[];
   captain: Agent | undefined;
 }) {
-  const [open, setOpen] = useState(false);
   const [topic, setTopic] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const create = useCreateCouncilSession();
@@ -1222,8 +1540,8 @@ function ConveneCouncilButton({
         source_chat_session_id: chatSessionId,
         participant_agent_ids: Array.from(picked),
       });
-      toast.success("会议室已开 — 散会后结论会自动写入项目记忆「关键决策」段");
-      setOpen(false);
+      toast.success(`${projectCouncilCopy.success} — 结束后结论会自动写入项目记忆「关键决策」段`);
+      onOpenChange(false);
       setTopic("");
       setPicked(new Set());
     } catch (err) {
@@ -1234,15 +1552,10 @@ function ConveneCouncilButton({
   };
 
   return (
-    <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <Users className="size-3" />
-        召开 Council
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>召开 Council Session</DialogTitle>
+          <DialogTitle>{projectCouncilCopy.dialogTitle}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <Textarea
@@ -1251,7 +1564,9 @@ function ConveneCouncilButton({
             placeholder="议题：要让多个角色对齐什么？"
             rows={2}
           />
-          <div className="text-xs text-muted-foreground">参会角色（默认全选 captain + 成员）：</div>
+          <div className="text-xs text-muted-foreground">
+            {projectCouncilCopy.participantLabel}（默认全选 captain + 成员）：
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {candidates.length === 0 ? (
               <span className="text-xs text-muted-foreground">还没有可邀请的 Agent</span>
@@ -1279,12 +1594,12 @@ function ConveneCouncilButton({
             )}
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            散会时会议结论会自动追加到项目记忆文档「关键决策」段（PRD §17.6），
+            结束时议事结论会自动追加到项目记忆文档「关键决策」段（PRD §17.6），
             同时回写到本项目主聊。
           </p>
         </div>
         <DialogFooter>
-          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button size="sm" onClick={submit} disabled={!topic.trim() || create.isPending}>
@@ -1293,7 +1608,6 @@ function ConveneCouncilButton({
         </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   );
 }
 
@@ -1345,22 +1659,25 @@ function ManageMembersButton({ team }: { team: Team }) {
   );
 }
 
-function ArchiveProjectButton({
+function ArchiveProjectDialog({
+  open,
+  onOpenChange,
   projectId,
   projectTitle,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   projectId: string;
   projectTitle: string;
 }) {
   const wsId = useWorkspaceId();
-  const [open, setOpen] = useState(false);
   const archive = useArchiveProjectV12(wsId);
 
   const submit = async () => {
     try {
       await archive.mutateAsync(projectId);
       toast.success(`「${projectTitle}」已归档`);
-      setOpen(false);
+      onOpenChange(false);
     } catch (err) {
       toast.error("归档失败", {
         description: err instanceof Error ? err.message : String(err),
@@ -1369,55 +1686,46 @@ function ArchiveProjectButton({
   };
 
   return (
-    <>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="text-muted-foreground hover:text-destructive"
-        onClick={() => setOpen(true)}
-        title="归档项目"
-      >
-        <ArchiveX className="size-3" />
-        归档
-      </Button>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>归档「{projectTitle}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              归档后项目从工作区列表里隐藏，主聊和记忆文档保留可查。本地目录不会被删。需要重新启用时联系下棒手工 unarchive。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={archive.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={submit} disabled={archive.isPending}>
-              {archive.isPending ? "归档中…" : "确认归档"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>归档「{projectTitle}」？</AlertDialogTitle>
+          <AlertDialogDescription>
+            归档后项目从工作区列表里隐藏，主聊和记忆文档保留可查。本地目录不会被删。需要重新启用时联系下棒手工 unarchive。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={archive.isPending}>取消</AlertDialogCancel>
+          <AlertDialogAction onClick={submit} disabled={archive.isPending}>
+            {archive.isPending ? "归档中…" : "确认归档"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
-function DeleteProjectButton({
+function DeleteProjectDialog({
+  open,
+  onOpenChange,
   projectId,
   projectTitle,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   projectId: string;
   projectTitle: string;
 }) {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
-  const [open, setOpen] = useState(false);
   const remove = useDeleteProjectV12(wsId);
 
   const submit = async () => {
     try {
       await remove.mutateAsync(projectId);
       toast.success(`「${projectTitle}」已删除`);
-      setOpen(false);
+      onOpenChange(false);
       navigation.push(paths.projectWorkspaces());
     } catch (err) {
       toast.error("删除失败", {
@@ -1427,37 +1735,25 @@ function DeleteProjectButton({
   };
 
   return (
-    <>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="text-muted-foreground hover:text-destructive"
-        onClick={() => setOpen(true)}
-        title="删除项目"
-      >
-        <Trash2 className="size-3" />
-        删除
-      </Button>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除「{projectTitle}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              此操作无法撤销。项目主聊、会议、Mission、Idea、分岔探索、工具绑定和项目记忆会一并删除。本地目录不会被删除。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={remove.isPending}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={submit}
-              disabled={remove.isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {remove.isPending ? "删除中…" : "确认删除"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除「{projectTitle}」？</AlertDialogTitle>
+          <AlertDialogDescription>
+            此操作无法撤销。项目主聊、会议、Mission、Idea、分岔探索、工具绑定和项目记忆会一并删除。本地目录不会被删除。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={remove.isPending}>取消</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={submit}
+            disabled={remove.isPending}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {remove.isPending ? "删除中…" : "确认删除"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

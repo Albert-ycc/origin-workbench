@@ -45,18 +45,12 @@ type AgentResponse struct {
 	Status             string            `json:"status"`
 	MaxConcurrentTasks int32             `json:"max_concurrent_tasks"`
 	Model              string            `json:"model"`
-	// PRD §14.8 Agent work mode. work_mode flips the chat dispatch UX
-	// (live blocks the chat window; mailbox parks the work in block 6).
-	// Budget/notify only matter when work_mode == "mailbox".
-	WorkMode             string          `json:"work_mode"`
-	MailboxBudgetSeconds int32           `json:"mailbox_budget_seconds"`
-	NotifyPolicy         string          `json:"notify_policy"`
-	OwnerID              *string         `json:"owner_id"`
-	Skills               []SkillResponse `json:"skills"`
-	CreatedAt            string          `json:"created_at"`
-	UpdatedAt            string          `json:"updated_at"`
-	ArchivedAt           *string         `json:"archived_at"`
-	ArchivedBy           *string         `json:"archived_by"`
+	OwnerID            *string           `json:"owner_id"`
+	Skills             []SkillResponse   `json:"skills"`
+	CreatedAt          string            `json:"created_at"`
+	UpdatedAt          string            `json:"updated_at"`
+	ArchivedAt         *string           `json:"archived_at"`
+	ArchivedBy         *string           `json:"archived_by"`
 }
 
 func agentToResponse(a db.Agent) AgentResponse {
@@ -110,15 +104,12 @@ func agentToResponse(a db.Agent) AgentResponse {
 		Status:               a.Status,
 		MaxConcurrentTasks:   a.MaxConcurrentTasks,
 		Model:                a.Model.String,
-		WorkMode:             a.WorkMode,
-		MailboxBudgetSeconds: a.MailboxBudgetSeconds,
-		NotifyPolicy:         a.NotifyPolicy,
-		OwnerID:              uuidToPtr(a.OwnerID),
-		Skills:               []SkillResponse{},
-		CreatedAt:            timestampToString(a.CreatedAt),
-		UpdatedAt:            timestampToString(a.UpdatedAt),
-		ArchivedAt:           timestampToPtr(a.ArchivedAt),
-		ArchivedBy:           uuidToPtr(a.ArchivedBy),
+		OwnerID:            uuidToPtr(a.OwnerID),
+		Skills:             []SkillResponse{},
+		CreatedAt:          timestampToString(a.CreatedAt),
+		UpdatedAt:          timestampToString(a.UpdatedAt),
+		ArchivedAt:         timestampToPtr(a.ArchivedAt),
+		ArchivedBy:         uuidToPtr(a.ArchivedBy),
 	}
 }
 
@@ -167,35 +158,35 @@ type AgentTaskResponse struct {
 	ProjectResources []ProjectResourceData `json:"project_resources,omitempty"` // resources attached to the project
 	// Origin §17.5 — v1.2 project memory injection. Both empty when the
 	// task is not bound to a v1.2 project workspace.
-	ProjectMemoryDoc        string                         `json:"project_memory_doc,omitempty"`
-	AgentProjectMemory      string                         `json:"agent_project_memory,omitempty"`
-	CreatedAt               string                         `json:"created_at"`
-	PriorSessionID          string                         `json:"prior_session_id,omitempty"`          // session ID from a previous task on same issue
-	PriorWorkDir            string                         `json:"prior_work_dir,omitempty"`            // work_dir from a previous task on same issue
-	TriggerCommentID        *string                        `json:"trigger_comment_id,omitempty"`        // comment that triggered this task
-	TriggerCommentContent   string                         `json:"trigger_comment_content,omitempty"`   // content of the triggering comment
-	TriggerSummary          *string                        `json:"trigger_summary,omitempty"`           // canonical short description snapshot — comment text / autopilot title — taken at task creation; survives source edits/deletes
-	TriggerAuthorType       string                         `json:"trigger_author_type,omitempty"`       // "agent" or "member" — author kind of the triggering comment
-	TriggerAuthorName       string                         `json:"trigger_author_name,omitempty"`       // display name of the triggering comment author
-	ChatSessionID           string                         `json:"chat_session_id,omitempty"`           // non-empty for chat tasks
-	ChatMessage             string                         `json:"chat_message,omitempty"`              // user message for chat tasks
-	TeamDelegation          *service.TeamDelegationContext  `json:"team_delegation,omitempty"`           // captain-provided instructions for delegated team chat tasks
+	ProjectMemoryDoc        string                           `json:"project_memory_doc,omitempty"`
+	AgentProjectMemory      string                           `json:"agent_project_memory,omitempty"`
+	CreatedAt               string                           `json:"created_at"`
+	PriorSessionID          string                           `json:"prior_session_id,omitempty"`          // session ID from a previous task on same issue
+	PriorWorkDir            string                           `json:"prior_work_dir,omitempty"`            // work_dir from a previous task on same issue
+	TriggerCommentID        *string                          `json:"trigger_comment_id,omitempty"`        // comment that triggered this task
+	TriggerCommentContent   string                           `json:"trigger_comment_content,omitempty"`   // content of the triggering comment
+	TriggerSummary          *string                          `json:"trigger_summary,omitempty"`           // canonical short description snapshot — comment text / autopilot title — taken at task creation; survives source edits/deletes
+	TriggerAuthorType       string                           `json:"trigger_author_type,omitempty"`       // "agent" or "member" — author kind of the triggering comment
+	TriggerAuthorName       string                           `json:"trigger_author_name,omitempty"`       // display name of the triggering comment author
+	ChatSessionID           string                           `json:"chat_session_id,omitempty"`           // non-empty for chat tasks
+	ChatMessage             string                           `json:"chat_message,omitempty"`              // user message for chat tasks
+	TeamDelegation          *service.TeamDelegationContext   `json:"team_delegation,omitempty"`           // captain-provided instructions for delegated team chat tasks
 	CouncilBroadcast        *service.CouncilBroadcastContext `json:"council_broadcast,omitempty"`         // present when this chat task is a Council @全体 fan-out leg
-	TeamID                  string                          `json:"team_id,omitempty"`                   // non-empty for team group chat tasks
-	TeamName                string                         `json:"team_name,omitempty"`                 // team group chat name
-	TeamCaptainAgentID      string                         `json:"team_captain_agent_id,omitempty"`     // captain responsible for delegation
-	TeamMembers             []TeamTaskMemberData           `json:"team_members,omitempty"`              // roster visible to the daemon
-	AutopilotRunID          string                         `json:"autopilot_run_id,omitempty"`          // non-empty for autopilot-spawned tasks
-	AutopilotID             string                         `json:"autopilot_id,omitempty"`              // autopilot that spawned this task
-	AutopilotTitle          string                         `json:"autopilot_title,omitempty"`           // autopilot title used as task context
-	AutopilotDescription    string                         `json:"autopilot_description,omitempty"`     // autopilot description used as task prompt
-	AutopilotSource         string                         `json:"autopilot_source,omitempty"`          // manual, schedule, webhook, or api
-	AutopilotTriggerPayload json.RawMessage                `json:"autopilot_trigger_payload,omitempty"` // optional trigger payload for webhook/api runs
-	QuickCreatePrompt       string                         `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
-	ProjectCompaction       *ProjectCompactionTaskData     `json:"project_compaction,omitempty"`        // async project main-chat /sync preview task
-	OperatorPreferences     *OperatorPreferencesData       `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
-	RequestedSkills         []string                       `json:"requested_skills,omitempty"`          // skills explicitly selected from chat slash menu for this turn
-	Kind                    string                         `json:"kind"`                                // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
+	TeamID                  string                           `json:"team_id,omitempty"`                   // non-empty for team group chat tasks
+	TeamName                string                           `json:"team_name,omitempty"`                 // team group chat name
+	TeamCaptainAgentID      string                           `json:"team_captain_agent_id,omitempty"`     // captain responsible for delegation
+	TeamMembers             []TeamTaskMemberData             `json:"team_members,omitempty"`              // roster visible to the daemon
+	AutopilotRunID          string                           `json:"autopilot_run_id,omitempty"`          // non-empty for autopilot-spawned tasks
+	AutopilotID             string                           `json:"autopilot_id,omitempty"`              // autopilot that spawned this task
+	AutopilotTitle          string                           `json:"autopilot_title,omitempty"`           // autopilot title used as task context
+	AutopilotDescription    string                           `json:"autopilot_description,omitempty"`     // autopilot description used as task prompt
+	AutopilotSource         string                           `json:"autopilot_source,omitempty"`          // manual, schedule, webhook, or api
+	AutopilotTriggerPayload json.RawMessage                  `json:"autopilot_trigger_payload,omitempty"` // optional trigger payload for webhook/api runs
+	QuickCreatePrompt       string                           `json:"quick_create_prompt,omitempty"`       // user's natural-language input for quick-create tasks
+	ProjectCompaction       *ProjectCompactionTaskData       `json:"project_compaction,omitempty"`        // async project main-chat /sync preview task
+	OperatorPreferences     *OperatorPreferencesData         `json:"operator_preferences,omitempty"`      // Origin §14.10 — UserProfile injected as the closest layer of the system prompt
+	RequestedSkills         []string                         `json:"requested_skills,omitempty"`          // skills explicitly selected from chat slash menu for this turn
+	Kind                    string                           `json:"kind"`                                // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
 }
 
 // OperatorPreferencesData mirrors daemon.OperatorPreferences without importing
@@ -586,12 +577,6 @@ type UpdateAgentRequest struct {
 	Status             *string            `json:"status"`
 	MaxConcurrentTasks *int32             `json:"max_concurrent_tasks"`
 	Model              *string            `json:"model"`
-	// PRD §14.8 Agent work mode (set via the /agents page's quick toggle).
-	// All three are optional; only the fields set in the PATCH body are
-	// applied (sqlc.narg COALESCE preserves existing values).
-	WorkMode             *string `json:"work_mode"`
-	MailboxBudgetSeconds *int32  `json:"mailbox_budget_seconds"`
-	NotifyPolicy         *string `json:"notify_policy"`
 }
 
 // canViewAgentEnv checks whether the requesting user is allowed to see the
@@ -725,34 +710,6 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	if req.Model != nil {
 		params.Model = pgtype.Text{String: *req.Model, Valid: true}
 	}
-	if req.WorkMode != nil {
-		switch *req.WorkMode {
-		case "live", "mailbox":
-		default:
-			writeError(w, http.StatusBadRequest, "work_mode must be live or mailbox")
-			return
-		}
-		params.WorkMode = pgtype.Text{String: *req.WorkMode, Valid: true}
-	}
-	if req.MailboxBudgetSeconds != nil {
-		// Allow 5min..24h range. Defaults stay valid; this only fences the
-		// PATCH input (PRD §14.8.2 default 1h).
-		if *req.MailboxBudgetSeconds < 300 || *req.MailboxBudgetSeconds > 86400 {
-			writeError(w, http.StatusBadRequest, "mailbox_budget_seconds must be between 300 and 86400")
-			return
-		}
-		params.MailboxBudgetSeconds = pgtype.Int4{Int32: *req.MailboxBudgetSeconds, Valid: true}
-	}
-	if req.NotifyPolicy != nil {
-		switch *req.NotifyPolicy {
-		case "on_complete", "on_block", "both":
-		default:
-			writeError(w, http.StatusBadRequest, "notify_policy must be on_complete / on_block / both")
-			return
-		}
-		params.NotifyPolicy = pgtype.Text{String: *req.NotifyPolicy, Valid: true}
-	}
-
 	agent, err = h.Queries.UpdateAgent(r.Context(), params)
 	if err != nil {
 		slog.Warn("update agent failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)

@@ -119,7 +119,7 @@ export const appRoutes: RouteObject[] = [
           { path: "rooms/:id", element: <RoomDetailRoute />, handle: { title: "茶水间" } },
           { path: "workbench", element: <WorkbenchPage />, handle: { title: "原点工作台" } },
           { path: "ideas", element: <IdeasPage />, handle: { title: "想法池" } },
-          { path: "councils", element: <CouncilsPage />, handle: { title: "会议室" } },
+          { path: "councils", element: <CouncilsPage />, handle: { title: "多角色议事" } },
           { path: "missions", element: <MissionsPage />, handle: { title: "任务中枢" } },
           { path: "explorations", element: <ExplorationsPage />, handle: { title: "分叉探索" } },
           { path: "issues", element: <IssuesPage />, handle: { title: "任务" } },
@@ -153,22 +153,22 @@ export const appRoutes: RouteObject[] = [
           {
             path: "workspaces/:id/meetings",
             element: <ProjectMeetingsRoute />,
-            handle: { title: "会议 Copilot" },
+            handle: { title: "会议" },
           },
           {
             path: "workspaces/:id/meetings/:meetingId",
             element: <ProjectMeetingsRoute />,
-            handle: { title: "会议 Copilot" },
+            handle: { title: "会议" },
           },
           {
             path: "meetings",
             element: <MeetingsRoute />,
-            handle: { title: "会议 Copilot" },
+            handle: { title: "会议" },
           },
           {
             path: "meetings/:meetingId",
             element: <MeetingsRoute />,
-            handle: { title: "会议 Copilot" },
+            handle: { title: "会议" },
           },
           {
             path: "autopilots",

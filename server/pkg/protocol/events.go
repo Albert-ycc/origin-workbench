@@ -164,14 +164,6 @@ const (
 	EventMeetingSummaryCreated           = "meeting:summary_created"
 	EventMeetingAnalysisStatusUpdated    = "meeting:analysis_status_updated"
 
-	// Mailbox events (Origin §14.8 — Agent work mode = mailbox).
-	// Created when a mailbox-mode agent receives a chat message and starts
-	// processing in the background; Updated when the underlying task flips
-	// to done / blocked / timeout. Frontends use these to refresh block 6
-	// of the workbench without polling.
-	EventMailboxItemCreated = "mailbox:created"
-	EventMailboxItemUpdated = "mailbox:updated"
-
 	// Autopilot events
 	EventAutopilotCreated  = "autopilot:created"
 	EventAutopilotUpdated  = "autopilot:updated"

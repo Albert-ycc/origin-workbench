@@ -2,16 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@multica/core/api";
-import type { Agent, AgentMemory, AgentSkillCandidate } from "@multica/core/types";
+import type { Agent, AgentMemory } from "@multica/core/types";
 import {
   agentMemoryKeys,
-  agentSkillCandidateKeys,
-  agentEventsOptions,
-  agentMemoriesOptions,
-  agentSkillCandidatesOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
 } from "@multica/core/agents";
@@ -24,39 +20,37 @@ interface JournalTabProps {
   agent: Agent;
 }
 
-type SubTab = "records" | "timeline" | "history" | "triggers";
-
-const SUB_TABS: { id: SubTab; label: string }[] = [
-  { id: "records", label: "工作记录" },
-  { id: "timeline", label: "时间视图" },
-  { id: "history", label: "任务历史" },
-  { id: "triggers", label: "触发器" },
-];
-
-const TOTAL_WEEKS = 53;
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+type JournalPeriod = "year" | "month";
+
+const PERIODS: Record<
+  JournalPeriod,
+  {
+    label: string;
+    ariaLabel: string;
+  }
+> = {
+  year: { label: "年", ariaLabel: "年工作记录日历" },
+  month: { label: "月", ariaLabel: "月工作记录日历" },
+};
+
+const PERIOD_ORDER: JournalPeriod[] = ["year", "month"];
 
 /**
  * "工作记录" — agent home dashboard mirroring the QoderWake reference:
- * sub-tabs across the top of a single big panel, headline numbers, a
- * GitHub-style year heatmap (53 weeks × 7 weekdays), and a memory + skills
- * row underneath. The activity API only carries 30 daily buckets today,
- * so the year grid pads the older 11 months with zeros — when the
- * backend window opens up to a year the visual already fits.
+ * headline numbers and a GitHub-style year heatmap (53 weeks × 7 weekdays).
+ * Memory and skills live in their own agent-level tabs, so this page stays
+ * focused on work telemetry.
  */
 export function JournalTab({ agent }: JournalTabProps) {
   const wsId = useWorkspaceId();
+  const [period, setPeriod] = useState<JournalPeriod>("year");
   const { byAgent } = useWorkspaceActivityMap(wsId);
   const activity = byAgent.get(agent.id);
-  const last30 = summarizeActivityWindow(activity, 30);
+  const summaryDays = period === "month" ? getElapsedDaysInCurrentMonth() : 365;
+  const summary = summarizeActivityWindow(activity, summaryDays);
   const { data: autopilots = [] } = useQuery(autopilotListOptions(wsId));
-  const { data: memoryData } = useQuery(agentMemoriesOptions(wsId, agent.id));
-  const { data: skillCandidateData } = useQuery(
-    agentSkillCandidatesOptions(wsId, agent.id),
-  );
-  const { data: eventData } = useQuery(agentEventsOptions(wsId, agent.id));
-
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("records");
 
   const triggerCount = useMemo(
     () =>
@@ -76,56 +70,16 @@ export function JournalTab({ agent }: JournalTabProps) {
   }, [agent.created_at]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 p-1">
-      <section className="rounded-xl border bg-card">
-        <div className="flex items-center justify-between border-b px-5 pt-3">
-          <div className="flex items-center gap-1">
-            {SUB_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveSubTab(tab.id)}
-                className={cn(
-                  "border-b-2 px-3 pb-2.5 text-sm transition-colors",
-                  activeSubTab === tab.id
-                    ? "border-foreground font-medium text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="text-muted-foreground hover:text-foreground"
-            aria-label="折叠"
-          >
-            <ChevronDown className="size-4" />
-          </button>
-        </div>
-
-        {activeSubTab === "records" ? (
-          <RecordsPanel
-            tenureDays={tenureDays}
-            triggerCount={triggerCount}
-            completed={last30.totalRuns}
-            skillCount={agent.skills?.length ?? 0}
-            activity={activity?.buckets ?? []}
-          />
-        ) : (
-          <PlaceholderPanel tab={activeSubTab} />
-        )}
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <MemorySection memories={memoryData?.memories ?? []} />
-        <SkillsRail
-          agent={agent}
-          candidates={skillCandidateData?.candidates ?? []}
-          events={eventData?.events ?? []}
-        />
-      </section>
+    <div className="flex h-full min-h-0 flex-col">
+      <RecordsPanel
+        tenureDays={tenureDays}
+        triggerCount={triggerCount}
+        completed={summary.totalRuns}
+        skillCount={agent.skills?.length ?? 0}
+        activity={activity?.buckets ?? []}
+        period={period}
+        onPeriodChange={setPeriod}
+      />
     </div>
   );
 }
@@ -138,21 +92,45 @@ function RecordsPanel({
   completed,
   skillCount,
   activity,
+  period,
+  onPeriodChange,
 }: {
   tenureDays: number;
   triggerCount: number;
   completed: number;
   skillCount: number;
   activity: readonly { total: number; failed: number }[];
+  period: JournalPeriod;
+  onPeriodChange: (period: JournalPeriod) => void;
 }) {
   return (
-    <div className="space-y-5 px-5 py-5">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>数据周期</span>
-        <span className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 font-medium text-foreground">
-          365d
-          <ChevronDown className="size-3" />
-        </span>
+        <div
+          className="inline-flex rounded-md border bg-background p-0.5"
+          aria-label="数据周期"
+        >
+          {PERIOD_ORDER.map((item) => {
+            const active = item === period;
+            return (
+              <button
+                key={item}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onPeriodChange(item)}
+                className={cn(
+                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                  active
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {PERIODS[item].label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -162,7 +140,13 @@ function RecordsPanel({
         <BigStat value={skillCount} unit="项" label="已学技能" />
       </div>
 
-      <YearHeatmap activity={activity} />
+      <div className="overflow-x-auto">
+        {period === "month" ? (
+          <MonthCalendar activity={activity} />
+        ) : (
+          <YearActivityHeatmap activity={activity} />
+        )}
+      </div>
     </div>
   );
 }
@@ -187,16 +171,7 @@ function BigStat({
   );
 }
 
-function PlaceholderPanel({ tab }: { tab: SubTab }) {
-  const label = SUB_TABS.find((t) => t.id === tab)?.label ?? "";
-  return (
-    <div className="px-5 py-12 text-center text-xs text-muted-foreground">
-      「{label}」即将上线。
-    </div>
-  );
-}
-
-// ---- Year heatmap ------------------------------------------------------
+// ---- Activity calendars ------------------------------------------------
 
 interface HeatCell {
   date: Date;
@@ -207,11 +182,12 @@ interface HeatCell {
   hasData: boolean;
 }
 
-function YearHeatmap({
+function YearActivityHeatmap({
   activity,
 }: {
   activity: readonly { total: number; failed: number }[];
 }) {
+  const weeks = 53;
   const { columns, monthLabels, max } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -219,14 +195,11 @@ function YearHeatmap({
     const lastColSunday = new Date(today);
     lastColSunday.setDate(today.getDate() - todayWeekday);
     const firstColSunday = new Date(lastColSunday);
-    firstColSunday.setDate(lastColSunday.getDate() - 7 * (TOTAL_WEEKS - 1));
-
-    const totalDays = (TOTAL_WEEKS - 1) * 7 + todayWeekday + 1;
-    void totalDays;
+    firstColSunday.setDate(lastColSunday.getDate() - 7 * (weeks - 1));
 
     const cols: HeatCell[][] = [];
     let maxTotal = 0;
-    for (let w = 0; w < TOTAL_WEEKS; w++) {
+    for (let w = 0; w < weeks; w++) {
       const col: HeatCell[] = [];
       for (let d = 0; d < 7; d++) {
         const date = new Date(firstColSunday);
@@ -258,7 +231,7 @@ function YearHeatmap({
     // Sunday). The label sits on top of that column.
     const labels: { col: number; text: string }[] = [];
     let prevMonth = -1;
-    for (let w = 0; w < TOTAL_WEEKS; w++) {
+    for (let w = 0; w < weeks; w++) {
       const sunday = cols[w]![0]!.date;
       const m = sunday.getMonth();
       if (m !== prevMonth) {
@@ -271,16 +244,19 @@ function YearHeatmap({
   }, [activity]);
 
   return (
-    <div>
+    <div
+      aria-label={PERIODS.year.ariaLabel}
+      style={{ minWidth: 720 }}
+    >
       {/* Month label row */}
       <div
         className="grid pl-7 pb-1 text-[10px] text-muted-foreground"
         style={{
-          gridTemplateColumns: `repeat(${TOTAL_WEEKS}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
           gap: "2px",
         }}
       >
-        {Array.from({ length: TOTAL_WEEKS }, (_, w) => {
+        {Array.from({ length: weeks }, (_, w) => {
           const lbl = monthLabels.find((l) => l.col === w);
           return (
             <div key={w} className="overflow-visible">
@@ -311,7 +287,7 @@ function YearHeatmap({
         <div
           className="grid flex-1"
           style={{
-            gridTemplateColumns: `repeat(${TOTAL_WEEKS}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
             gridTemplateRows: "repeat(7, minmax(0, 1fr))",
             gridAutoFlow: "column",
             gap: "2px",
@@ -331,6 +307,103 @@ function YearHeatmap({
         <LegendCell intensity={3} />
         <LegendCell intensity={4} />
         <span>多</span>
+      </div>
+    </div>
+  );
+}
+
+function MonthCalendar({
+  activity,
+}: {
+  activity: readonly { total: number; failed: number }[];
+}) {
+  const { cells, monthLabel, ariaLabel, max } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leadingBlanks = firstDay.getDay();
+
+    const monthCells: Array<HeatCell | null> = [];
+    let maxTotal = 0;
+    for (let i = 0; i < 42; i++) {
+      const day = i - leadingBlanks + 1;
+      if (day < 1 || day > daysInMonth) {
+        monthCells.push(null);
+        continue;
+      }
+
+      const date = new Date(year, month, day);
+      date.setHours(0, 0, 0, 0);
+      const isFuture = date.getTime() > today.getTime();
+      const daysAgo = Math.round(
+        (today.getTime() - date.getTime()) / (24 * 60 * 60 * 1000),
+      );
+      const idx = activity.length - 1 - daysAgo;
+      const hasData = !isFuture && idx >= 0 && idx < activity.length;
+      const bucket = hasData ? activity[idx]! : { total: 0, failed: 0 };
+      if (bucket.total > maxTotal) maxTotal = bucket.total;
+      monthCells.push({
+        date,
+        daysAgo,
+        total: bucket.total,
+        failed: bucket.failed,
+        isFuture,
+        hasData,
+      });
+    }
+
+    return {
+      cells: monthCells,
+      monthLabel: `${year} 年 ${month + 1} 月`,
+      ariaLabel: `${year}年${month + 1}月工作记录日历`,
+      max: maxTotal,
+    };
+  }, [activity]);
+
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="mx-auto w-full max-w-3xl rounded-lg border bg-card p-4"
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">{monthLabel}</div>
+          <div className="text-xs text-muted-foreground">
+            按自然月展示每天完成的任务量。
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span>少</span>
+          <LegendCell intensity={0} />
+          <LegendCell intensity={1} />
+          <LegendCell intensity={2} />
+          <LegendCell intensity={3} />
+          <LegendCell intensity={4} />
+          <span>多</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground">
+        {WEEKDAYS.map((day) => (
+          <div key={day} className="py-1">
+            {day}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((cell, index) =>
+          cell ? (
+            <MonthCell key={cell.date.toISOString()} cell={cell} max={max} />
+          ) : (
+            <span
+              key={`blank-${index}`}
+              className="h-9 rounded-md bg-muted/15"
+              aria-hidden="true"
+            />
+          ),
+        )}
       </div>
     </div>
   );
@@ -358,7 +431,7 @@ function Cell({ cell, max }: { cell: HeatCell; max: number }) {
     return <span className="aspect-square w-full" />;
   }
   const intensity = intensityOf(cell.total, max);
-  const dateStr = cell.date.toISOString().slice(0, 10);
+  const dateStr = formatLocalDate(cell.date);
   return (
     <span
       title={`${dateStr} · 完成 ${cell.total} · 失败 ${cell.failed}`}
@@ -370,12 +443,47 @@ function Cell({ cell, max }: { cell: HeatCell; max: number }) {
   );
 }
 
+function MonthCell({ cell, max }: { cell: HeatCell; max: number }) {
+  const intensity = intensityOf(cell.total, max);
+  const dateStr = formatLocalDate(cell.date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isToday = cell.date.getTime() === today.getTime();
+  return (
+    <span
+      aria-label={`${dateStr}${isToday ? "，今天" : ""}`}
+      title={`${dateStr} · 完成 ${cell.total} · 失败 ${cell.failed}`}
+      className={cn(
+        "flex h-9 items-center justify-center rounded-md border text-xs tabular-nums",
+        cell.isFuture
+          ? "border-transparent bg-muted/10 text-muted-foreground/35"
+          : "border-transparent text-foreground",
+        !cell.isFuture && intensityClass(intensity),
+        isToday && "border-primary/70 ring-1 ring-primary/30",
+      )}
+    >
+      {cell.date.getDate()}
+    </span>
+  );
+}
+
 function LegendCell({ intensity }: { intensity: 0 | 1 | 2 | 3 | 4 }) {
   return (
     <span
       className={cn("inline-block size-2.5 rounded-[2px]", intensityClass(intensity))}
     />
   );
+}
+
+function getElapsedDaysInCurrentMonth() {
+  return new Date().getDate();
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 // ---- Memory section ----------------------------------------------------
@@ -387,10 +495,16 @@ const MEMORY_KIND_LABELS: Record<string, string> = {
   problem: "最近遇到的问题",
 };
 
-function MemorySection({ memories }: { memories: AgentMemory[] }) {
+export function MemorySection({
+  memories,
+  limit = 4,
+}: {
+  memories: AgentMemory[];
+  limit?: number;
+}) {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
-  const visible = memories.slice(0, 4);
+  const visible = memories.slice(0, limit);
   const patchMemory = (memory: AgentMemory) => {
     qc.setQueryData<{ memories: AgentMemory[] }>(
       agentMemoryKeys.detail(wsId, memory.agent_id),
@@ -542,194 +656,6 @@ function MemoryCard({
             </Button>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ---- Skills rail (right column) ---------------------------------------
-
-function SkillsRail({
-  agent,
-  candidates,
-  events,
-}: {
-  agent: Agent;
-  candidates: AgentSkillCandidate[];
-  events: { kind: string; title: string; created_at: string }[];
-}) {
-  const qc = useQueryClient();
-  const wsId = useWorkspaceId();
-  const skillEvents = events.filter((e) => e.kind === "skill_attached");
-  const visibleCandidates = candidates.slice(0, 3);
-  const patchCandidate = (candidate: AgentSkillCandidate) => {
-    qc.setQueryData<{ candidates: AgentSkillCandidate[] }>(
-      agentSkillCandidateKeys.detail(wsId, candidate.agent_id),
-      (old) => {
-        const current = old?.candidates ?? [];
-        if (candidate.status === "rejected") {
-          return {
-            candidates: current.filter((item) => item.id !== candidate.id),
-          };
-        }
-        if (current.some((item) => item.id === candidate.id)) {
-          return {
-            candidates: current.map((item) =>
-              item.id === candidate.id ? candidate : item,
-            ),
-          };
-        }
-        return { candidates: [candidate, ...current] };
-      },
-    );
-  };
-  const confirmCandidate = useMutation({
-    mutationFn: (candidate: AgentSkillCandidate) =>
-      api.confirmAgentSkillCandidate(candidate.agent_id, candidate.id),
-    onSuccess: (candidate) => {
-      patchCandidate(candidate);
-      qc.invalidateQueries({ queryKey: ["workspaces", wsId, "agents"] });
-      qc.invalidateQueries({ queryKey: ["workspaces", wsId, "skills"] });
-      toast.success("技能已沉淀并绑定");
-    },
-    onError: (err) =>
-      toast.error(err instanceof Error ? err.message : "确认技能候选失败"),
-  });
-  const rejectCandidate = useMutation({
-    mutationFn: (candidate: AgentSkillCandidate) =>
-      api.rejectAgentSkillCandidate(candidate.agent_id, candidate.id),
-    onSuccess: (candidate) => {
-      patchCandidate(candidate);
-      toast.success("已拒绝技能候选");
-    },
-    onError: (err) =>
-      toast.error(err instanceof Error ? err.message : "拒绝技能候选失败"),
-  });
-
-  return (
-    <section className="self-start rounded-xl border bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <span className="text-sm font-semibold">最近习得</span>
-        <span className="text-[10px] text-muted-foreground">
-          {agent.skills?.length ?? 0} 项
-        </span>
-      </div>
-      <div className="px-2 py-2">
-        {visibleCandidates.length > 0 && (
-          <div className="mb-2 space-y-1.5 border-b pb-2">
-            {visibleCandidates.map((candidate) => (
-              <SkillCandidateCard
-                key={candidate.id}
-                candidate={candidate}
-                confirming={confirmCandidate.isPending}
-                rejecting={rejectCandidate.isPending}
-                onConfirm={() => confirmCandidate.mutate(candidate)}
-                onReject={() => rejectCandidate.mutate(candidate)}
-              />
-            ))}
-          </div>
-        )}
-
-        {(agent.skills?.length ?? 0) > 0 ? (
-          <ul className="space-y-0.5">
-            {agent.skills?.map((skill) => {
-              const event = skillEvents.find(
-                (e) => e.title === skill.name || e.title.includes(skill.name),
-              );
-              return (
-              <li
-                key={skill.id}
-                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60"
-              >
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-xs text-muted-foreground">
-                    习得新技能
-                  </span>
-                  <span className="truncate text-sm">{skill.name}</span>
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {event ? formatRelative(event.created_at) : "已绑定"}
-                </span>
-              </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {visibleCandidates.length > 0 ? (
-              <>
-                确认候选后会自动进入能力池。
-                <br />
-                也会绑定到这个智能体。
-              </>
-            ) : (
-              <>
-                还没有绑定技能。
-                <br />
-                到「技能」标签页关联可复用能力。
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function SkillCandidateCard({
-  candidate,
-  confirming,
-  rejecting,
-  onConfirm,
-  onReject,
-}: {
-  candidate: AgentSkillCandidate;
-  confirming?: boolean;
-  rejecting?: boolean;
-  onConfirm: () => void;
-  onReject: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{candidate.name}</div>
-          <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-            {candidate.description || "等待确认后沉淀为正式技能。"}
-          </div>
-        </div>
-        <span className="shrink-0 rounded-full border border-amber-500/30 bg-background px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
-          候选
-        </span>
-      </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground">
-          {formatRelative(candidate.updated_at)}
-        </span>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-6"
-            disabled={confirming || rejecting}
-            onClick={onReject}
-            title="拒绝技能候选"
-          >
-            <X className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-6 text-emerald-600 hover:text-emerald-700"
-            disabled={confirming || rejecting}
-            onClick={onConfirm}
-            title="确认并沉淀技能"
-          >
-            <Check className="size-3.5" />
-          </Button>
-        </div>
       </div>
     </div>
   );

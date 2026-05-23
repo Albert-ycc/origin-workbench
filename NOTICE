@@ -51,7 +51,10 @@ Multica v0.2.21:
 
 3.  Frontend reductions
     - Removed `apps/web/` (the upstream Next.js web frontend) entirely.
-      The Electron desktop app is the only first-class shell.
+      The Electron desktop app remains the primary supported shell.
+    - Added `apps/mobile/` as a local phone companion preview for LAN PWA /
+      Capacitor use. It connects to the same local Origin backend and does
+      not reintroduce cloud, team, invitation, or multi-user SaaS flows.
     - Removed `Dockerfile.web` and the `frontend` service from
       `docker-compose.selfhost*.yml`.
     - Removed several settings tabs that conflict with the single-user

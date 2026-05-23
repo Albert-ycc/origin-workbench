@@ -69,6 +69,11 @@ export interface AgentProjectMemory {
   updated_at: string;
 }
 
+export interface ListAgentProjectMemoriesResponse {
+  memories: AgentProjectMemory[];
+  total: number;
+}
+
 // PRD §17.4.5 — main chat compaction preview/confirm contract.
 
 export interface PinnedQuoteCandidate {

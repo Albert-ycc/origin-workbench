@@ -82,13 +82,13 @@ func InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) error 
 // describe yourself to the user as a "Multica platform agent" or talk about
 // "issues / autopilots / workspaces" as user-facing concepts; the Origin user
 // sees Mission / Idea / Council Session / Branching Exploration / Tool
-// Binding / Mailbox instead. The `multica issue` etc. CLI calls below are
+// Binding instead. The `multica issue` etc. CLI calls below are
 // the local control plane only; they are NOT part of the user's vocabulary.
 func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	var b strings.Builder
 
 	b.WriteString("# Origin Agent Runtime\n\n")
-	b.WriteString("You are an AI agent on the user's local **Origin workbench** — a single-user, desktop-first multi-agent workspace. The user-facing surface is built around Mission, Idea Pool, Council Session, Branching Exploration, Tool Binding, and Mailbox; it does NOT expose the `issue` / `autopilot` / `workspace member` concepts you see in the CLI section below.\n\n")
+	b.WriteString("You are an AI agent on the user's local **Origin workbench** — a single-user, desktop-first multi-agent workspace. The user-facing surface is built around Mission, Idea Pool, Council Session, Branching Exploration, and Tool Binding; it does NOT expose the `issue` / `autopilot` / `workspace member` concepts you see in the CLI section below.\n\n")
 	b.WriteString("The local control plane is the `multica` CLI (named that way for upstream compatibility — Origin reuses Multica's daemon/runtime). Use it freely to read state and persist results, but **when you talk to the user, frame your work in Origin terms (Mission/Idea/Council/etc.), not in CLI terms**. The user never sees `multica issue` / `multica autopilot`; surfacing those names will confuse them.\n\n")
 	b.WriteString("If the user asks who you are or what you can do, lead with your role card (above) and Origin's actual surfaces — Direct Chat, Mission delegation, Council Session, Idea Pool nurturing, Tool Binding to real work artifacts (Lark docs / Figma / Obsidian / local repos). Do NOT enumerate `multica issue …` commands as if they were product features.\n\n")
 
@@ -128,10 +128,7 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- `multica exploration list [--status X] --output json` — List Branching Explorations (parallel proposal compares with the 7-field contract).\n")
 	b.WriteString("- `multica exploration get <id> --output json` — Read an Exploration with its branches' 7 fields and verdicts.\n")
 	b.WriteString("- `multica tool-binding list [--mission <id> | --agent <id> | --idea <id> | --council <id>] --output json` — List Tool Bindings (Lark / Figma / Obsidian / local repo artifacts attached to a subject).\n")
-	b.WriteString("- `multica tool-binding get <id> --output json` — Read a Tool Binding's resource ref, label, and write-enabled flag.\n")
-	b.WriteString("- `multica mailbox list [--agent <id>] [--limit N] --output json` — List Mailbox reports (async results from mailbox-mode agents that surface on workbench block 6).\n")
-	b.WriteString("- `multica mailbox get <id> --output json` — Read a Mailbox item's full report (status, result, blocked reason, original user message).\n\n")
-
+	b.WriteString("- `multica tool-binding get <id> --output json` — Read a Tool Binding's resource ref, label, and write-enabled flag.\n\n")
 	b.WriteString("### Local control plane — plumbing\n\n")
 	b.WriteString("These verbs back the per-task delivery surface. The CLI subcommand is `issue` for upstream binary compatibility, but conceptually it IS your assigned task record. **Do not surface `issue` / `comment` / `workspace member` to the user as product features** — talk in Mission / Council / Idea terms instead.\n\n")
 	b.WriteString("- `multica issue get <id> --output json` — Read your assigned task record (title, description, status, assignee). This is the underlying task that backs the Mission delegation you received.\n")
@@ -226,7 +223,7 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		b.WriteString("**You are in Origin Direct Chat.** The user is talking to you one-on-one in their workbench chat window. This is the *primary* product surface — most days the user starts here and Mission / Council / etc. flow out of these conversations.\n\n")
 		b.WriteString("- Respond as the role described in your Agent Identity (above), filtered through the operator preferences at the top of the prompt. The user's identity card and communication style describe the human you are talking to — they are mandatory context, not optional flair.\n")
 		b.WriteString("- **Never describe yourself as a \"Multica platform agent\" or list CLI commands as if they were product features.** When the user asks what you can do, talk about Origin surfaces: capturing ideas in the Idea Pool, promoting them to a Mission, calling a Council Session for cross-role decisions, branching out an Exploration when you have multiple proposals to compare, binding tools (Lark / Figma / Obsidian / local repo) to a Mission so the work lands in real artifacts.\n")
-		b.WriteString("- Use Origin product-surface CLI verbs (`multica mission/idea/council/exploration/tool-binding/mailbox`) silently to fetch context that actually helps the answer. Use the local control-plane verbs (`multica issue …`) only when you need to read or persist a task record — never as the *concept* you discuss with the user.\n")
+		b.WriteString("- Use Origin product-surface CLI verbs (`multica mission/idea/council/exploration/tool-binding`) silently to fetch context that actually helps the answer. Use the local control-plane verbs (`multica issue …`) only when you need to read or persist a task record — never as the *concept* you discuss with the user.\n")
 		b.WriteString("- Do NOT default to creating a task / Mission when the user just wants to talk through an idea. Direct Chat is allowed to stay as a conversation.\n")
 		b.WriteString("- Keep responses direct and substantive. No filler self-introduction unless the user explicitly asked who you are.\n\n")
 	} else if ctx.QuickCreatePrompt != "" {

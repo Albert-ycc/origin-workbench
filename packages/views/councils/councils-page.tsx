@@ -11,6 +11,7 @@ import {
   Gavel,
   Loader2,
   MessageSquareText,
+  MoreHorizontal,
   Plus,
   Send,
   Trash2,
@@ -39,14 +40,53 @@ import type {
   CouncilSessionMode,
   CouncilSessionParticipant,
 } from "@multica/core/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@multica/ui/components/ui/dropdown-menu";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { DragStrip } from "../platform";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
+
+export const councilProductCopy = {
+  title: "多角色议事",
+  detailTitle: "议事详情",
+  createAction: "发起议事",
+  listTitle: "议事列表",
+  emptyTitle: "还没有多角色议事",
+} as const;
+
+export const councilDangerActions = ["归档", "删除"] as const;
+
+export const councilDangerConfirmations = {
+  councilDelete: "alert-dialog",
+} as const;
+
+export function closeCouncilAfterMutation({
+  setSelectedId,
+}: {
+  setSelectedId: (id: string | null) => void;
+}) {
+  setSelectedId(null);
+}
 
 export function CouncilsPage() {
   const workspace = useCurrentWorkspace();
@@ -79,11 +119,11 @@ export function CouncilsPage() {
         <WorkspaceAvatar name={workspace?.name ?? "O"} size="sm" />
         <span className="text-sm text-muted-foreground">Origin</span>
         <ChevronRight className="size-3 text-muted-foreground" />
-        <span className="text-sm font-medium">会议室</span>
+        <span className="text-sm font-medium">{councilProductCopy.title}</span>
         {selectedSession ? (
           <>
             <ChevronRight className="size-3 text-muted-foreground" />
-            <span className="text-sm font-medium">会议详情</span>
+            <span className="text-sm font-medium">{councilProductCopy.detailTitle}</span>
           </>
         ) : null}
       </PageHeader>
@@ -94,7 +134,7 @@ export function CouncilsPage() {
               <div className="min-w-0">
                 <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setSelectedId(null)}>
                   <ChevronLeft className="size-4" />
-                  返回会议列表
+                  返回议事列表
                 </Button>
                 <h1 className="mt-1 line-clamp-2 text-lg font-semibold">{selectedSession.topic}</h1>
               </div>
@@ -126,6 +166,7 @@ export function CouncilsPage() {
                   participants={participants}
                   agents={agents}
                   loading={detailQuery.isLoading}
+                  onClearSelection={() => closeCouncilAfterMutation({ setSelectedId })}
                 />
               </aside>
             </div>
@@ -134,9 +175,9 @@ export function CouncilsPage() {
           <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
             <section className="flex flex-col gap-4">
               <div>
-                <h1 className="text-lg font-semibold">会议室</h1>
+                <h1 className="text-lg font-semibold">{councilProductCopy.title}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  从列表进入会议后，再发言、追问、加人和散会。
+                  让多个 Agent 以不同角色围绕同一议题讨论，形成判断和下一步。
                 </p>
               </div>
               <SessionsList
@@ -193,7 +234,7 @@ function ConveneSession({
       setTopic("");
       setSelectedAgentIds([]);
       onCreated?.(created.session.id);
-      toast.success(mode === "salon" ? "沙龙已开张，Agent 即将轮流发言" : "会议室已开");
+      toast.success(mode === "salon" ? "沙龙已开张，Agent 即将轮流发言" : "多角色议事已发起");
     } catch (err) {
       toast.error("召开失败", { description: err instanceof Error ? err.message : String(err) });
     }
@@ -215,11 +256,11 @@ function ConveneSession({
             <Users className="size-4" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">{isSalon ? "开沙龙" : "新建会议"}</h2>
+            <h2 className="text-base font-semibold">{isSalon ? "开沙龙" : councilProductCopy.createAction}</h2>
             <p className="text-sm text-muted-foreground">
               {isSalon
                 ? "选几个 Agent 进来陪你聊。他们会自动轮流发言。"
-                : "填写议题，选择参会 Agent。"}
+                : "填写议题，选择参与议事的 Agent。"}
             </p>
           </div>
         </div>
@@ -249,7 +290,7 @@ function ConveneSession({
           placeholder={
             isSalon
               ? "随便说点什么开个场：今天好累 / 帮我吐槽下这事 / 想被夸夸…"
-              : "议题：要让多个角色对齐什么？"
+              : "议题：要让多个角色判断什么？"
           }
           rows={2}
         />
@@ -313,7 +354,7 @@ function ConveneSession({
             disabled={!topic.trim() || create.isPending || (isSalon && selectedAgentIds.length < 2)}
           >
             {create.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-            {isSalon ? "开张沙龙" : "召开会议"}
+            {isSalon ? "开张沙龙" : councilProductCopy.createAction}
           </Button>
         </div>
       </div>
@@ -349,7 +390,7 @@ function SessionsList({
       <section className="rounded-lg border bg-card p-8 text-center">
         <Users className="mx-auto size-6 text-muted-foreground" />
         <p className="mt-3 text-sm text-muted-foreground">
-          还没有会议。写一个议题、选几个 Agent 就能开。
+          {councilProductCopy.emptyTitle}。写一个议题、选几个 Agent 就能开始。
         </p>
       </section>
     );
@@ -357,7 +398,7 @@ function SessionsList({
   return (
     <section className="rounded-lg border bg-card">
       <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">会议列表</h2>
+        <h2 className="text-sm font-semibold">{councilProductCopy.listTitle}</h2>
         <Badge variant="outline">{sessions.length}</Badge>
       </div>
       <ul className="divide-y">
@@ -401,7 +442,7 @@ function SessionsList({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1 pt-0.5 text-xs font-medium text-muted-foreground">
-                进入会议
+                进入议事
                 <ChevronRight className="size-3" />
               </div>
             </div>
@@ -435,7 +476,7 @@ function SessionInteractionPanel({
         <MessageSquareText className="mx-auto size-7 text-muted-foreground" />
         <h2 className="mt-3 text-sm font-semibold">私聊 / 追问</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          先召开一个会议，然后在这里选择参会 Agent 私聊追问。
+          先发起一场多角色议事，然后在这里选择参与 Agent 私聊追问。
         </p>
       </section>
     );
@@ -455,7 +496,7 @@ function SessionInteractionPanel({
         <div>
           <h2 className="text-sm font-semibold">私聊 / 追问</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            写一句要带进会议的话，再选择一个参会 Agent。消息会在 Direct Chat 中打开，带上当前会议上下文。
+            写一句要带进议事的话，再选择一个参与 Agent。消息会在 Direct Chat 中打开，带上当前 Council 上下文。
           </p>
         </div>
         <Badge variant={session.status === "running" ? "default" : "secondary"}>
@@ -496,7 +537,7 @@ function SessionInteractionPanel({
         )}
         {session.status !== "running" ? (
           <p className="text-xs text-muted-foreground">
-            会议已散会，只保留归档、删除和结论查看。
+            议事已结束，只保留归档、删除和结论查看。
           </p>
         ) : null}
       </div>
@@ -513,11 +554,13 @@ function SessionDetailPanel({
   participants,
   agents,
   loading,
+  onClearSelection,
 }: {
   session: CouncilSession | null;
   participants: CouncilSessionParticipant[];
   agents: Agent[];
   loading: boolean;
+  onClearSelection: () => void;
 }) {
   const adjourn = useAdjournCouncilSession();
   const archive = useArchiveCouncilSession();
@@ -526,11 +569,12 @@ function SessionDetailPanel({
   const removeParticipant = useRemoveCouncilParticipant();
 
   const [conclusion, setConclusion] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!session) {
     return (
       <section className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        选一个会议室，这里看议题、参会角色和散会结论。
+        选一场多角色议事，这里看议题、参与角色和结论。
       </section>
     );
   }
@@ -553,7 +597,7 @@ function SessionDetailPanel({
         ) : null}
         {session.conclusion ? (
           <div className="mt-3 rounded-md border bg-muted/40 p-2 text-xs">
-            <div className="mb-1 font-semibold text-muted-foreground">会议结论</div>
+            <div className="mb-1 font-semibold text-muted-foreground">议事结论</div>
             <p className="whitespace-pre-wrap">{session.conclusion}</p>
           </div>
         ) : null}
@@ -561,12 +605,12 @@ function SessionDetailPanel({
 
       <div>
         <div className="mb-2 text-xs font-semibold text-muted-foreground">
-          参会角色 ({activeParticipants.length})
+          参与角色 ({activeParticipants.length})
         </div>
         {loading ? (
           <Skeleton className="h-8 w-full" />
         ) : activeParticipants.length === 0 ? (
-          <p className="text-xs text-muted-foreground">还没有参会者，下方可以加。</p>
+          <p className="text-xs text-muted-foreground">还没有参与者，下方可以加。</p>
         ) : (
           <ul className="space-y-1">
             {activeParticipants.map((p) => (
@@ -640,7 +684,7 @@ function SessionDetailPanel({
 
       {session.status === "running" ? (
         <div className="border-t pt-3">
-          <div className="mb-2 text-xs font-semibold text-muted-foreground">散会</div>
+          <div className="mb-2 text-xs font-semibold text-muted-foreground">结束议事</div>
           <Textarea
             value={conclusion}
             onChange={(e) => setConclusion(e.target.value)}
@@ -656,54 +700,83 @@ function SessionDetailPanel({
               try {
                 await adjourn.mutateAsync({ id: session.id, conclusion: conclusion.trim() || undefined });
                 setConclusion("");
-                toast.success("已散会");
+                toast.success("议事已结束");
               } catch (err) {
                 toast.error("散会失败", { description: err instanceof Error ? err.message : String(err) });
               }
             }}
           >
             {adjourn.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Gavel className="size-3.5" />}
-            散会
+            结束议事
           </Button>
         </div>
       ) : null}
 
-      <div className="flex gap-2 border-t pt-3">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="flex-1"
-          disabled={archive.isPending}
-          onClick={async () => {
-            try {
-              await archive.mutateAsync(session.id);
-              toast.success("已归档");
-            } catch (err) {
-              toast.error("归档失败", { description: err instanceof Error ? err.message : String(err) });
-            }
-          }}
-        >
-          <Archive className="size-3.5" />
-          归档
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="flex-1 text-destructive hover:text-destructive"
-          onClick={async () => {
-            if (!window.confirm(`删除会议室「${session.topic}」？`)) return;
-            try {
-              await del.mutateAsync(session.id);
-              toast.success("已删除");
-            } catch (err) {
-              toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
-            }
-          }}
-        >
-          <Trash2 className="size-3.5" />
-          删除
-        </Button>
+      <div className="flex justify-end border-t pt-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+            <MoreHorizontal className="size-3.5" />
+            更多
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              disabled={archive.isPending}
+              onClick={async () => {
+                try {
+                  await archive.mutateAsync(session.id);
+                  toast.success("已归档");
+                  onClearSelection();
+                } catch (err) {
+                  toast.error("归档失败", { description: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              <Archive className="size-3.5" />
+              归档
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setDeleteOpen(true)}
+              disabled={del.isPending}
+            >
+              <Trash2 className="size-3.5" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除多角色议事</AlertDialogTitle>
+            <AlertDialogDescription>
+              删除「{session.topic}」后无法撤销，参与角色和结论记录也会一并移除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={del.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                try {
+                  await del.mutateAsync(session.id);
+                  toast.success("已删除");
+                  setDeleteOpen(false);
+                  onClearSelection();
+                } catch (err) {
+                  toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              {del.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -761,9 +834,9 @@ function openCouncilAgentChat(
 ) {
   const trimmedDraft = userDraft.trim();
   const prompt = [
-    `会议室议题：${session.topic}`,
+    `多角色议事议题：${session.topic}`,
     "",
-    `请以「${agentName}」身份参与这场会议。`,
+    `请以「${agentName}」身份参与这场 Council。`,
     trimmedDraft
       ? `我的发言：${trimmedDraft}`
       : "请先围绕这个议题给出你的判断、主要风险和下一步建议。",

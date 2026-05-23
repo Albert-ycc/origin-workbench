@@ -80,7 +80,7 @@ export function createMobileApiClient(baseUrl: string, token: string | null) {
   const client = new ApiClient(baseUrl, {
     identity: {
       platform: "mobile",
-      version: "0.1.0",
+      version: "1.1.0",
       os: getClientOS(),
     },
   });
@@ -184,6 +184,41 @@ export async function createMobileIdea(params: {
     description: params.description ?? "来自 Origin Mobile 的快速捕捉。",
     source: "manual",
     tags: ["mobile"],
+  });
+}
+
+export async function createMobileVoiceIdea(params: {
+  baseUrl: string;
+  token: string;
+  workspace: WorkspaceSummary;
+  blob: Blob;
+  durationSeconds: number;
+  filename: string;
+}) {
+  const client = scopedClient(params.baseUrl, params.token, params.workspace);
+  const file = new File([params.blob], params.filename, { type: params.blob.type || "audio/webm" });
+  const attachment = await client.uploadFile(file);
+  const seconds = Math.max(1, Math.round(params.durationSeconds));
+  const capturedAt = new Date().toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const title = `🎙️ ${seconds} 秒语音 · ${capturedAt}`;
+  const description = [
+    "[voice-note]",
+    `url: ${attachment.url}`,
+    `duration: ${seconds}s`,
+    `content_type: ${attachment.content_type ?? params.blob.type}`,
+    `size_bytes: ${attachment.size_bytes ?? params.blob.size}`,
+    "captured_from: origin-mobile",
+  ].join("\n");
+  await client.createIdea({
+    title,
+    description,
+    source: "manual",
+    tags: ["mobile", "voice"],
   });
 }
 

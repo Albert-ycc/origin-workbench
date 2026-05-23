@@ -57,6 +57,8 @@ const COL_WIDTHS = {
   chevron: 48,
 } as const;
 
+export const skillRowDetailActionLabel = "打开技能详情";
+
 export function createSkillColumns(): ColumnDef<SkillRow>[] {
   return [
     {
@@ -104,7 +106,10 @@ export function createSkillColumns(): ColumnDef<SkillRow>[] {
       size: COL_WIDTHS.chevron,
       enableResizing: false,
       cell: () => (
-        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
+        <ChevronRight
+          aria-label={skillRowDetailActionLabel}
+          className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
+        />
       ),
     },
   ];

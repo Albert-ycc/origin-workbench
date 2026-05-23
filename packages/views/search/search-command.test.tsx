@@ -220,6 +220,37 @@ describe("SearchCommand", () => {
     expect(screen.queryByText("收件箱")).not.toBeInTheDocument();
   });
 
+  it("uses multi-role council as the visible council navigation label", async () => {
+    const user = userEvent.setup();
+    render(<SearchCommand />);
+
+    const input = screen.getByPlaceholderText("输入命令或搜索...");
+    await user.type(input, "council");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText((_, el) => el?.textContent === "多角色议事" && el?.tagName === "SPAN"),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("会议室")).not.toBeInTheDocument();
+  });
+
+  it("routes memory queries to agents instead of a global memory page", async () => {
+    const user = userEvent.setup();
+    render(<SearchCommand />);
+
+    const input = screen.getByPlaceholderText("输入命令或搜索...");
+    await user.type(input, "记忆");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText((_, el) => el?.textContent === "智能体" && el?.tagName === "SPAN"),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("记忆 / 技能")).not.toBeInTheDocument();
+    expect(screen.queryByText((_, el) => el?.textContent === "记忆" && el?.tagName === "SPAN")).not.toBeInTheDocument();
+  });
+
   it("navigates to page on selection", async () => {
     const user = userEvent.setup();
     render(<SearchCommand />);

@@ -504,14 +504,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
-			// Mailbox items (Origin §14.8 — backs workbench block 6 and the
-			// agent detail mailbox tab). Read-only API: rows are created
-			// and mutated by the chat dispatch path, never by direct CRUD.
-			r.Route("/api/mailbox-items", func(r chi.Router) {
-				r.Get("/", h.ListMailboxItems)
-				r.Get("/{id}", h.GetMailboxItem)
-			})
-
 			// Project workspaces (Origin §17 — v1.2). Mounted under /api/v12/
 			// to avoid colliding with the legacy v1.0 /api/projects (issue
 			// classification path). Frontend uses these endpoints; v1.0 path

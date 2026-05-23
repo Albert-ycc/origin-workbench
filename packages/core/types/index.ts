@@ -12,8 +12,6 @@ export type {
   AgentStatus,
   AgentRuntimeMode,
   AgentVisibility,
-  AgentWorkMode,
-  AgentNotifyPolicy,
   AgentTask,
   AgentActivityBucket,
   AgentRunCount,
@@ -189,12 +187,6 @@ export type {
   ListToolBindingsResponse,
 } from "./tool-binding";
 export type {
-  MailboxItem,
-  MailboxItemStatus,
-  MailboxItemFilter,
-  ListMailboxItemsResponse,
-} from "./mailbox";
-export type {
   Project as ProjectV12,
   ProjectStatus as ProjectV12Status,
   ProjectMainChat,
@@ -203,6 +195,7 @@ export type {
   UpdateProjectRequest as UpdateProjectV12Request,
   AppendMemoryDocRequest,
   AgentProjectMemory,
+  ListAgentProjectMemoriesResponse,
   CompactionPreview,
   CompactionPreviewJob,
   ConfirmCompactionRequest,

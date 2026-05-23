@@ -487,13 +487,8 @@ func (s *TaskService) enqueueChatTaskForAgent(ctx context.Context, chatSession d
 		"chat_session_id", util.UUIDToString(chatSession.ID),
 		"agent_id", util.UUIDToString(agentID),
 		"team_session", chatSession.TeamID.Valid,
-		"work_mode", agent.WorkMode,
 		"force_fresh_session", forceFreshSession,
 	)
-	// Mailbox-mode agents need a user-facing report row + a "received,
-	// processing" system message; live-mode agents are no-ops here.
-	// Best-effort: errors don't roll back the task.
-	s.recordMailboxSubmissionIfNeeded(ctx, agent, chatSession, task)
 	// See EnqueueTaskForIssue for ordering rationale.
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
 	if apiRuntime {
@@ -1240,10 +1235,6 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 
 	slog.Info("task completed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 
-	// Mailbox bridge: flip the user-facing mailbox_item row to done with the
-	// agent's final output. No-op for live-mode tasks (no mailbox row exists).
-	s.markMailboxItemDoneFromResult(ctx, task, result)
-
 	// Invariant: every completed issue task must have at least one agent
 	// comment on the issue, so the user always sees something when a run
 	// ends. If the agent posted a comment during execution (result, progress
@@ -1408,20 +1399,6 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 	// runtime_recovery). The helper itself enforces attempt < max_attempts
 	// and only triggers for issue/chat tasks.
 	retried, _ := s.MaybeRetryFailedTask(ctx, task)
-
-	// Mailbox bridge: only mark the mailbox row terminal when we're NOT
-	// going to retry — a retry will produce its own outcome and we don't
-	// want to flash blocked → processing in the user's view. Daemon
-	// 'orphan' / 'timeout' surface as mailbox 'timeout' so block 6 can
-	// distinguish "agent gave up" from "agent ran into an unsolvable
-	// constraint" (PRD §14.8.4).
-	if retried == nil {
-		mailboxStatus := "blocked"
-		if failureReason == "timeout" || failureReason == "orphan" {
-			mailboxStatus = "timeout"
-		}
-		s.markMailboxItemForTask(ctx, task, mailboxStatus, "", errMsg)
-	}
 
 	// Skip the per-failure system comment when we'll immediately retry —
 	// the new task will surface its own status to the user, and we don't

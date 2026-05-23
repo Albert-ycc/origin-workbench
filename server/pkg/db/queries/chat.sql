@@ -105,16 +105,6 @@ WHERE cm.chat_session_id = sqlc.arg('chat_session_id')
 ORDER BY cm.created_at DESC, cm.id DESC
 LIMIT sqlc.arg('limit_count');
 
--- name: GetLatestUserChatMessage :one
--- Used by mailbox dispatch: when an agent in mailbox mode receives a chat
--- task, we need the user's prompt to display in workbench block 6 even
--- after the task completes. Returns the most recent user-role message in
--- the session (ignoring assistant / system replies and side-channel events).
-SELECT * FROM chat_message
-WHERE chat_session_id = $1 AND role = 'user'
-ORDER BY created_at DESC
-LIMIT 1;
-
 -- name: GetChatMessage :one
 SELECT * FROM chat_message
 WHERE id = $1;

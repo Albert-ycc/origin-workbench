@@ -132,9 +132,6 @@ import type {
   CreateToolBindingRequest,
   UpdateToolBindingRequest,
   ListToolBindingsResponse,
-  MailboxItem,
-  MailboxItemFilter,
-  ListMailboxItemsResponse,
   ProjectV12,
   ProjectMainChat,
   CompactionPreview,
@@ -146,6 +143,7 @@ import type {
   CreateProjectV12Request,
   UpdateProjectV12Request,
   AppendMemoryDocRequest,
+  ListAgentProjectMemoriesResponse,
   NotificationPreferenceResponse,
   NotificationPreferences,
   CreateMeetingSessionRequest,
@@ -1702,23 +1700,6 @@ export class ApiClient {
     await this.fetch(`/api/tool-bindings/${id}`, { method: "DELETE" });
   }
 
-  // ── Mailbox items (Origin §14.8 — Agent work mode = mailbox) ─────────────
-  // Read-only API: rows are written by the chat dispatch path, not by direct
-  // CRUD. Backs workbench block 6 and the agent detail mailbox tab.
-
-  async listMailboxItems(filter: MailboxItemFilter = {}): Promise<ListMailboxItemsResponse> {
-    const params = new URLSearchParams();
-    if (filter.agent_id) params.set("agent_id", filter.agent_id);
-    if (filter.limit !== undefined) params.set("limit", String(filter.limit));
-    if (filter.offset !== undefined) params.set("offset", String(filter.offset));
-    const qs = params.toString();
-    return this.fetch(`/api/mailbox-items${qs ? `?${qs}` : ""}`);
-  }
-
-  async getMailboxItem(id: string): Promise<MailboxItem> {
-    return this.fetch(`/api/mailbox-items/${id}`);
-  }
-
   // ── Projects v1.2 (Origin §17) ──────────────────────────────────────────
 
   async listProjectsV12(): Promise<ListProjectsV12Response> {
@@ -1760,6 +1741,10 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async listProjectAgentMemories(id: string): Promise<ListAgentProjectMemoriesResponse> {
+    return this.fetch(`/api/v12/projects/${id}/memories`);
   }
 
   // ── Meeting copilot (Origin §18) ────────────────────────────────────────

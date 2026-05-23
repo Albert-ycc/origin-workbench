@@ -1,38 +1,55 @@
 "use client";
 
-import { MessageSquare, Sparkles } from "lucide-react";
 import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { availabilityConfig, workloadConfig } from "../presence";
 import type { AgentRow } from "./agent-columns";
 import { AgentRowActions } from "./agent-row-actions";
+
+export const agentBadgeMetaLabels = [
+  "入职时间",
+  "当前模型",
+  "运行次数",
+] as const;
+
+export const agentBadgeCardClassName =
+  "group relative flex min-h-[18rem] overflow-hidden rounded-lg border border-border/80 bg-card text-card-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_22px_rgba(0,0,0,0.14)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_26px_rgba(0,0,0,0.2)]" as const;
+
+export function formatAgentStartDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toISOString().slice(0, 10);
+}
+
+export function getAgentModelLabel(model: string) {
+  return model.trim() || "继承默认";
+}
 
 export function AgentCard({
   row,
   onOpen,
-  onChat,
   onDuplicate,
 }: {
   row: AgentRow;
   onOpen: () => void;
-  onChat: () => void;
   onDuplicate: () => void;
 }) {
-  const { agent, presence, runtime, canManage } = row;
+  const { agent, presence, canManage } = row;
   const archived = !!agent.archived_at;
-  const availability = presence ? availabilityConfig[presence.availability] : null;
-  const workload = presence ? workloadConfig[presence.workload] : null;
+  const meta = [
+    [agentBadgeMetaLabels[0], formatAgentStartDate(agent.created_at)],
+    [agentBadgeMetaLabels[1], getAgentModelLabel(agent.model)],
+    [agentBadgeMetaLabels[2], row.runCount.toLocaleString()],
+  ] as const;
 
   return (
     <article
-      className={cn(
-        "group relative flex flex-col rounded-2xl border bg-background p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md",
-        archived && "opacity-70 grayscale",
-      )}
+      className={cn(agentBadgeCardClassName, archived && "opacity-70 grayscale")}
     >
-      <div className="absolute right-2 top-2 z-10" onClick={(e) => e.stopPropagation()}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-muted/40 to-transparent" />
+      <div
+        className="absolute right-2 top-2 z-20"
+        onClick={(e) => e.stopPropagation()}
+      >
         <AgentRowActions
           agent={agent}
           presence={presence}
@@ -44,29 +61,41 @@ export function AgentCard({
       <button
         type="button"
         onClick={onOpen}
-        className="flex flex-1 flex-col items-center text-center focus-visible:outline-none"
+        className="relative flex min-h-0 w-full flex-1 flex-col items-center px-3 pb-3 pt-2.5 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <ActorAvatar
-          actorType="agent"
-          actorId={agent.id}
-          size={56}
-          className="rounded-full ring-2 ring-muted/60"
-          enableHoverCard
-          showStatusDot
-        />
-        <div className="mt-3 flex max-w-full items-center gap-2">
-          <h2 className="truncate text-base font-semibold tracking-normal">
+        <span className="h-1 w-12 rounded-full bg-muted-foreground/18 shadow-inner" />
+
+        <div className="relative mt-3">
+          <span className="absolute inset-0 rounded-full bg-primary/10 blur-lg transition-opacity group-hover:opacity-90" />
+          <ActorAvatar
+            actorType="agent"
+            actorId={agent.id}
+            size={78}
+            className="relative rounded-full ring-[3px] ring-background shadow-md"
+            enableHoverCard
+            showStatusDot={!archived}
+          />
+        </div>
+
+        <div className="mt-2.5 flex max-w-full items-center justify-center gap-1.5">
+          <h2
+            className={cn(
+              "min-w-0 truncate text-sm font-semibold tracking-normal",
+              archived && "text-muted-foreground",
+            )}
+          >
             {agent.name}
           </h2>
           {archived && (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+            <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
               已归档
             </Badge>
           )}
         </div>
+
         <p
           className={cn(
-            "mt-2 line-clamp-2 min-h-9 max-w-full text-xs leading-relaxed",
+            "mt-1 line-clamp-2 min-h-8 w-full text-[11px] leading-relaxed",
             agent.description
               ? "text-muted-foreground"
               : "italic text-muted-foreground/55",
@@ -75,45 +104,45 @@ export function AgentCard({
           {agent.description || "还没有填写职责描述"}
         </p>
 
-        <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-          {availability ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              <span className={cn("h-1.5 w-1.5 rounded-full", availability.dotClass)} />
-              {availability.label}
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              状态同步中
-            </span>
-          )}
-          {workload && (
-            <span className={cn("inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px]", workload.textClass)}>
-              {workload.label}
-            </span>
+        <div className="mt-auto w-full border-t pt-2.5">
+          <dl className="space-y-1.5 text-[11px]">
+            {meta.map(([label, value]) => (
+              <div
+                key={label}
+                className="flex min-w-0 items-center justify-between gap-3"
+              >
+                <dt className="shrink-0 whitespace-nowrap text-muted-foreground">
+                  {label}
+                </dt>
+                <dd className="min-w-0 truncate font-mono tabular-nums text-foreground/85">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {presence && !archived && (
+            <div className="mt-2.5 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  presence.availability === "online"
+                    ? "bg-emerald-500"
+                    : presence.availability === "unstable"
+                      ? "bg-amber-500"
+                      : "bg-muted-foreground/50",
+                )}
+              />
+              <span>
+                {presence.availability === "online"
+                  ? "在线"
+                  : presence.availability === "unstable"
+                    ? "不稳定"
+                    : "离线"}
+              </span>
+            </div>
           )}
         </div>
       </button>
-
-      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-        <Button
-          type="button"
-          size="sm"
-          className="h-8 w-full rounded-full bg-emerald-500 text-white hover:bg-emerald-600"
-          disabled={archived}
-          onClick={onChat}
-        >
-          <MessageSquare className="h-3.5 w-3.5" />
-          对话
-        </Button>
-      </div>
-
-      <div className="mt-3 flex min-w-0 items-center justify-center gap-1.5 border-t pt-2 text-[11px] text-muted-foreground">
-        <Sparkles className="h-3 w-3 shrink-0" />
-        <span className="truncate">
-          {runtime?.name ?? "未绑定运行环境"}
-          {agent.model ? ` · ${agent.model}` : ""}
-        </span>
-      </div>
     </article>
   );
 }

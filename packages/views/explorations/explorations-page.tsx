@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -8,15 +8,16 @@ import {
   ChevronRight,
   GitBranch,
   Loader2,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Route,
   Sparkles,
   Trash2,
   Trophy,
-  XCircle,
 } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+import { useCurrentWorkspace } from "@multica/core/paths";
 import {
   explorationDetailOptions,
   explorationListOptions,
@@ -34,6 +35,16 @@ import type {
   ExplorationBranchVerdict,
   ExplorationStatus,
 } from "@multica/core/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -44,18 +55,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@multica/ui/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@multica/ui/components/ui/dropdown-menu";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@multica/ui/components/ui/native-select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@multica/ui/components/ui/sheet";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { AppLink } from "../navigation";
 
 // PRD §14.7 — seven required fields. The order here drives the row order in
 // the compare panel; keep it stable so users build muscle memory.
-const BRANCH_FIELDS: Array<{
+export const branchEditFields: Array<{
   key: keyof Pick<
     ExplorationBranch,
     | "core_proposal"
@@ -77,6 +104,30 @@ const BRANCH_FIELDS: Array<{
   { key: "fits", label: "适用条件", placeholder: "在什么场景下成立" },
   { key: "does_not_fit", label: "不适用条件", placeholder: "在什么场景下要换方案" },
 ];
+
+export const explorationHomeSections = [
+  { title: "探索列表" },
+  { title: "当前探索对比表" },
+] as const;
+
+export const explorationPrimarySurfaces = ["探索列表", "7 字段横向对比"] as const;
+
+export const explorationDangerConfirmations = {
+  explorationDelete: "alert-dialog",
+  branchDelete: "alert-dialog",
+} as const;
+
+export function shouldLoadExplorationDetail(selectedId: string | null) {
+  return !!selectedId;
+}
+
+export function closeExplorationAfterMutation({
+  setSelectedId,
+}: {
+  setSelectedId: (id: string | null) => void;
+}) {
+  setSelectedId(null);
+}
 
 const STATUS_LABEL: Record<ExplorationStatus, string> = {
   open: "探索中",
@@ -102,23 +153,23 @@ const VERDICT_TONE: Record<ExplorationBranchVerdict, string> = {
 export function ExplorationsPage() {
   const workspace = useCurrentWorkspace();
   const wsId = useWorkspaceId();
-  const p = useWorkspacePaths();
 
   const listQuery = useQuery(explorationListOptions(wsId));
   const explorations = listQuery.data ?? [];
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(
-    () => explorations.find((e) => e.id === selectedId) ?? explorations[0] ?? null,
+    () => explorations.find((e) => e.id === selectedId) ?? null,
     [explorations, selectedId],
   );
 
   const detailQuery = useQuery({
-    ...explorationDetailOptions(wsId, selected?.id ?? ""),
-    enabled: !!selected,
+    ...explorationDetailOptions(wsId, selectedId ?? ""),
+    enabled: shouldLoadExplorationDetail(selectedId),
   });
 
   const [createOpen, setCreateOpen] = useState(false);
+  const clearSelection = () => closeExplorationAfterMutation({ setSelectedId });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -139,9 +190,8 @@ export function ExplorationsPage() {
             <ExplorationsList
               explorations={explorations}
               loading={listQuery.isLoading}
-              selectedId={selected?.id ?? null}
+              selectedId={selectedId}
               onSelect={setSelectedId}
-              missionsHref={p.missions()}
             />
           </aside>
 
@@ -150,6 +200,7 @@ export function ExplorationsPage() {
               exploration={selected}
               branches={detailQuery.data?.branches ?? []}
               loading={detailQuery.isLoading}
+              onClearSelection={clearSelection}
             />
           </section>
         </div>
@@ -167,13 +218,11 @@ function ExplorationsList({
   loading,
   selectedId,
   onSelect,
-  missionsHref,
 }: {
   explorations: Exploration[];
   loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  missionsHref: string;
 }) {
   if (loading) {
     return (
@@ -188,10 +237,7 @@ function ExplorationsList({
       <div className="rounded-lg border bg-card p-5 text-center">
         <Sparkles className="mx-auto size-5 text-muted-foreground" />
         <p className="mt-3 text-xs text-muted-foreground">
-          还没有探索。把一个未定方向的问题拆成几条分支，让团队各自试一下。
-          <AppLink href={missionsHref} className="ml-1 text-primary hover:underline">
-            从 Mission 切入
-          </AppLink>
+          还没有探索。先创建一个探索，再添加 2-4 条分支，把同一个问题放进 7 字段表里横向比较。
         </p>
       </div>
     );
@@ -230,19 +276,22 @@ function ExplorationDetail({
   exploration,
   branches,
   loading,
+  onClearSelection,
 }: {
   exploration: Exploration | null;
   branches: ExplorationBranch[];
   loading: boolean;
+  onClearSelection: () => void;
 }) {
   const archive = useArchiveExploration();
   const remove = useDeleteExploration();
   const [addBranchOpen, setAddBranchOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!exploration) {
     return (
       <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-        左侧选一个探索，这里看 7 字段对比表、加分支、标选中。
+        左侧选择一个探索查看 7 字段横向对比表；也可以先新建探索，再添加 2-4 条分支。
       </div>
     );
   }
@@ -261,40 +310,68 @@ function ExplorationDetail({
             <Plus className="size-3.5" />
             加分支
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={async () => {
-              try {
-                await archive.mutateAsync(exploration.id);
-                toast.success("已归档");
-              } catch (err) {
-                toast.error("归档失败", { description: err instanceof Error ? err.message : String(err) });
-              }
-            }}
-          >
-            <Archive className="size-3.5" />
-            归档
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={async () => {
-              if (!window.confirm(`删除探索「${exploration.topic}」？此操作不可撤销。`)) return;
-              try {
-                await remove.mutateAsync(exploration.id);
-                toast.success("已删除");
-              } catch (err) {
-                toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
-              }
-            }}
-          >
-            <Trash2 className="size-3.5" />
-            删除
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+              <MoreHorizontal className="size-3.5" />
+              更多
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                onClick={async () => {
+                  try {
+                    await archive.mutateAsync(exploration.id);
+                    toast.success("已归档");
+                    onClearSelection();
+                  } catch (err) {
+                    toast.error("归档失败", { description: err instanceof Error ? err.message : String(err) });
+                  }
+                }}
+              >
+                <Archive className="size-3.5" />
+                归档
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="size-3.5" />
+                删除
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除探索</AlertDialogTitle>
+            <AlertDialogDescription>
+              删除「{exploration.topic}」后无法撤销，所有分支对比内容也会一并移除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={remove.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={remove.isPending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                try {
+                  await remove.mutateAsync(exploration.id);
+                  toast.success("已删除");
+                  setDeleteOpen(false);
+                  onClearSelection();
+                } catch (err) {
+                  toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              {remove.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CreateBranchDialog
         explorationId={exploration.id}
@@ -324,11 +401,8 @@ function ExplorationHeader({
   exploration: Exploration;
   branches: ExplorationBranch[];
 }) {
-  const update = useUpdateExploration();
-  const [decision, setDecision] = useState(exploration.decision);
-  useEffect(() => setDecision(exploration.decision), [exploration.id, exploration.decision]);
-
   const winning = branches.find((b) => b.verdict === "winning");
+  const [decisionOpen, setDecisionOpen] = useState(false);
 
   return (
     <header className="rounded-lg border bg-card p-5">
@@ -351,34 +425,78 @@ function ExplorationHeader({
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-2 md:grid-cols-[120px_1fr_auto]">
-        <Label htmlFor="exploration-decision" className="self-center text-xs">
-          决议笔记
-        </Label>
+      <div className="mt-4 rounded-md border bg-background p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-muted-foreground">决议摘要</div>
+          <Button size="sm" variant="ghost" onClick={() => setDecisionOpen(true)}>
+            <Pencil className="size-3.5" />
+            编辑
+          </Button>
+        </div>
+        <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
+          {exploration.decision || "还没有决议。完成分支对比后再写下最终选择和原因。"}
+        </p>
+      </div>
+
+      <DecisionDialog exploration={exploration} open={decisionOpen} onOpenChange={setDecisionOpen} />
+    </header>
+  );
+}
+
+function DecisionDialog({
+  exploration,
+  open,
+  onOpenChange,
+}: {
+  exploration: Exploration;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const update = useUpdateExploration();
+  const [decision, setDecision] = useState(exploration.decision);
+
+  useEffect(() => {
+    if (open) setDecision(exploration.decision);
+  }, [exploration.id, exploration.decision, open]);
+
+  const submitting = update.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !submitting && onOpenChange(v)}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>编辑决议笔记</DialogTitle>
+          <DialogDescription>记录最终决议、为什么选这个、放弃的方案是因为什么。</DialogDescription>
+        </DialogHeader>
         <Textarea
-          id="exploration-decision"
           value={decision}
           onChange={(e) => setDecision(e.target.value)}
-          placeholder="收敛后写下最终决议、为什么选这个、放弃的方案是因为什么"
-          rows={2}
+          placeholder="收敛后写下最终决议、判断依据和后续动作"
+          rows={6}
+          disabled={submitting}
         />
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={decision === exploration.decision || update.isPending}
-          onClick={async () => {
-            try {
-              await update.mutateAsync({ id: exploration.id, decision });
-              toast.success("决议已保存");
-            } catch (err) {
-              toast.error("保存失败", { description: err instanceof Error ? err.message : String(err) });
-            }
-          }}
-        >
-          {update.isPending ? <Loader2 className="size-3.5 animate-spin" /> : "保存"}
-        </Button>
-      </div>
-    </header>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+            取消
+          </Button>
+          <Button
+            disabled={decision === exploration.decision || submitting}
+            onClick={async () => {
+              try {
+                await update.mutateAsync({ id: exploration.id, decision });
+                toast.success("决议已保存");
+                onOpenChange(false);
+              } catch (err) {
+                toast.error("保存失败", { description: err instanceof Error ? err.message : String(err) });
+              }
+            }}
+          >
+            {submitting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -389,173 +507,278 @@ function CompareTable({
   explorationId: string;
   branches: ExplorationBranch[];
 }) {
+  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
+  const editingBranch = branches.find((branch) => branch.id === editingBranchId) ?? null;
+
   return (
-    <div className="overflow-x-auto rounded-lg border bg-card">
-      <table className="w-full min-w-[640px] table-fixed border-collapse">
-        <thead>
-          <tr className="border-b">
-            <th className="w-28 bg-muted/40 p-3 text-left align-top text-xs font-semibold text-muted-foreground">
-              字段
-            </th>
-            {branches.map((b) => (
-              <th
-                key={b.id}
-                className="min-w-[220px] border-l p-3 align-top text-left"
-              >
-                <BranchHeader explorationId={explorationId} branch={b} />
+    <>
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="w-full min-w-[640px] table-fixed border-collapse">
+          <thead>
+            <tr className="border-b">
+              <th className="w-28 bg-muted/40 p-3 text-left align-top text-xs font-semibold text-muted-foreground">
+                字段
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {BRANCH_FIELDS.map((field) => (
-            <tr key={field.key} className="border-b last:border-0">
-              <td className="bg-muted/40 p-3 align-top text-xs font-medium text-muted-foreground">
-                {field.label}
-              </td>
-              {branches.map((b) => (
-                <td key={b.id} className="border-l p-2 align-top">
-                  <BranchFieldEditor
-                    explorationId={explorationId}
-                    branch={b}
-                    fieldKey={field.key}
-                    placeholder={field.placeholder}
-                  />
-                </td>
+              {branches.map((branch) => (
+                <th
+                  key={branch.id}
+                  className="min-w-[220px] border-l p-3 align-top text-left"
+                >
+                  <BranchHeader branch={branch} onEdit={() => setEditingBranchId(branch.id)} />
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {branchEditFields.map((field) => (
+              <tr key={field.key} className="border-b last:border-0">
+                <td className="bg-muted/40 p-3 align-top text-xs font-medium text-muted-foreground">
+                  {field.label}
+                </td>
+                {branches.map((branch) => (
+                  <td key={branch.id} className="border-l p-2 align-top">
+                    <button
+                      type="button"
+                      className="min-h-16 w-full rounded-md p-2 text-left text-xs transition-colors hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+                      onClick={() => setEditingBranchId(branch.id)}
+                    >
+                      {branch[field.key].trim() ? (
+                        <span className="line-clamp-3 whitespace-pre-wrap">{branch[field.key]}</span>
+                      ) : (
+                        <span className="text-muted-foreground">点击补充{field.label}</span>
+                      )}
+                    </button>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <BranchEditSheet
+        explorationId={explorationId}
+        branch={editingBranch}
+        open={!!editingBranch}
+        onOpenChange={(open) => {
+          if (!open) setEditingBranchId(null);
+        }}
+      />
+    </>
   );
 }
 
-function BranchHeader({ explorationId, branch }: { explorationId: string; branch: ExplorationBranch }) {
-  const update = useUpdateExplorationBranch();
-  const remove = useDeleteExplorationBranch();
+function BranchHeader({ branch, onEdit }: { branch: ExplorationBranch; onEdit: () => void }) {
   return (
-    <div className="space-y-2">
+    <button type="button" className="w-full space-y-2 text-left" onClick={onEdit}>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm font-semibold">{branch.title}</span>
         <Badge className={cn("shrink-0 text-[10px]", VERDICT_TONE[branch.verdict])}>
           {VERDICT_LABEL[branch.verdict]}
         </Badge>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {(["winning", "runner_up", "discarded", "pending"] as const).map((v) => (
-          <Button
-            key={v}
-            size="sm"
-            variant={branch.verdict === v ? "default" : "outline"}
-            className="h-6 px-2 text-[11px]"
-            onClick={async () => {
-              try {
-                await update.mutateAsync({
-                  explorationId,
-                  branchId: branch.id,
-                  verdict: v,
-                });
-              } catch (err) {
-                toast.error("标记失败", { description: err instanceof Error ? err.message : String(err) });
-              }
-            }}
-          >
-            {VERDICT_LABEL[v]}
-          </Button>
-        ))}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="ml-auto h-6 px-1.5 text-destructive hover:text-destructive"
-          onClick={async () => {
-            if (!window.confirm(`删除分支「${branch.title}」？`)) return;
-            try {
-              await remove.mutateAsync({ explorationId, branchId: branch.id });
-              toast.success("分支已删除");
-            } catch (err) {
-              toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
-            }
-          }}
-        >
-          <XCircle className="size-3.5" />
-        </Button>
-      </div>
-    </div>
+      <div className="text-xs text-muted-foreground">点击编辑 7 字段和判定</div>
+    </button>
   );
 }
 
-function BranchFieldEditor({
+function BranchEditSheet({
   explorationId,
   branch,
-  fieldKey,
-  placeholder,
+  open,
+  onOpenChange,
 }: {
   explorationId: string;
-  branch: ExplorationBranch;
-  fieldKey:
-    | "core_proposal"
-    | "design_logic"
-    | "key_decisions"
-    | "cost_estimate"
-    | "risk_points"
-    | "fits"
-    | "does_not_fit";
-  placeholder: string;
+  branch: ExplorationBranch | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const update = useUpdateExplorationBranch();
-  const serverValue = branch[fieldKey];
-  const [value, setValue] = useState(serverValue);
-  // Track which server snapshot we last synced from. Server values arriving
-  // while the user is mid-edit (TanStack Query refetch, WS invalidation, our
-  // own mutation success) must NOT clobber the textarea — only adopt them
-  // when we genuinely have no pending local changes against that snapshot.
-  const lastSyncedRef = useRef(serverValue);
+  const remove = useDeleteExplorationBranch();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [draft, setDraft] = useState(() => branchDraft(branch));
 
   useEffect(() => {
-    if (lastSyncedRef.current === value) {
-      // Local matches what we last synced — safe to adopt server value.
-      setValue(serverValue);
-      lastSyncedRef.current = serverValue;
-    } else {
-      // Local has unsaved edits; just record what server now holds so a
-      // later flush sends the right value, but don't overwrite the user.
-      lastSyncedRef.current = serverValue;
-    }
-    // Intentionally only react to serverValue. branch.id changes also flow
-    // through serverValue (different branch → different field text), so we
-    // don't need it as a separate dependency.
-  }, [serverValue]); // eslint-disable-line react-hooks/exhaustive-deps
+    setDraft(branchDraft(branch));
+  }, [branch?.id]);
 
-  const dirty = value !== serverValue;
+  if (!branch) {
+    return <Sheet open={open} onOpenChange={onOpenChange} />;
+  }
 
-  const flush = async () => {
+  const dirty =
+    draft.title !== branch.title ||
+    draft.verdict !== branch.verdict ||
+    branchEditFields.some((field) => draft[field.key] !== branch[field.key]);
+  const submitting = update.isPending || remove.isPending;
+
+  const save = async () => {
     if (!dirty) return;
     try {
       await update.mutateAsync({
         explorationId,
         branchId: branch.id,
-        [fieldKey]: value,
+        title: draft.title.trim() || branch.title,
+        verdict: draft.verdict,
+        ...Object.fromEntries(branchEditFields.map((field) => [field.key, draft[field.key]])),
       } as Parameters<typeof update.mutateAsync>[0]);
-      lastSyncedRef.current = value;
+      toast.success("分支已保存");
+      onOpenChange(false);
     } catch (err) {
       toast.error("保存失败", { description: err instanceof Error ? err.message : String(err) });
     }
   };
 
   return (
-    <Textarea
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={flush}
-      placeholder={placeholder}
-      rows={3}
-      className={cn(
-        "min-h-20 resize-y border-transparent bg-transparent text-xs hover:border-input focus:border-input",
-        dirty && "border-amber-400/60",
-      )}
-    />
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent className="w-[min(640px,96vw)] gap-0 p-0 sm:max-w-none">
+          <SheetHeader className="border-b px-5 py-4 pr-12">
+            <SheetTitle>编辑分支</SheetTitle>
+            <SheetDescription>完整编辑 7 字段，对比表保持阅读视图。</SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="branch-edit-title" className="text-xs">
+                分支名
+              </Label>
+              <Input
+                id="branch-edit-title"
+                value={draft.title}
+                onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
+                disabled={submitting}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="branch-edit-verdict" className="text-xs">
+                分支判定
+              </Label>
+              <NativeSelect
+                id="branch-edit-verdict"
+                value={draft.verdict}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    verdict: e.target.value as ExplorationBranchVerdict,
+                  }))
+                }
+                disabled={submitting}
+              >
+                {(["pending", "winning", "runner_up", "discarded"] as const).map((verdict) => (
+                  <NativeSelectOption key={verdict} value={verdict}>
+                    {VERDICT_LABEL[verdict]}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+
+            <div className="space-y-3">
+              {branchEditFields.map((field) => (
+                <div key={field.key} className="space-y-1.5">
+                  <Label htmlFor={`branch-edit-${field.key}`} className="text-xs">
+                    {field.label}
+                  </Label>
+                  <Textarea
+                    id={`branch-edit-${field.key}`}
+                    value={draft[field.key]}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                    rows={3}
+                    disabled={submitting}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t pt-4">
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" variant="ghost" />}>
+                  <MoreHorizontal className="size-3.5" />
+                  更多
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="size-3.5" />
+                    删除分支
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+                  取消
+                </Button>
+                <Button size="sm" onClick={save} disabled={!dirty || submitting}>
+                  {update.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                  保存
+                </Button>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除分支</AlertDialogTitle>
+            <AlertDialogDescription>
+              删除「{branch.title}」后无法撤销，这条分支的 7 字段内容也会被移除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={remove.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={remove.isPending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                try {
+                  await remove.mutateAsync({ explorationId, branchId: branch.id });
+                  toast.success("分支已删除");
+                  setDeleteOpen(false);
+                  onOpenChange(false);
+                } catch (err) {
+                  toast.error("删除失败", { description: err instanceof Error ? err.message : String(err) });
+                }
+              }}
+            >
+              {remove.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
+}
+
+function branchDraft(branch: ExplorationBranch | null) {
+  return {
+    title: branch?.title ?? "",
+    verdict: branch?.verdict ?? "pending",
+    core_proposal: branch?.core_proposal ?? "",
+    design_logic: branch?.design_logic ?? "",
+    key_decisions: branch?.key_decisions ?? "",
+    cost_estimate: branch?.cost_estimate ?? "",
+    risk_points: branch?.risk_points ?? "",
+    fits: branch?.fits ?? "",
+    does_not_fit: branch?.does_not_fit ?? "",
+  } satisfies Pick<ExplorationBranch, "title" | "verdict"> &
+    Pick<
+      ExplorationBranch,
+      | "core_proposal"
+      | "design_logic"
+      | "key_decisions"
+      | "cost_estimate"
+      | "risk_points"
+      | "fits"
+      | "does_not_fit"
+    >;
 }
 
 // ────────────────────────────────────────────────────────────────────────

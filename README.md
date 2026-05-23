@@ -12,6 +12,7 @@ The personal notebook + multi-agent control plane I want on my own laptop.
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Powered by Multica](https://img.shields.io/badge/Powered%20by-Multica-7c3aed.svg)](https://github.com/multica-ai/multica)
 [![Desktop · macOS](https://img.shields.io/badge/Desktop-macOS%20arm64-000.svg)](#build-a-release-desktop-app)
+[![Mobile · Preview](https://img.shields.io/badge/Mobile-LAN%20PWA%20preview-0f766e.svg)](#origin-mobile-preview)
 [![Status · Active fork](https://img.shields.io/badge/Status-Active%20fork-orange.svg)](#status)
 
 [Upstream](https://github.com/multica-ai/multica) · [License](LICENSE) · [Notice](NOTICE) · [Contributing](CONTRIBUTING.md) · [Changelog](https://github.com/Albert-ycc/origin-workbench/releases)
@@ -30,7 +31,8 @@ The personal notebook + multi-agent control plane I want on my own laptop.
 
 Origin reframes Multica from "multi-tenant SaaS for human + agent teams" into a
 **personal local Agent workbench**. One operator, one machine, one workspace,
-many agents. The desktop app is the only first-class shell.
+many agents. The desktop app remains the primary supported shell, and v1.1 adds
+a mobile preview for quick capture and lightweight review on the same LAN.
 
 If Multica is "Linear with AI agents as teammates", Origin is "the personal
 notebook + multi-agent control plane I want on my own laptop":
@@ -69,10 +71,11 @@ environment variables, and the full-agent roadmap.
 | Deployment model | Multi-tenant SaaS / self-hosted | Single-user, single workspace, local-only |
 | Login | Email + verification code (or Google OAuth) | Name + avatar (`/auth/local-signin`) |
 | Workspace | User-creatable, switchable | Hardcoded `Fairy`, no UI to rename |
-| Web frontend | `apps/web/` (Next.js) | **Removed.** Desktop is the only shell. |
+| Web frontend | `apps/web/` (Next.js) | **Removed.** Desktop is the primary shell; `apps/mobile/` is a local companion preview. |
 | Members / invitations / labs / repos | Settings tabs | **Removed** — they conflict with the single-user model. |
 | Auto-updater | Pulls from official Multica releases | **Removed** — would overwrite the fork. |
-| Idea Pool / Council Session / User Profile | — | New product objects (Phase 1, migrations 074–076). |
+| Idea Pool / Council Session / User Profile | — | Origin-native local workflow objects. |
+| Inbox / team collaboration mailbox | Team-oriented collaboration surface | Removed from the product path; attachments and captured ideas stay local-user focused. |
 | Avatars | Generated via DiceBear remote URLs | Bundled 50-Origin offline avatar pool. |
 
 A complete list of substantive modifications lives in [`NOTICE`](NOTICE).
@@ -88,7 +91,7 @@ sharing are documented in [`NOTICE`](NOTICE).
 
 ## Quick start
 
-The desktop app is the only supported shell.
+The desktop app is the primary supported shell.
 
 ```bash
 # 1. Install deps
@@ -104,6 +107,22 @@ pnpm dev:desktop
 
 The app opens at the local sign-in screen — pick an avatar, type a name, and
 you're in. Local sign-in does not require email or verification code.
+
+## Origin Mobile preview
+
+`apps/mobile/` is a v1.1 preview shell for phone-side Origin access. It can run
+as a LAN PWA today and is prepared for Capacitor-based iPhone installation. The
+current scope is intentionally small: connect to the Mac backend, load the local
+workspace, review missions and agents, capture ideas, and upload short voice
+notes as local Origin attachments. It is not an Origin Cloud client and does not
+bring back teams, invitations, or multi-user SaaS flows.
+
+```bash
+pnpm --filter @multica/mobile dev
+pnpm --filter @multica/mobile build
+```
+
+See [`apps/mobile/README.md`](apps/mobile/README.md) for the phone setup flow.
 
 ## Build a release desktop app
 

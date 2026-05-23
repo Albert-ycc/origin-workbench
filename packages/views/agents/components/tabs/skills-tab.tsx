@@ -62,7 +62,7 @@ export function SkillsTab({
           className="shrink-0"
         >
           <Plus className="h-3 w-3" />
-          添加技能
+          批量添加技能
         </Button>
       </div>
 

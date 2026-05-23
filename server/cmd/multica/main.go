@@ -17,9 +17,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "multica",
-	Short: "Multica CLI — local agent runtime and management tool",
-	Long:  "Work seamlessly with Multica from the command line.",
+	Use:           "multica",
+	Short:         "Multica CLI — local agent runtime and management tool",
+	Long:          "Work seamlessly with Multica from the command line.",
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
@@ -44,7 +44,6 @@ func init() {
 	councilCmd.GroupID = groupCore
 	explorationCmd.GroupID = groupCore
 	toolBindingCmd.GroupID = groupCore
-	mailboxCmd.GroupID = groupCore
 
 	// Core commands
 	issueCmd.GroupID = groupCore
@@ -71,13 +70,12 @@ func init() {
 
 	// Origin product-surface verbs first, so `multica --help` leads with
 	// the user-visible concepts (Mission / Idea / Council / Exploration /
-	// Tool Binding / Mailbox) rather than the legacy issue/autopilot stack.
+	// Tool Binding) rather than the legacy issue/autopilot stack.
 	rootCmd.AddCommand(missionCmd)
 	rootCmd.AddCommand(ideaCmd)
 	rootCmd.AddCommand(councilCmd)
 	rootCmd.AddCommand(explorationCmd)
 	rootCmd.AddCommand(toolBindingCmd)
-	rootCmd.AddCommand(mailboxCmd)
 
 	rootCmd.AddCommand(issueCmd)
 	rootCmd.AddCommand(projectCmd)

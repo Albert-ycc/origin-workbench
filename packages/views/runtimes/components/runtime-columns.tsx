@@ -80,6 +80,12 @@ const COL_WIDTHS = {
   actions: 60,
 } as const;
 
+export const runtimeRowMenuLabels = {
+  trigger: "能力来源行操作",
+  createAgent: "创建智能体",
+  delete: "删除",
+} as const;
+
 interface CreateColumnsArgs {
   showOwner: boolean;
   latestCliVersion: string | null;
@@ -489,7 +495,8 @@ function RowMenu({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="行操作"
+              aria-label={runtimeRowMenuLabels.trigger}
+              title={runtimeRowMenuLabels.trigger}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
             />
@@ -504,7 +511,7 @@ function RowMenu({
         >
           <DropdownMenuItem onClick={() => onCreateAgent(runtime)}>
             <Bot className="h-3.5 w-3.5" />
-            创建智能体
+            {runtimeRowMenuLabels.createAgent}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -533,7 +540,8 @@ function RowMenu({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="行操作"
+              aria-label={runtimeRowMenuLabels.trigger}
+              title={runtimeRowMenuLabels.trigger}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
             />
@@ -548,7 +556,7 @@ function RowMenu({
         >
           <DropdownMenuItem onClick={() => onCreateAgent(runtime)}>
             <Bot className="h-3.5 w-3.5" />
-            创建智能体
+            {runtimeRowMenuLabels.createAgent}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -557,7 +565,7 @@ function RowMenu({
             title="只有能力来源所有者和本地管理员可以删除这个能力来源"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            删除
+            {runtimeRowMenuLabels.delete}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -1337,9 +1337,9 @@ func TestCreateCouncilSessionRejectsForeignSourceChat(t *testing.T) {
 	if err := testPool.QueryRow(context.Background(), `
 		INSERT INTO agent (
 			workspace_id, runtime_id, name, description, runtime_mode,
-			runtime_config, visibility, max_concurrent_tasks, owner_id, work_mode
+			runtime_config, visibility, max_concurrent_tasks, owner_id
 		)
-		VALUES ($1, $2, $3, '', 'cloud', '{}'::jsonb, 'workspace', 1, $4, 'live')
+		VALUES ($1, $2, $3, '', 'cloud', '{}'::jsonb, 'workspace', 1, $4)
 		RETURNING id
 	`, parseUUID(foreignWorkspaceID), parseUUID(foreignRuntimeID), "Foreign Council Agent", parseUUID(testUserID)).Scan(&foreignAgentID); err != nil {
 		t.Fatalf("create foreign agent: %v", err)

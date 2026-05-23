@@ -45,9 +45,6 @@ const fullHistoryAgent: Agent = {
   status: "idle",
   max_concurrent_tasks: 1,
   model: "",
-  work_mode: "live",
-  mailbox_budget_seconds: 3600,
-  notify_policy: "both",
   owner_id: null,
   skills: [],
   // Older than the window so daysSinceCreated saturates at DAYS.

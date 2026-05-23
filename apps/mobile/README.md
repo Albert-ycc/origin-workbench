@@ -1,15 +1,20 @@
 # Origin Mobile
 
-Origin Mobile is the self-use phone entry point for Origin Workbench. It is a Vite/React mobile shell that can run as a LAN PWA today and is prepared for iPhone direct install through Capacitor.
+Origin Mobile is the self-use phone entry point for Origin Workbench. It is a Vite/React mobile shell that can run as a LAN PWA today and is prepared for iPhone direct install through Capacitor. The v1.1 scope is a companion preview, not a replacement for the desktop app.
 
 ## Current Scope
 
 - Mobile workspace package: `@multica/mobile`.
 - PWA manifest and icons: `public/manifest.webmanifest`, `public/icons/`.
 - Capacitor config: `capacitor.config.ts`.
-- Mobile UI shell: connection settings, mission cockpit, agent roster, ideas, inbox, and risk radar.
-- Origin API wiring: local sign-in, workspace loading, missions, ideas, agents, inbox, and demo fallback.
+- Mobile UI shell: connection settings, mission cockpit, agent roster, ideas, local capture inbox, and risk radar.
+- Origin API wiring: local sign-in, workspace loading, missions, ideas, agents, runtimes, local attachments, and demo fallback.
+- Quick capture: text ideas plus short voice-note upload into Origin as local-user attachments.
 - Local readiness check: `scripts/doctor.mjs`.
+
+## Product Boundary
+
+Desktop remains the primary supported Origin shell. The mobile app is for local phone-side capture and lightweight review against the Mac backend on the same LAN. It does not add Origin Cloud, team workspaces, invitations, shared mailboxes, or multi-user SaaS behavior.
 
 ## Prerequisites
 
@@ -22,6 +27,7 @@ Origin Mobile is the self-use phone entry point for Origin Workbench. It is a Vi
 ```bash
 cd /Users/albert/OriginWorkbenchMount/server
 pnpm install
+pnpm --filter @multica/mobile typecheck
 pnpm --filter @multica/mobile dev
 ```
 

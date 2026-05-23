@@ -45,6 +45,20 @@ const HEALTH_ORDER: HealthFilter[] = [
   "about_to_gc",
 ];
 
+export const runtimePageSubtitle = "扫描本机和外部能力来源，按状态快速定位。";
+
+export const runtimePrimarySurface = {
+  title: "能力池",
+  primaryCta: "添加能力来源",
+  controls: ["搜索", "范围", "状态筛选"],
+} as const;
+
+export const runtimeStatusFilterCopy = ["全部", "在线", "刚刚断开", "离线", "即将清理"] as const;
+
+export const runtimeDangerConfirmations = {
+  runtimeDelete: "alert-dialog",
+} as const;
+
 // Single source of truth for the 4-state chip visuals + tooltip copy.
 // Thresholds come from `deriveRuntimeHealth`: 45s heartbeat window (server
 // sweeper), 5 min "recently lost" cutoff, 6 day "about_to_gc" trigger,
@@ -273,7 +287,7 @@ function PageHeaderBar({
           </span>
         )}
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
-          展示本机已登录 CLI 和外部 API Provider；用户确认后再绑定为智能体。
+          {runtimePageSubtitle}
         </p>
       </div>
       <div className="flex items-center gap-2">

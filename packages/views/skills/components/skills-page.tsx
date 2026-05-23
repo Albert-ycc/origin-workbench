@@ -43,6 +43,18 @@ import { type SkillRow, createSkillColumns } from "./skill-columns";
 
 type FilterKey = "all" | "used" | "unused" | "mine";
 
+export const skillPageSubtitle = "工作区技能列表，可分配给智能体使用。";
+
+export const skillPrimarySurface = {
+  title: "技能",
+  primaryCta: "新建技能",
+  controls: ["搜索", "筛选"],
+} as const;
+
+export const skillListSecondaryActions = ["创建", "导入", "详情编辑", "删除确认"] as const;
+
+export const skillDetailEntryLabel = "打开技能详情";
+
 // ---------------------------------------------------------------------------
 // Scope tab — matches Issues/MyIssues header pattern
 // ---------------------------------------------------------------------------
@@ -76,18 +88,8 @@ function PageHeaderBar({
             {totalCount}
           </span>
         )}
-        {/* Tagline next to the title — single sentence + docs link. Hidden
-            below md so it never collides with the title on narrow screens. */}
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
-          当前工作区内所有智能体都可使用的指令集。{" "}
-          <a
-            href="https://multica.ai/docs/skills"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"
-          >
-            了解更多 →
-          </a>
+          {skillPageSubtitle}
         </p>
       </div>
       <Button type="button" size="sm" onClick={onCreate}>
@@ -375,21 +377,6 @@ export default function SkillsPage() {
       {/* Page body — padding here keeps the card from touching the chrome,
           and `gap-4` separates the intro banner from the table card. */}
       <div className="flex flex-1 min-h-0 flex-col gap-4 p-6">
-        {!showEmpty && (
-          // Brand-coloured intro banner — explains the sharing model
-          // for skills (workspace-wide vs. local runtime). Pre-#1794
-          // this lived in the body; #1794 dropped it without a clear
-          // reason. Restored intentionally.
-          <div className="max-w-3xl rounded-r-md border-l-2 border-l-brand bg-brand/5 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">
-              已共享到当前工作区。
-            </span>{" "}
-            任何人都可以创建技能、从 URL 导入技能，或从自己的本地运行环境复制技能；所有智能体都可以使用它。{" "}
-            <span className="font-semibold text-brand">
-              本地运行环境里的技能在复制到这里之前仍然是私有的。
-            </span>
-          </div>
-        )}
         {showEmpty ? (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState onCreate={() => setCreateOpen(true)} />

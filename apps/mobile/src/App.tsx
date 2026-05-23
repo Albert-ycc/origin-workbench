@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Bot,
   Inbox,
@@ -8,15 +8,9 @@ import {
   RefreshCw,
   Rocket,
   Settings2,
-  Wifi,
+  X,
 } from "lucide-react";
-import {
-  AgentsPage,
-  IdeasPage,
-  InboxPage,
-  MissionPage,
-  WorkbenchPage,
-} from "./features";
+import { AgentsPage, IdeasPage, InboxPage, MissionPage } from "./features";
 import {
   demoAgents,
   demoIdeas,
@@ -27,7 +21,7 @@ import {
 import {
   createMobileAgent,
   createMobileIdea,
-  createMobileMission,
+  createMobileVoiceIdea,
   getStoredToken,
   getStoredWorkspaceId,
   loadOriginSnapshot,
@@ -51,28 +45,29 @@ import type {
   InboxItem,
   Mission,
   OriginAgent,
-  QuickInputDraft,
   RiskItem,
 } from "./types";
 
+type TabId = "mission" | "inbox" | "ideas";
+
 type NavItem = {
-  id: "workbench" | "mission" | "agent" | "ideas" | "inbox";
+  id: TabId;
   label: string;
   icon: typeof MonitorSmartphone;
 };
 
 type ConnectionState = "demo" | "connecting" | "live" | "error";
 
+type ToastTone = "info" | "error";
+
 const navItems: NavItem[] = [
-  { id: "workbench", label: "工作台", icon: MonitorSmartphone },
   { id: "mission", label: "Mission", icon: Rocket },
-  { id: "agent", label: "Agent", icon: Bot },
-  { id: "ideas", label: "想法", icon: Lightbulb },
   { id: "inbox", label: "信箱", icon: Inbox },
+  { id: "ideas", label: "想法", icon: Lightbulb },
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<NavItem["id"]>("workbench");
+  const [activeTab, setActiveTab] = useState<TabId>("mission");
   const [apiBaseUrl, setApiBaseUrl] = useState(() => getStoredApiBaseUrl());
   const [draftApiBaseUrl, setDraftApiBaseUrl] = useState(apiBaseUrl);
   const [token, setToken] = useState(() => getStoredToken());
@@ -84,19 +79,30 @@ export default function App() {
   const [ideas, setIdeas] = useState<IdeaItem[]>(demoIdeas);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>(demoInboxItems);
   const [risks, setRisks] = useState<RiskItem[]>(demoRisks);
-  const [selectedMissionId, setSelectedMissionId] = useState<string>(demoMissions[0]?.id ?? "");
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
-  const [statusMessage, setStatusMessage] = useState("当前使用本地演示数据；连接 Mac 后端后会切换到真实数据。");
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(() => !getStoredToken());
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const defaultApiBaseUrl = useMemo(() => getDefaultApiBaseUrl(), []);
 
   const liveReady = connectionState === "live" && Boolean(token && workspace);
-  const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0];
+  const selectedMission = selectedMissionId
+    ? missions.find((mission) => mission.id === selectedMissionId)
+    : undefined;
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  function showToast(message: string, tone: ToastTone = "info") {
+    setToast({ message, tone });
+  }
 
   async function connectToOrigin(nextWorkspaceId?: string | null) {
     setConnectionState("connecting");
-    setStatusMessage("正在连接本机 Origin 后端...");
-
     try {
       const snapshot = await loadOriginSnapshot({
         baseUrl: apiBaseUrl,
@@ -107,13 +113,15 @@ export default function App() {
       setStoredToken(snapshot.token);
       setToken(snapshot.token);
       setConnectionState("live");
-      setStatusMessage(snapshot.workspace
-        ? `已连接 ${snapshot.workspace.name}，数据来自 ${apiBaseUrl}。`
-        : "已登录，但后端还没有可用工作区。");
+      showToast(
+        snapshot.workspace
+          ? `已连接 ${snapshot.workspace.name}`
+          : "已登录，但后端还没有可用工作区",
+      );
       setSettingsOpen(false);
     } catch (error) {
       setConnectionState("error");
-      setStatusMessage(`${formatError(error)}；已保留本地演示数据。`);
+      showToast(formatError(error), "error");
     }
   }
 
@@ -127,13 +135,11 @@ export default function App() {
     setInboxItems(snapshot.inboxItems.length > 0 ? snapshot.inboxItems : demoInboxItems);
     setRisks(snapshot.risks.length > 0 ? snapshot.risks : demoRisks);
     setSelectedMissionId((current) =>
-      snapshot.missions.some((mission) => mission.id === current)
-        ? current
-        : snapshot.missions[0]?.id ?? demoMissions[0]?.id ?? "",
+      current && snapshot.missions.some((mission) => mission.id === current) ? current : null,
     );
   }
 
-  async function refreshLiveData(message = "已刷新移动端数据。") {
+  async function refreshLiveData(message?: string) {
     if (!token) return;
     const snapshot = await loadOriginSnapshot({
       baseUrl: apiBaseUrl,
@@ -141,7 +147,7 @@ export default function App() {
       workspaceId: workspace?.id,
     });
     applySnapshot(snapshot);
-    setStatusMessage(message);
+    if (message) showToast(message);
   }
 
   function handleApiSubmit(event: FormEvent<HTMLFormElement>) {
@@ -152,14 +158,14 @@ export default function App() {
     setStoredToken(null);
     setToken(null);
     setConnectionState("demo");
-    setStatusMessage("API 地址已保存。点连接后会用这个地址重新登录。");
+    showToast("API 地址已保存，点连接重新登录");
   }
 
   function handleApiReset() {
     const nextUrl = resetStoredApiBaseUrl();
     setApiBaseUrl(nextUrl);
     setDraftApiBaseUrl(nextUrl);
-    setStatusMessage(`已恢复默认地址 ${nextUrl}。`);
+    showToast(`已恢复默认地址 ${nextUrl}`);
   }
 
   async function handleWorkspaceChange(workspaceId: string) {
@@ -167,66 +173,55 @@ export default function App() {
     await connectToOrigin(workspaceId);
   }
 
-  function handleQuickSubmit(draft: QuickInputDraft) {
-    void (async () => {
-      if (liveReady && token && workspace) {
-        const captainAgentId = agents[0]?.id;
-        if (captainAgentId) {
-          await createMobileMission({ baseUrl: apiBaseUrl, token, workspace, captainAgentId, draft });
-          await refreshLiveData("Mission 已提交到本机 Origin。");
-          setActiveTab("mission");
-          return;
-        }
-
-        await createMobileIdea({
-          baseUrl: apiBaseUrl,
-          token,
-          workspace,
-          title: draft.title || "移动端输入",
-          description: draft.context || "没有可用 Agent，已先收进想法池。",
-        });
-        await refreshLiveData("没有可用 Agent，已先保存到想法池。");
-        setActiveTab("ideas");
-        return;
-      }
-
-      const localMission = createLocalMission(draft);
-      setMissions((current) => [localMission, ...current]);
-      setSelectedMissionId(localMission.id);
-      setActiveTab("mission");
-      setStatusMessage("后端未连接，已先创建本地演示 Mission。");
-    })().catch((error) => setStatusMessage(formatError(error)));
-  }
-
   function handleCreateAgent(draft: AgentCreateDraft) {
     void (async () => {
       if (liveReady && token && workspace) {
-        const runtimeId = runtimes.find((runtime) => runtime.status === "online")?.id ?? runtimes[0]?.id;
+        const runtimeId =
+          runtimes.find((runtime) => runtime.status === "online")?.id ?? runtimes[0]?.id;
         if (!runtimeId) {
-          setStatusMessage("后端已连接，但没有可用 runtime；先在桌面端启动本地 runtime 后再创建 Agent。");
+          showToast("没有可用 runtime，先在桌面端启动本地 runtime", "error");
           return;
         }
         await createMobileAgent({ baseUrl: apiBaseUrl, token, workspace, runtimeId, draft });
-        await refreshLiveData("Agent 已创建。");
+        await refreshLiveData("Agent 已创建");
         return;
       }
-
       setAgents((current) => [createLocalAgent(draft), ...current]);
-      setStatusMessage("后端未连接，已先创建本地演示 Agent。");
-    })().catch((error) => setStatusMessage(formatError(error)));
+      showToast("后端未连接，已创建本地演示 Agent");
+    })().catch((error) => showToast(formatError(error), "error"));
   }
 
   function handleCaptureIdea(title: string) {
     void (async () => {
       if (liveReady && token && workspace) {
         await createMobileIdea({ baseUrl: apiBaseUrl, token, workspace, title });
-        await refreshLiveData("想法已保存到 Origin 后端。");
+        await refreshLiveData("想法已保存到 Origin");
         return;
       }
-
       setIdeas((current) => [createLocalIdea(title), ...current]);
-      setStatusMessage("后端未连接，已先保存本地演示想法。");
-    })().catch((error) => setStatusMessage(formatError(error)));
+      showToast("后端未连接，已保存本地演示想法");
+    })().catch((error) => showToast(formatError(error), "error"));
+  }
+
+  async function handleSaveVoice(payload: {
+    blob: Blob;
+    durationSeconds: number;
+    mimeType: string;
+  }) {
+    if (!(liveReady && token && workspace)) {
+      throw new Error("后端未连接，无法上传录音");
+    }
+    const ext = extensionForMime(payload.mimeType);
+    const filename = `mobile-voice-${Date.now()}.${ext}`;
+    await createMobileVoiceIdea({
+      baseUrl: apiBaseUrl,
+      token,
+      workspace,
+      blob: payload.blob,
+      durationSeconds: payload.durationSeconds,
+      filename,
+    });
+    await refreshLiveData("语音想法已保存到 Origin");
   }
 
   function handlePromoteIdea(ideaId: string) {
@@ -239,57 +234,49 @@ export default function App() {
           ideaId,
           captainAgentId: agents[0].id,
         });
-        await refreshLiveData("想法已升级为 Mission。");
+        await refreshLiveData("想法已升级为 Mission");
+        setSelectedMissionId(null);
         setActiveTab("mission");
         return;
       }
 
       const idea = ideas.find((item) => item.id === ideaId);
       if (!idea) return;
-      const localMission = createLocalMission({ title: idea.title, context: idea.note });
+      const localMission = createLocalMission(idea.title, idea.note);
       setMissions((current) => [localMission, ...current]);
-      setSelectedMissionId(localMission.id);
+      setSelectedMissionId(null);
       setActiveTab("mission");
-      setStatusMessage("后端未连接，已把本地想法演示升级为 Mission。");
-    })().catch((error) => setStatusMessage(formatError(error)));
+      showToast("后端未连接，已本地升级 Mission");
+    })().catch((error) => showToast(formatError(error), "error"));
   }
 
   function handleResolveInboxItem(itemId: string) {
     void (async () => {
       if (liveReady && token && workspace) {
         await markMobileInboxRead({ baseUrl: apiBaseUrl, token, workspace, itemId });
-        await refreshLiveData("信箱条目已标记已读。");
+        await refreshLiveData("信箱条目已标记已读");
         return;
       }
 
       setInboxItems((current) =>
-        current.map((item) => item.id === itemId ? { ...item, status: "resolved" } : item),
+        current.map((item) => (item.id === itemId ? { ...item, status: "resolved" } : item)),
       );
-      setStatusMessage("已在本地演示数据中标记处理。");
-    })().catch((error) => setStatusMessage(formatError(error)));
+      showToast("已在本地演示数据中标记处理");
+    })().catch((error) => showToast(formatError(error), "error"));
   }
 
   function renderActivePage() {
     if (activeTab === "mission") {
       return (
         <MissionPage
-          mission={selectedMission}
-          onAction={(actionId) => setStatusMessage(`移动端已收到 ${actionId} 操作；真实执行控制会在后续版本接入。`)}
-          onSubmitContext={() => setStatusMessage("上下文补充入口已预留，后续会接 Mission 评论/事件流。")}
-        />
-      );
-    }
-
-    if (activeTab === "agent") {
-      return <AgentsPage agents={agents} onCreateAgent={handleCreateAgent} />;
-    }
-
-    if (activeTab === "ideas") {
-      return (
-        <IdeasPage
-          ideas={ideas}
-          onCaptureIdea={handleCaptureIdea}
-          onPromoteIdea={handlePromoteIdea}
+          missions={missions}
+          selectedMission={selectedMission}
+          risks={risks}
+          onOpenMission={(id) => setSelectedMissionId(id)}
+          onBackToList={() => setSelectedMissionId(null)}
+          onOpenRisk={(riskId) => showToast(`已定位风险 ${riskId}`)}
+          onAction={(actionId) => showToast(`收到 ${actionId} 操作；执行控制由桌面端处理`)}
+          onSubmitContext={() => showToast("补充上下文入口预留，后续接入 Mission 评论流")}
         />
       );
     }
@@ -299,21 +286,18 @@ export default function App() {
         <InboxPage
           items={inboxItems}
           onResolveItem={handleResolveInboxItem}
-          onOpenItem={(itemId) => setStatusMessage(`已打开信箱条目 ${itemId}。`)}
+          onOpenItem={(itemId) => showToast(`已打开信箱条目 ${itemId}`)}
         />
       );
     }
 
     return (
-      <WorkbenchPage
-        missions={missions}
-        risks={risks}
-        onQuickSubmit={handleQuickSubmit}
-        onOpenMission={(missionId) => {
-          setSelectedMissionId(missionId);
-          setActiveTab("mission");
-        }}
-        onOpenRisk={(riskId) => setStatusMessage(`已定位风险 ${riskId}。`)}
+      <IdeasPage
+        ideas={ideas}
+        onCaptureIdea={handleCaptureIdea}
+        onPromoteIdea={handlePromoteIdea}
+        onSaveVoice={liveReady ? handleSaveVoice : undefined}
+        voiceEnabled={liveReady}
       />
     );
   }
@@ -326,19 +310,32 @@ export default function App() {
             <span className="brand-mark" aria-hidden="true">
               <MonitorSmartphone size={18} />
             </span>
-            <div>
-              <p className="eyebrow">Origin Mobile</p>
-              <h1>{workspace?.name ?? "本机工作台"}</h1>
+            <div className="brand-text">
+              <h1>{workspace?.name ?? "未连接"}</h1>
+              <p className="brand-meta">
+                {liveReady ? `Origin Mobile · ${apiBaseUrl.replace(/^https?:\/\//, "")}` : "Origin Mobile · 本地演示"}
+              </p>
             </div>
           </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="移动端连接设置"
-            onClick={() => setSettingsOpen((value) => !value)}
-          >
-            <Settings2 size={20} />
-          </button>
+          <div className="top-actions">
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="查看 Agent"
+              onClick={() => setAgentsOpen(true)}
+            >
+              <Bot size={20} />
+            </button>
+            <button
+              className={`icon-button settings-button settings-${connectionState}`}
+              type="button"
+              aria-label="移动端连接设置"
+              onClick={() => setSettingsOpen((value) => !value)}
+            >
+              <Settings2 size={20} />
+              <span className="settings-dot" aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         {settingsOpen ? (
@@ -394,7 +391,11 @@ export default function App() {
                 <PlugZap size={16} />
                 {connectionState === "connecting" ? "连接中" : "连接"}
               </button>
-              <button type="button" className="secondary-button" onClick={() => void refreshLiveData()}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void refreshLiveData("已刷新移动端数据")}
+              >
                 <RefreshCw size={16} />
                 刷新
               </button>
@@ -405,10 +406,18 @@ export default function App() {
           </section>
         ) : null}
 
-        <div className="status-strip" aria-live="polite">
-          <Wifi size={15} />
-          <span>{statusMessage}</span>
-        </div>
+        {toast ? (
+          <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">
+            <span>{toast.message}</span>
+            <button
+              type="button"
+              aria-label="关闭提示"
+              onClick={() => setToast(null)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : null}
 
         <section className="tab-viewport" aria-label="移动端页面">
           {renderActivePage()}
@@ -424,7 +433,10 @@ export default function App() {
                 key={item.id}
                 type="button"
                 aria-current={selected ? "page" : undefined}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (item.id === "mission") setSelectedMissionId(null);
+                }}
               >
                 <Icon size={20} />
                 <span>{item.label}</span>
@@ -432,17 +444,40 @@ export default function App() {
             );
           })}
         </nav>
+
+        {agentsOpen ? (
+          <div className="drawer-backdrop" onClick={() => setAgentsOpen(false)}>
+            <div
+              className="drawer-sheet"
+              role="dialog"
+              aria-label="Agent 抽屉"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="drawer-close"
+                aria-label="关闭 Agent 抽屉"
+                onClick={() => setAgentsOpen(false)}
+              >
+                <X size={18} />
+              </button>
+              <div className="drawer-body">
+                <AgentsPage agents={agents} onCreateAgent={handleCreateAgent} />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
 }
 
-function createLocalMission(draft: QuickInputDraft): Mission {
+function createLocalMission(title: string, context?: string): Mission {
   const id = `local-mission-${Date.now()}`;
   return {
     id,
-    title: draft.title || "移动端 Mission",
-    summary: draft.context || "从移动端快速输入创建的本地演示任务。",
+    title: title || "移动端 Mission",
+    summary: context || "从移动端快速输入创建的本地演示任务。",
     ownerAgentId: "local-mobile-agent",
     status: "running",
     progress: 18,
@@ -454,7 +489,7 @@ function createLocalMission(draft: QuickInputDraft): Mission {
       {
         id: `${id}-created`,
         title: "移动端捕捉",
-        description: draft.context || draft.title || "已创建移动端任务。",
+        description: context || title || "已创建移动端任务。",
         timeLabel: "刚刚",
         status: "running",
       },
@@ -495,4 +530,12 @@ function createLocalAgent(draft: AgentCreateDraft): OriginAgent {
 function formatError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "连接失败";
+}
+
+function extensionForMime(mimeType: string): string {
+  if (mimeType.startsWith("audio/webm")) return "webm";
+  if (mimeType.startsWith("audio/mp4")) return "m4a";
+  if (mimeType.startsWith("audio/aac")) return "aac";
+  if (mimeType.startsWith("audio/ogg")) return "ogg";
+  return "webm";
 }

@@ -54,16 +54,18 @@ const inboxStatusLabel: Record<InboxItemStatus, string> = {
 interface MobilePageProps {
   title: string;
   subtitle?: string;
+  leftSlot?: ReactNode;
   rightSlot?: ReactNode;
   children: ReactNode;
 }
 
-export function MobilePage({ title, subtitle, rightSlot, children }: MobilePageProps) {
+export function MobilePage({ title, subtitle, leftSlot, rightSlot, children }: MobilePageProps) {
   return (
     <section className="mobile-page min-h-0 bg-transparent text-foreground">
       <header className="sticky top-0 z-10 -mx-1 mb-3 border-b border-border/70 bg-background/95 px-1 pb-3 pt-1 backdrop-blur">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          {leftSlot ? <div className="shrink-0 pt-0.5">{leftSlot}</div> : null}
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-[1.35rem] font-semibold leading-tight">{title}</h1>
             {subtitle ? (
               <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{subtitle}</p>

@@ -20,18 +20,12 @@ import {
   ChevronRight,
   Settings,
   Compass,
-  Network,
-  Lightbulb,
-  Route,
-  Users,
   FolderKanban,
   X,
   Brain,
-  Mic,
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@multica/ui/components/ui/collapsible";
-import { Separator } from "@multica/ui/components/ui/separator";
 import { StatusIcon } from "../issues/components/status-icon";
 import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
 import {
@@ -76,19 +70,10 @@ function isNavActive(pathname: string, href: string): boolean {
 const EMPTY_PINS: PinnedItem[] = [];
 
 type NavKey =
-  | "rooms"
   | "workbench"
-  | "ideas"
-  | "councils"
-  | "missions"
-  | "issues"
-  | "explorations"
-  | "projects"
   | "projectWorkspaces"
-  | "meetings"
-  | "autopilots"
   | "agents"
-  | "teams"
+  | "rooms"
   | "runtimes"
   | "skills"
   | "settings";
@@ -114,21 +99,17 @@ function LivingRoomIcon({ className }: { className?: string }) {
   );
 }
 
-const productNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
+export const productNav: { key: NavKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "workbench", label: "原点工作台", icon: Compass },
   { key: "projectWorkspaces", label: "项目工作区", icon: FolderKanban },
-  { key: "meetings", label: "会议 Copilot", icon: Mic },
-  { key: "ideas", label: "想法池", icon: Lightbulb },
   { key: "agents", label: "智能体", icon: Bot },
-  { key: "councils", label: "会议室", icon: Users },
-  { key: "missions", label: "任务中枢", icon: Network },
-  { key: "explorations", label: "分叉探索", icon: Route },
+  { key: "rooms", label: "茶水间", icon: LivingRoomIcon },
+  { key: "runtimes", label: "能力池", icon: Monitor },
+  { key: "skills", label: "技能", icon: Brain },
+  { key: "settings", label: "设置", icon: Settings },
 ];
 
-const systemNav: { key: NavKey; label: string; icon: typeof Bot }[] = [
-  { key: "runtimes", label: "能力池", icon: Monitor },
-  { key: "skills", label: "记忆 / 技能", icon: Brain },
-];
+export const systemNav: { key: NavKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [];
 
 /**
  * Presentational pin row. The `label` and `iconNode` are computed by the
@@ -431,24 +412,32 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
 
         {/* Navigation */}
         <SidebarContent>
-          {/* 茶水间入口：独立 group，置顶，下方加分隔线 */}
-          <SidebarGroup className="pb-0">
+          <SidebarGroup>
+            <SidebarGroupLabel>Origin</SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={isNavActive(pathname, p.rooms())}
-                    render={<AppLink href={p.rooms()} />}
-                    className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                  >
-                    <LivingRoomIcon className="size-4" />
-                    <span>茶水间</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+              <SidebarMenu className="gap-0.5">
+                {productNav.map((item) => {
+                  const href = p[item.key]();
+                  const isActive = isNavActive(pathname, href);
+                  return (
+                    <SidebarMenuItem key={item.key}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        render={<AppLink href={href} />}
+                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                      >
+                        <item.icon />
+                        <span>{item.label}</span>
+                        {item.key === "runtimes" && hasRuntimeUpdates && (
+                          <span className="ml-auto size-1.5 rounded-full bg-destructive" />
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-          <Separator className="mx-2 my-1" />
 
           {localPinned.length > 0 && (
             <Collapsible defaultOpen>
@@ -485,72 +474,35 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             </Collapsible>
           )}
 
-          <SidebarGroup>
-            <SidebarGroupLabel>Origin</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {productNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                      >
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          <SidebarGroup>
-            <SidebarGroupLabel>系统</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {systemNav.map((item) => {
-                  const href = p[item.key]();
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-                      >
-                        <item.icon />
-                        <span>{item.label}</span>
-                        {item.key === "runtimes" && hasRuntimeUpdates && (
-                          <span className="ml-auto size-1.5 rounded-full bg-destructive" />
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {systemNav.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel>系统</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-0.5">
+                  {systemNav.map((item) => {
+                    const href = p[item.key]();
+                    const isActive = isNavActive(pathname, href);
+                    return (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          render={<AppLink href={href} />}
+                          className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
         </SidebarContent>
 
-        {/* 设置入口 + HelpLauncher：footer 底部，决策 C 保留位置 */}
+        {/* HelpLauncher：footer 底部保留系统标识入口 */}
         <SidebarFooter className="p-2">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={isNavActive(pathname, p.settings())}
-                render={<AppLink href={p.settings()} />}
-                className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-              >
-                <Settings className="size-4" />
-                <span>设置</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
           <div className="flex justify-end mt-1">
             <HelpLauncher />
           </div>

@@ -220,6 +220,9 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
           <AgentOverviewPane
             agent={agent}
             runtimes={runtimes}
+            members={members}
+            currentUserId={currentUser?.id ?? null}
+            canEdit={canEdit.allowed}
             onUpdate={handleUpdate}
           />
         </div>

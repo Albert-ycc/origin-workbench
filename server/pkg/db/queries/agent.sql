@@ -40,9 +40,6 @@ UPDATE agent SET
     custom_args = COALESCE(sqlc.narg('custom_args'), custom_args),
     mcp_config = COALESCE(sqlc.narg('mcp_config'), mcp_config),
     model = COALESCE(sqlc.narg('model'), model),
-    work_mode = COALESCE(sqlc.narg('work_mode'), work_mode),
-    mailbox_budget_seconds = COALESCE(sqlc.narg('mailbox_budget_seconds'), mailbox_budget_seconds),
-    notify_policy = COALESCE(sqlc.narg('notify_policy'), notify_policy),
     updated_at = now()
 WHERE id = $1
 RETURNING *;

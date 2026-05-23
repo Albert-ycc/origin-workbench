@@ -12,6 +12,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Powered by Multica](https://img.shields.io/badge/Powered%20by-Multica-7c3aed.svg)](https://github.com/multica-ai/multica)
 [![Desktop · macOS](https://img.shields.io/badge/Desktop-macOS%20arm64-000.svg)](#打包桌面端正式版)
+[![Mobile · Preview](https://img.shields.io/badge/Mobile-LAN%20PWA%20preview-0f766e.svg)](#origin-mobile-预览)
 [![Status · Active fork](https://img.shields.io/badge/Status-个人活跃维护-orange.svg)](#项目状态)
 
 [上游](https://github.com/multica-ai/multica) · [License](LICENSE) · [Notice](NOTICE) · [贡献指南](CONTRIBUTING.md) · [更新日志](https://github.com/Albert-ycc/origin-workbench/releases)
@@ -28,7 +29,7 @@
 
 ## Origin 是什么？
 
-Origin 把 Multica 从「面向人 + Agent 团队的多租户 SaaS」改造成 **个人本地 Agent 工作台**。一个使用者、一台电脑、一个工作区、多个 Agent。桌面端是唯一一等公民。
+Origin 把 Multica 从「面向人 + Agent 团队的多租户 SaaS」改造成 **个人本地 Agent 工作台**。一个使用者、一台电脑、一个工作区、多个 Agent。桌面端仍是主要支持入口，v1.1 新增手机端预览，用来在同一局域网里快速捕捉想法和轻量查看工作台。
 
 如果说 Multica 是「把 AI Agent 当队友的 Linear」，那 Origin 就是「我希望在自己笔记本上长着的那台个人笔记本 + 多 Agent 控制面板」：
 
@@ -57,10 +58,11 @@ OpenAI 兼容环境变量，用来给聊天型 Agent 提供模型回复。
 | 部署模式 | 多租户 SaaS / 自托管 | 单用户、单工作区、纯本地 |
 | 登录方式 | 邮箱 + 验证码（或 Google OAuth） | 名字 + 头像（`/auth/local-signin`） |
 | 工作区 | 用户可创建可切换 | 硬编码 `Fairy`，没有重命名 UI |
-| Web 前端 | `apps/web/`（Next.js） | **已删。** 桌面端是唯一一等公民。 |
+| Web 前端 | `apps/web/`（Next.js） | **已删。** 桌面端是主入口；`apps/mobile/` 是本地手机伴随预览。 |
 | 成员 / 邀请 / Labs / Repos | 设置页签 | **已删**——跟单用户模型冲突。 |
 | 自动更新 | 拉官方 Multica releases | **已删**——会把 fork 覆盖掉。 |
-| 想法池 / Council Session / User Profile | — | 新产品对象（Phase 1，migrations 074–076）。 |
+| 想法池 / Council Session / User Profile | — | Origin 本地工作流对象。 |
+| Inbox / 团队协作 mailbox | 团队协作消息面 | 从产品路径移除；附件和捕捉内容回到纯本地用户模型。 |
 | 头像 | DiceBear 远程 URL 生成 | 内置 50 张原点风格离线头像池。 |
 
 完整的修改清单见 [`NOTICE`](NOTICE)。
@@ -73,7 +75,7 @@ OpenAI 兼容环境变量，用来给聊天型 Agent 提供模型回复。
 
 ## 快速上手
 
-桌面端是唯一支持的入口。
+桌面端是主要支持入口。
 
 ```bash
 # 1. 装依赖
@@ -88,6 +90,17 @@ pnpm dev:desktop
 ```
 
 App 启动后会停在本地登录页——挑个头像、填个名字就进来。本地登录不需要邮箱、不需要验证码。
+
+## Origin Mobile 预览
+
+`apps/mobile/` 是 v1.1 新增的手机端预览壳。它现在可以作为局域网 PWA 运行，也预留了通过 Capacitor 直装 iPhone 的路径。当前范围刻意保持轻量：连接 Mac 上的 Origin 后端、读取本地工作区、查看 Mission 和 Agent、捕捉想法，并把短语音作为本地 Origin 附件上传。它不是 Origin Cloud 客户端，也不会把团队、邀请、多用户 SaaS 流程带回来。
+
+```bash
+pnpm --filter @multica/mobile dev
+pnpm --filter @multica/mobile build
+```
+
+手机端具体启动方式见 [`apps/mobile/README.md`](apps/mobile/README.md)。
 
 ## 打包桌面端正式版
 

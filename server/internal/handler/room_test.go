@@ -669,9 +669,9 @@ func createTestAgentForRoom(t *testing.T) string {
 	err := testPool.QueryRow(t.Context(),
 		`INSERT INTO agent (
 			workspace_id, runtime_id, name, description, runtime_mode,
-			runtime_config, visibility, max_concurrent_tasks, owner_id, work_mode
+			runtime_config, visibility, max_concurrent_tasks, owner_id
 		)
-		 VALUES ($1, $2, $3, $4, 'cloud', '{}'::jsonb, 'workspace', 1, $5, 'live')
+		 VALUES ($1, $2, $3, $4, 'cloud', '{}'::jsonb, 'workspace', 1, $5)
 		 RETURNING id`,
 		testWorkspaceID, testRuntimeID, fmt.Sprintf("TestRoomAgent-%d", time.Now().UnixNano()), "test agent for room", testUserID,
 	).Scan(&agentID)
@@ -712,9 +712,9 @@ func createTestAgentInNewWorkspace(t *testing.T) string {
 	if err := testPool.QueryRow(t.Context(), `
 		INSERT INTO agent (
 			workspace_id, runtime_id, name, description, runtime_mode,
-			runtime_config, visibility, max_concurrent_tasks, owner_id, work_mode
+			runtime_config, visibility, max_concurrent_tasks, owner_id
 		)
-		VALUES ($1, $2, $3, '', 'cloud', '{}'::jsonb, 'workspace', 1, $4, 'live')
+		VALUES ($1, $2, $3, '', 'cloud', '{}'::jsonb, 'workspace', 1, $4)
 		RETURNING id
 	`, workspaceID, runtimeID, fmt.Sprintf("OtherRoomAgent-%d", time.Now().UnixNano()), testUserID).Scan(&agentID); err != nil {
 		t.Fatalf("create other agent: %v", err)

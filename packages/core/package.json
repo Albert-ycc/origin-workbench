@@ -55,7 +55,6 @@
     "./councils": "./councils/index.ts",
     "./explorations": "./explorations/index.ts",
     "./tool-bindings": "./tool-bindings/index.ts",
-    "./mailbox": "./mailbox/index.ts",
     "./meetings": "./meetings/index.ts",
     "./projects-v12": "./projects-v12/index.ts",
     "./user-profile": "./user-profile/index.ts",

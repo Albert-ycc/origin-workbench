@@ -332,10 +332,10 @@ export function CreateAgentDialog({
         if (!v) onClose();
       }}
     >
-      <DialogContent className="grid h-[calc(100vh-3rem)] max-h-[calc(100vh-3rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-3rem))]">
+      <DialogContent className="grid h-[calc(100vh-3rem)] max-h-[calc(100vh-3rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-lg p-0 sm:max-w-[min(1180px,calc(100vw-3rem))]">
         <DialogHeader className="border-b px-8 py-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
               <Sparkles className="h-6 w-6 text-muted-foreground" />
             </div>
             <div className="min-w-0">
@@ -362,7 +362,7 @@ export function CreateAgentDialog({
                     type="button"
                     onClick={() => setStep(item.id)}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors",
+                      "flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors",
                       active
                         ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
@@ -561,7 +561,7 @@ function IdentityStep({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="例如：我的编程助手"
-          className="h-12 rounded-2xl text-base"
+          className="h-12 rounded-lg text-base"
         />
       </div>
 
@@ -586,7 +586,7 @@ function IdentityStep({
         <p className="text-xs text-muted-foreground">
           挑一个内置头像，或上传自己的图片。点「换一批」可以从更多备选里随机刷新。
         </p>
-        <div className="rounded-2xl border bg-background p-4">
+        <div className="rounded-lg border bg-background p-4">
           <AvatarPicker
             value={avatarUrl}
             onChange={setAvatarUrl}
@@ -603,7 +603,7 @@ function IdentityStep({
           onChange={(e) => setDescription(e.target.value)}
           placeholder="描述这个智能体的功能..."
           maxLength={AGENT_DESCRIPTION_MAX_LENGTH}
-          className="min-h-28 rounded-2xl text-base"
+          className="min-h-28 rounded-lg text-base"
         />
         <CharCounter
           length={[...description].length}
@@ -622,6 +622,9 @@ function IdentityStep({
         onChange={setModel}
         disabled={!selectedRuntime}
       />
+      <p className="text-xs text-muted-foreground">
+        留空时继承运行环境默认模型；选择或输入模型后，只会保存到当前智能体，不会影响其他智能体。
+      </p>
     </div>
   );
 }
@@ -704,7 +707,7 @@ function ToolsStep({
         <Popover open={runtimeOpen} onOpenChange={setRuntimeOpen}>
           <PopoverTrigger
             disabled={runtimes.length === 0 && !runtimesLoading}
-            className="flex w-full min-w-0 items-center gap-3 rounded-2xl border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
           >
             {runtimesLoading ? (
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
@@ -811,7 +814,7 @@ function ToolsStep({
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           placeholder="写下这个智能体的工作原则、输出格式或边界..."
-          className="min-h-24 rounded-2xl"
+            className="min-h-24 rounded-lg"
         />
       </div>
 
@@ -921,7 +924,7 @@ function SkillsStep({
               type="button"
               onClick={() => onToggleSkill(skill.id)}
               className={cn(
-                "rounded-2xl border p-4 text-left transition-all hover:border-primary/40",
+                "rounded-lg border p-4 text-left transition-all hover:border-primary/40",
                 selected && "border-primary bg-primary/5",
               )}
             >
@@ -941,7 +944,7 @@ function SkillsStep({
         })}
       </div>
       {skills.length === 0 && (
-        <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
           当前工作区还没有技能。创建智能体后，可以在详情页新增或绑定技能。
         </div>
       )}
@@ -958,7 +961,7 @@ function ContextStep({
 }) {
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl border bg-muted/30 p-5">
+      <div className="rounded-lg border bg-muted/30 p-5">
         <div className="flex items-start gap-3">
           <KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
           <div className="space-y-1.5 text-sm leading-relaxed">
@@ -981,7 +984,7 @@ function ContextStep({
             "2) 命名 / 命令 / 风格偏好 —— 比如「写 React 用函数式组件 + TypeScript」",
             "3) 禁区 —— 比如「不要碰 server/internal/handler/auth.go，那是上游核心」",
           ].join("\n")}
-          className="min-h-40 rounded-2xl"
+          className="min-h-40 rounded-lg"
         />
       </div>
     </div>
@@ -1008,17 +1011,17 @@ function PreviewCard({
     description.trim() || "我是一个专业的智能体助手，随时可以为你提供帮助。";
 
   return (
-    <div className="mt-6 overflow-hidden rounded-3xl border bg-background shadow-sm">
+    <div className="mt-6 overflow-hidden rounded-xl border bg-background shadow-sm">
       <div className="h-28 bg-muted" />
       <div className="-mt-10 px-6 pb-6 text-center">
-        <span className="inline-flex rounded-3xl bg-background p-2 shadow-sm ring-1 ring-border">
+        <span className="inline-flex rounded-xl bg-background p-2 shadow-sm ring-1 ring-border">
           <ActorAvatarBase
             name={displayName}
             initials={displayName.slice(0, 1)}
             avatarUrl={avatarUrl}
             isAgent
             size={76}
-            className="rounded-2xl"
+            className="rounded-lg"
           />
         </span>
         <h3 className="mt-4 truncate text-xl font-semibold">{displayName}</h3>
@@ -1100,7 +1103,7 @@ function EditableList({
       </div>
       <div className="space-y-2">
         {children || (
-          <div className="rounded-2xl border border-dashed px-4 py-5 text-center text-xs text-muted-foreground">
+          <div className="rounded-lg border border-dashed px-4 py-5 text-center text-xs text-muted-foreground">
             暂未配置
           </div>
         )}

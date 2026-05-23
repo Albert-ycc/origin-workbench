@@ -9,14 +9,13 @@ import {
   ChevronRight,
   Clock3,
   Compass,
-  Inbox,
   Layers3,
   Lightbulb,
   MessageSquare,
+  Mic,
   Monitor,
   Network,
   Route,
-  ShieldCheck,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -24,15 +23,13 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { api } from "@multica/core/api";
-import { useChatStore } from "@multica/core/chat";
 import { ideaKeys, ideaListOptions } from "@multica/core/ideas";
-import { mailboxListOptions } from "@multica/core/mailbox";
 import { missionListOptions } from "@multica/core/missions";
 import { projectV12ListOptions } from "@multica/core/projects-v12";
 import { deriveRuntimeHealth } from "@multica/core/runtimes";
 import { runtimeListOptions } from "@multica/core/runtimes/queries";
 import { agentListOptions } from "@multica/core/workspace/queries";
-import type { Agent, AgentRuntime, Idea, MailboxItem, Mission } from "@multica/core/types";
+import type { Agent, AgentRuntime, Idea, Mission } from "@multica/core/types";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -58,7 +55,7 @@ type WorkbenchCardProps = {
 // / Council / ToolBinding）完全对不上，sidebar 里也已经把 issue/project 调
 // 试入口删了。这里提供 Origin 概念的 starter ideas，新用户首次落到 workbench
 // 时（且想法池为空）一次性 seed，让用户在自己熟悉的入口（想法池 / 升级
-// Mission / 会议室 / 分叉探索 / 工具绑定）里走一遍主流程。
+// Mission / 多角色议事 / 分叉探索 / 工具绑定）里走一遍主流程。
 // ────────────────────────────────────────────────────────────────────────
 const STARTER_IDEAS: Array<{ title: string; description: string; tags: string[] }> = [
   {
@@ -74,9 +71,9 @@ const STARTER_IDEAS: Array<{ title: string; description: string; tags: string[] 
     tags: ["新手任务"],
   },
   {
-    title: "在会议室里召开一次多角色议事",
+    title: "发起一次多角色议事",
     description:
-      "纠结的决定别一个人扛——比如「这个表单组件要不要重写」「飞书目录该怎么分」。点左侧「会议室」→ 新建 Council Session，挑产品经理 + 技术架构师 + 测试工程师，让他们各说各话。三档活跃度（quiet / concise / lively）控制 Agent 发言节奏。结束时写一句结论，Origin 会自动把会议结论回写到原来那条 Direct Chat。",
+      "纠结的决定别一个人扛——比如「这个表单组件要不要重写」「飞书目录该怎么分」。从工作台「新建」里的多角色议事进入，挑产品经理 + 技术架构师 + 测试工程师，让他们各说各话。三档活跃度（quiet / concise / lively）控制 Agent 发言节奏。结束时写一句结论，Origin 会自动把议事结论回写到原来那条 Direct Chat。",
     tags: ["新手任务"],
   },
   {
@@ -118,19 +115,52 @@ const missionStatusTone: Record<Mission["status"], string> = {
   archived: "bg-muted text-muted-foreground",
 };
 
-const runtimeHealthCopy = {
-  online: "在线",
-  recently_lost: "刚断开",
-  offline: "离线",
-  about_to_gc: "即将清理",
-} as const;
+export const workbenchSecondaryShortcuts: Array<{
+  pathKey: "meetings" | "councils" | "explorations";
+  icon: typeof Users;
+  title: string;
+  desc: string;
+}> = [
+  {
+    pathKey: "meetings",
+    icon: Mic,
+    title: "发起会议",
+    desc: "录音转写、旁听分析和会后沉淀",
+  },
+  {
+    pathKey: "councils",
+    icon: Users,
+    title: "多角色议事",
+    desc: "临时拉多个 Agent 讨论和决策",
+  },
+  {
+    pathKey: "explorations",
+    icon: Route,
+    title: "方案对比",
+    desc: "保留多套方案路径和取舍记录",
+  },
+];
 
-const runtimeHealthTone = {
-  online: "bg-success",
-  recently_lost: "bg-warning",
-  offline: "bg-muted-foreground/40",
-  about_to_gc: "bg-destructive",
-} as const;
+export const workbenchNewActions: Array<{
+  pathKey: "ideas" | "meetings" | "councils" | "explorations";
+  icon: typeof Users;
+  title: string;
+  desc: string;
+}> = [
+  {
+    pathKey: "ideas",
+    icon: Sparkles,
+    title: "捕捉想法",
+    desc: "先记下未成型念头，养熟后升级 Mission",
+  },
+  ...workbenchSecondaryShortcuts,
+];
+
+export const workbenchTaskSections = [
+  { title: "今日继续", items: ["项目工作区", "进行中 Mission"] },
+  { title: "待处理", items: ["风险确认"] },
+  { title: "新建", items: ["捕捉想法", "发起会议", "多角色议事", "方案对比"] },
+] as const;
 
 function isActiveAgent(agent: Agent) {
   return !agent.archived_at;
@@ -162,10 +192,6 @@ export function WorkbenchPage() {
   const { data: ideas = [], isLoading: ideasLoading } = useQuery(ideaListOptions(wsId));
   // v1.2 (PRD §17): 项目工作区是首页主线——把持续推进的事打包成项目并落主聊。
   const { data: projectsV12 = [], isLoading: projectsLoading } = useQuery(projectV12ListOptions(wsId));
-  // Workbench block 6: top mailbox reports across all mailbox-mode agents.
-  // Limit 5 mirrors the visible row cap below; the user can navigate to the
-  // agent detail page (Stage 4 UI) for the full history.
-  const { data: mailboxRecent = [] } = useQuery(mailboxListOptions(wsId, { limit: 5 }));
   const recentIdeas = useMemo(
     () => ideas.filter((i) => i.status === "draft" || i.status === "nurturing").slice(0, 3),
     [ideas],
@@ -231,22 +257,6 @@ export function WorkbenchPage() {
   }, [openMissions]);
   const runtimeSummary = useMemo(() => summarizeRuntimes(runtimes), [runtimes]);
   const pendingConfirmations = openMissions.filter((m) => m.status === "waiting_confirmation" || m.risk_level !== "low");
-  // Mailbox block 6 surfaces both completed reports (so the user can read
-  // the result without going back to chat) and outstanding blocks. Skip
-  // still-processing rows — those belong on the agent detail page, not on
-  // the inbox-style summary.
-  const mailboxReports = useMemo(
-    () => mailboxRecent.filter((item) => item.status !== "processing"),
-    [mailboxRecent],
-  );
-  const mailboxBlockedCount = mailboxReports.filter(
-    (item) => item.status === "blocked" || item.status === "timeout",
-  ).length;
-  const agentNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const a of agents) map.set(a.id, a.name);
-    return map;
-  }, [agents]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -258,7 +268,7 @@ export function WorkbenchPage() {
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-full max-w-7xl gap-4 p-5 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
+        <div className="mx-auto grid w-full max-w-7xl gap-4 p-5 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
           <section className="space-y-4">
             <div className="rounded-lg border bg-card p-4">
               <div className="flex items-start gap-3">
@@ -280,96 +290,7 @@ export function WorkbenchPage() {
             </div>
 
             <WorkbenchCard
-              title="想法池"
-              icon={Lightbulb}
-              action={
-                <Button variant="ghost" size="sm" nativeButton={false} render={<AppLink href={p.ideas()} />}>
-                  打开
-                </Button>
-              }
-            >
-              <div className="space-y-3">
-                <AppLink
-                  href={p.ideas()}
-                  className="block w-full rounded-md border border-dashed bg-background p-3 text-left transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Sparkles className="size-4 text-primary" />
-                    捕捉一个未成型想法
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    跳到想法池快速记下，养护成熟后一键升级 Mission。
-                  </p>
-                </AppLink>
-                {ideasLoading ? (
-                  <StackSkeleton rows={3} />
-                ) : recentIdeas.length === 0 ? (
-                  <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-                    暂时没有在养护的想法。在上方写下第一条，养熟了一键升级。
-                  </div>
-                ) : (
-                  <div className="rounded-md bg-muted/40 p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-medium text-muted-foreground">最近养护</div>
-                      <Badge variant="outline" className="text-[10px]">
-                        {ideas.length} 条
-                      </Badge>
-                    </div>
-                    <ul className="mt-2 space-y-2 text-sm">
-                      {recentIdeas.map((idea) => (
-                        <li key={idea.id}>
-                          <AppLink
-                            href={p.ideas()}
-                            className="flex items-center gap-2 truncate transition-colors hover:text-primary"
-                          >
-                            <span className="size-1.5 shrink-0 rounded-full bg-primary/60" />
-                            <span className="truncate">{idea.title}</span>
-                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                              {ideaTone(idea)}
-                            </span>
-                          </AppLink>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </WorkbenchCard>
-
-            <WorkbenchCard
-              title="能力池"
-              icon={Monitor}
-              action={
-                <Button variant="ghost" size="sm" nativeButton={false} render={<AppLink href={p.runtimes()} />}>
-                  管理
-                </Button>
-              }
-            >
-              {runtimesLoading ? (
-                <StackSkeleton rows={4} />
-              ) : runtimes.length === 0 ? (
-                <EmptyText text="还没有发现本地 CLI 或 API provider。" />
-              ) : (
-                <div className="space-y-2">
-                  {runtimeSummary.items.slice(0, 5).map((item) => (
-                    <div key={item.runtime.id} className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-                      <span className={cn("size-2 rounded-full", runtimeHealthTone[item.health])} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{item.runtime.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {item.runtime.provider} · {runtimeHealthCopy[item.health]}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </WorkbenchCard>
-          </section>
-
-          <section className="space-y-4">
-            <WorkbenchCard
-              title="项目工作区"
+              title="今日继续"
               icon={Briefcase}
               action={
                 <Button variant="outline" size="sm" nativeButton={false} render={<AppLink href={p.projectWorkspaces()} />}>
@@ -377,50 +298,167 @@ export function WorkbenchPage() {
                 </Button>
               }
             >
-              {projectsLoading ? (
+              <div className="space-y-5">
+                <div>
+                  <SubsectionHeader title="项目工作区" action={`${activeProjects.length} 个活跃`} />
+                  {projectsLoading ? (
+                    <StackSkeleton rows={3} />
+                  ) : activeProjects.length === 0 ? (
+                    <EmptyText text="把一摊持续工作的事打包成项目，跟智能体在主聊里一起推进。点「全部项目」开第一个。" />
+                  ) : (
+                    <div className="divide-y rounded-lg border">
+                      {activeProjects.slice(0, 4).map((proj) => (
+                        <AppLink
+                          key={proj.id}
+                          href={p.projectWorkspaceDetail(proj.id)}
+                          className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/40"
+                        >
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                            <Briefcase className="size-4 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{proj.title}</div>
+                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {proj.description || "暂无描述"}
+                            </div>
+                          </div>
+                          {proj.compaction_count > 0 ? (
+                            <Badge variant="secondary" className="text-[10px]">
+                              已压缩 {proj.compaction_count} 次
+                            </Badge>
+                          ) : null}
+                        </AppLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <SubsectionHeader title="进行中 Mission" action={`${openMissions.length} 个`} />
+                  {missionsLoading ? (
+                    <StackSkeleton rows={5} />
+                  ) : openMissions.length === 0 ? (
+                    <EmptyText text="还没有进行中的 Mission。把想法池里养熟的一条点「升级 Mission」，或在项目工作区开个新主聊。" />
+                  ) : (
+                    <div className="divide-y rounded-lg border">
+                      {openMissions.slice(0, 6).map((mission) => (
+                        <AppLink
+                          key={mission.id}
+                          href={p.missions()}
+                          className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/40"
+                        >
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                            <Network className="size-4 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{mission.title}</div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              更新于 {formatTime(mission.updated_at)}
+                            </div>
+                          </div>
+                          <Badge variant="secondary" className={missionStatusTone[mission.status]}>
+                            {statusCopy[mission.status]}
+                          </Badge>
+                        </AppLink>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-3 flex justify-end">
+                    <Button variant="ghost" size="sm" nativeButton={false} render={<AppLink href={p.missions()} />}>
+                      查看全部
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </WorkbenchCard>
+          </section>
+
+          <section className="space-y-4">
+            <WorkbenchCard
+              title="待处理"
+              icon={AlertTriangle}
+              action={
+                <Badge variant="outline">
+                  {pendingConfirmations.length} 待处理
+                </Badge>
+              }
+            >
+              <div>
+                <SubsectionHeader title="风险确认" action={`${pendingConfirmations.length} 待处理`} />
+                {pendingConfirmations.length === 0 ? (
+                  <EmptyText text="低风险任务可自动继续，中高风险会进入这里。" />
+                ) : (
+                  <div className="space-y-2">
+                    {pendingConfirmations.slice(0, 4).map((mission) => (
+                      <AlertRow key={mission.id} title={mission.title} tone="warning" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </WorkbenchCard>
+
+            <WorkbenchCard
+              title="新建"
+              icon={Sparkles}
+            >
+              <div className="grid gap-2">
+                {workbenchNewActions.map((item) => (
+                  <Shortcut
+                    key={item.pathKey}
+                    href={p[item.pathKey]()}
+                    icon={item.icon}
+                    title={item.title}
+                    desc={item.desc}
+                  />
+                ))}
+              </div>
+            </WorkbenchCard>
+          </section>
+
+          <section className="space-y-4">
+            <WorkbenchCard title="近期想法" icon={Lightbulb}>
+              {ideasLoading ? (
                 <StackSkeleton rows={3} />
-              ) : activeProjects.length === 0 ? (
-                <EmptyText text="把一摊持续工作的事打包成项目，跟智能体在主聊里一起推进。点「全部项目」开第一个。" />
+              ) : recentIdeas.length === 0 ? (
+                <EmptyText text="暂时没有在养护的想法。需要新记一条时，从「新建」里的捕捉想法进入。" />
               ) : (
-                <div className="divide-y rounded-lg border">
-                  {activeProjects.slice(0, 4).map((proj) => (
-                    <AppLink
-                      key={proj.id}
-                      href={p.projectWorkspaceDetail(proj.id)}
-                      className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/40"
-                    >
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                        <Briefcase className="size-4 text-muted-foreground" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{proj.title}</div>
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {proj.description || "暂无描述"}
-                        </div>
-                      </div>
-                      {proj.compaction_count > 0 ? (
-                        <Badge variant="secondary" className="text-[10px]">
-                          已压缩 {proj.compaction_count} 次
-                        </Badge>
-                      ) : null}
-                    </AppLink>
-                  ))}
+                <div className="rounded-md bg-muted/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-medium text-muted-foreground">最近养护</div>
+                    <Badge variant="outline" className="text-[10px]">
+                      {ideas.length} 条
+                    </Badge>
+                  </div>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {recentIdeas.map((idea) => (
+                      <AppLink
+                        key={idea.id}
+                        href={p.ideas()}
+                        className="flex items-center gap-2 truncate transition-colors hover:text-primary"
+                      >
+                        <span className="size-1.5 shrink-0 rounded-full bg-primary/60" />
+                        <span className="truncate">{idea.title}</span>
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                          {ideaTone(idea)}
+                        </span>
+                      </AppLink>
+                    ))}
+                  </ul>
                 </div>
               )}
             </WorkbenchCard>
 
-            <WorkbenchCard
-              title="我的智能体"
-              icon={Bot}
-              action={
-                <Button variant="outline" size="sm" nativeButton={false} render={<AppLink href={p.agents()} />}>
-                  管理智能体
-                </Button>
-              }
-            >
+            <WorkbenchCard title="资产与能力" icon={Layers3}>
+              <div className="grid gap-2">
+                <Shortcut href={p.agents()} icon={Bot} title="智能体" desc={`当前 ${activeAgents.length} 个可用智能体`} />
+                <Shortcut href={p.runtimes()} icon={Monitor} title="能力池" desc={`${runtimeSummary.online} 个在线能力`} />
+                <Shortcut href={p.skills()} icon={Layers3} title="沉淀资产" desc="记忆、技能和长期复用能力" />
+              </div>
+            </WorkbenchCard>
+
+            <WorkbenchCard title="常用智能体" icon={Bot}>
               {agentsLoading ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <AgentSkeleton />
+                <div className="grid gap-3">
                   <AgentSkeleton />
                   <AgentSkeleton />
                   <AgentSkeleton />
@@ -428,8 +466,8 @@ export function WorkbenchPage() {
               ) : favoriteAgents.length === 0 ? (
                 <EmptyText text="先从能力池创建一个智能体，再建立长期私聊。" />
               ) : (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {favoriteAgents.map((agent) => {
+                <div className="grid gap-3">
+                  {favoriteAgents.slice(0, 3).map((agent) => {
                     const leadingCount = leaderMissionCount.get(agent.id) ?? 0;
                     return (
                       <AppLink
@@ -460,97 +498,6 @@ export function WorkbenchPage() {
                 </div>
               )}
             </WorkbenchCard>
-
-            <WorkbenchCard
-              title="进行中 Mission"
-              icon={Network}
-              action={
-                <Button variant="outline" size="sm" nativeButton={false} render={<AppLink href={p.missions()} />}>
-                  进入任务中枢
-                </Button>
-              }
-            >
-              {missionsLoading ? (
-                <StackSkeleton rows={5} />
-              ) : openMissions.length === 0 ? (
-                <EmptyText text="还没有进行中的 Mission。把想法池里养熟的一条点「升级 Mission」，或在项目工作区开个新主聊。" />
-              ) : (
-                <div className="divide-y rounded-lg border">
-                  {openMissions.slice(0, 6).map((mission) => (
-                    <AppLink
-                      key={mission.id}
-                      href={p.missions()}
-                      className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/40"
-                    >
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                        <Network className="size-4 text-muted-foreground" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{mission.title}</div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          更新于 {formatTime(mission.updated_at)}
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className={missionStatusTone[mission.status]}>
-                        {statusCopy[mission.status]}
-                      </Badge>
-                    </AppLink>
-                  ))}
-                </div>
-              )}
-            </WorkbenchCard>
-          </section>
-
-          <section className="space-y-4">
-            <WorkbenchCard
-              title="信箱回报"
-              icon={Inbox}
-              action={
-                <Badge variant="outline">
-                  {mailboxBlockedCount > 0
-                    ? `${mailboxBlockedCount} 条卡点`
-                    : `${mailboxReports.length} 条新回报`}
-                </Badge>
-              }
-            >
-              <div className="space-y-2">
-                {mailboxReports.length === 0 ? (
-                  <EmptyText text="后台智能体回报会在这里汇总——把某个 Agent 的工作模式切到「信箱」，派活后就能在这里看到完成与卡点。" />
-                ) : (
-                  mailboxReports.slice(0, 5).map((item) => (
-                    <MailboxRow
-                      key={item.id}
-                      item={item}
-                      agentName={agentNameMap.get(item.agent_id) ?? "未知 Agent"}
-                    />
-                  ))
-                )}
-              </div>
-            </WorkbenchCard>
-
-            <WorkbenchCard
-              title="风险确认"
-              icon={ShieldCheck}
-              action={<Badge variant="outline">{pendingConfirmations.length} 待处理</Badge>}
-            >
-              {pendingConfirmations.length === 0 ? (
-                <EmptyText text="低风险任务可自动继续，中高风险会进入这里。" />
-              ) : (
-                <div className="space-y-2">
-                  {pendingConfirmations.slice(0, 4).map((mission) => (
-                    <AlertRow key={mission.id} title={mission.title} tone="warning" />
-                  ))}
-                </div>
-              )}
-            </WorkbenchCard>
-
-            <WorkbenchCard title="常用入口" icon={Users}>
-              <div className="grid gap-2">
-                <Shortcut href={p.councils()} icon={Users} title="Council Session" desc="临时拉多个 Agent 讨论和决策" />
-                <Shortcut href={p.explorations()} icon={Route} title="分叉探索" desc="保留多套方案路径和取舍记录" />
-                <Shortcut href={p.skills()} icon={Layers3} title="记忆 / 技能" desc="查看任务沉淀出的长期资产" />
-              </div>
-            </WorkbenchCard>
           </section>
         </div>
       </div>
@@ -570,6 +517,15 @@ function WorkbenchCard({ title, icon: Icon, action, children, className }: Workb
       </div>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+function SubsectionHeader({ title, action }: { title: string; action?: string }) {
+  return (
+    <div className="mb-2 flex items-center justify-between gap-3">
+      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      {action ? <span className="text-[10px] text-muted-foreground">{action}</span> : null}
+    </div>
   );
 }
 
@@ -612,54 +568,6 @@ function AgentSkeleton() {
 function EmptyText({ text }: { text: string }) {
   return <div className="rounded-md border border-dashed bg-background p-4 text-sm text-muted-foreground">{text}</div>;
 }
-
-// MailboxRow renders one finished mailbox report on workbench block 6.
-// Click opens the originating chat session in the chat overlay so the user
-// can see the agent's full reply / follow up — block 6 is a digest, not the
-// final destination.
-function MailboxRow({ item, agentName }: { item: MailboxItem; agentName: string }) {
-  const setActiveSession = useChatStore((s) => s.setActiveSession);
-  const setOpen = useChatStore((s) => s.setOpen);
-  const isBlocked = item.status === "blocked" || item.status === "timeout";
-  const Icon = isBlocked ? AlertTriangle : Inbox;
-  const iconClass = isBlocked ? "text-destructive" : "text-muted-foreground";
-  const summary = (isBlocked ? item.blocked_description : item.result).trim();
-  const summaryFallback = isBlocked ? "无更多说明" : "已完成";
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        setActiveSession(item.chat_session_id);
-        setOpen(true);
-      }}
-      className="flex w-full items-start gap-2 rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/40"
-    >
-      <Icon className={cn("mt-0.5 size-4 shrink-0", iconClass)} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{agentName}</span>
-          <Badge
-            variant={isBlocked ? "destructive" : "secondary"}
-            className="px-1.5 py-0 text-[10px]"
-          >
-            {mailboxStatusCopy[item.status] ?? item.status}
-          </Badge>
-        </div>
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-          {summary || summaryFallback}
-        </div>
-      </div>
-      <ChevronRight className="mt-1 size-3 text-muted-foreground" />
-    </button>
-  );
-}
-
-const mailboxStatusCopy: Record<string, string> = {
-  processing: "处理中",
-  done: "完成",
-  blocked: "卡点",
-  timeout: "超时",
-};
 
 function AlertRow({ title, tone }: { title: string; tone: "warning" | "destructive" }) {
   return (

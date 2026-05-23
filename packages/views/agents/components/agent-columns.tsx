@@ -1,13 +1,12 @@
 "use client";
 
-import { Cloud, Lock, Monitor } from "lucide-react";
+import { Cloud, Monitor } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Agent, AgentRuntime } from "@multica/core/types";
 import {
   type AgentActivity,
   type AgentPresenceDetail,
   summarizeActivityWindow,
-  VISIBILITY_TOOLTIP,
 } from "@multica/core/agents";
 import {
   Tooltip,
@@ -28,11 +27,6 @@ export interface AgentRow {
   presence: AgentPresenceDetail | null | undefined;
   activity: AgentActivity | null | undefined;
   runCount: number;
-  // Inline owner avatar — non-null when the page wants to attribute the
-  // agent to a teammate (typically All scope on someone else's agent).
-  ownerIdToShow: string | null;
-  // True when the current user owns this agent (drives the "You" badge).
-  isOwnedByMe: boolean;
   // True when the current user can archive / cancel-tasks on this agent.
   canManage: boolean;
 }
@@ -154,9 +148,8 @@ export function createAgentColumns({
 // ---------------------------------------------------------------------------
 
 function AgentNameCell({ row }: { row: AgentRow }) {
-  const { agent, ownerIdToShow, isOwnedByMe } = row;
+  const { agent } = row;
   const isArchived = !!agent.archived_at;
-  const isPrivate = agent.visibility === "private";
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -176,30 +169,6 @@ function AgentNameCell({ row }: { row: AgentRow }) {
           >
             {agent.name}
           </span>
-          {isPrivate && !isArchived && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-                }
-              />
-              <TooltipContent>
-                {VISIBILITY_TOOLTIP.private}
-              </TooltipContent>
-            </Tooltip>
-          )}
-          {isOwnedByMe && !ownerIdToShow && (
-            <span className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">
-              你
-            </span>
-          )}
-          {ownerIdToShow && (
-            <ActorAvatar
-              actorType="member"
-              actorId={ownerIdToShow}
-              size={14}
-            />
-          )}
           {isArchived && (
             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
               已归档

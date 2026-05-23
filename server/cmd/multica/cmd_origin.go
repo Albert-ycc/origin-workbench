@@ -1,12 +1,12 @@
 package main
 
-// Origin product-surface CLI commands (PRD §14.5 / §14.6 / §14.7 / §14.8 /
-// §14.9). Agents see these as their first-class tool surface; the legacy
+// Origin product-surface CLI commands (PRD §14.5 / §14.6 / §14.7 / §14.9).
+// Agents see these as their first-class tool surface; the legacy
 // `multica issue` / `multica autopilot` commands still exist for compatibility
 // but are not the recommended verbs in agent-facing prompts.
 //
-// All six entities are read-only here on purpose: writes (promote idea,
-// adjourn council, mark exploration verdict, set mailbox terminal state, …)
+// These entities are read-only here on purpose: writes (promote idea,
+// adjourn council, mark exploration verdict, …)
 // are user-driven actions that flow through the desktop UI / dispatch path.
 // Adding agent-driven write CLIs is a follow-up — see runtime_config.go
 // for the current scope contract.
@@ -358,72 +358,6 @@ func runToolBindingGet(cmd *cobra.Command, args []string) error {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Mailbox (PRD §14.8 — async report rows for mailbox-mode agents)
-// ────────────────────────────────────────────────────────────────────────
-
-var mailboxCmd = &cobra.Command{
-	Use:   "mailbox",
-	Short: "Read Mailbox reports (async results from mailbox-mode agents)",
-	Long: "When an agent runs in mailbox mode, the user sees a report row in workbench\n" +
-		"block 6 instead of waiting at the chat window. Use `mailbox list` to scan recent\n" +
-		"reports across the workspace; `--agent <id>` to scope to one agent.",
-}
-
-var mailboxListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List Mailbox reports",
-	RunE:  runMailboxList,
-}
-
-var mailboxGetCmd = &cobra.Command{
-	Use:   "get <id>",
-	Short: "Get a Mailbox item's full report",
-	Args:  exactArgs(1),
-	RunE:  runMailboxGet,
-}
-
-func runMailboxList(cmd *cobra.Command, _ []string) error {
-	client, err := newAPIClient(cmd)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if client.WorkspaceID == "" {
-		if _, err := requireWorkspaceID(cmd); err != nil {
-			return err
-		}
-	}
-	params := url.Values{}
-	params.Set("workspace_id", client.WorkspaceID)
-	if v, _ := cmd.Flags().GetString("agent"); v != "" {
-		params.Set("agent_id", v)
-	}
-	if v, _ := cmd.Flags().GetInt("limit"); v > 0 {
-		params.Set("limit", fmt.Sprintf("%d", v))
-	}
-	var result map[string]any
-	if err := client.GetJSON(ctx, "/api/mailbox-items?"+params.Encode(), &result); err != nil {
-		return fmt.Errorf("list mailbox items: %w", err)
-	}
-	return cli.PrintJSON(os.Stdout, result)
-}
-
-func runMailboxGet(cmd *cobra.Command, args []string) error {
-	client, err := newAPIClient(cmd)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	var item map[string]any
-	if err := client.GetJSON(ctx, "/api/mailbox-items/"+args[0], &item); err != nil {
-		return fmt.Errorf("get mailbox item: %w", err)
-	}
-	return cli.PrintJSON(os.Stdout, item)
-}
-
-// ────────────────────────────────────────────────────────────────────────
 // Project history (PRD §17.5.2 — onboarding surface)
 //
 // `multica project history <project_id>` extends the legacy v1.0 project
@@ -490,10 +424,6 @@ func init() {
 	toolBindingListCmd.Flags().String("idea", "", "Scope to an Idea ID")
 	toolBindingListCmd.Flags().String("council", "", "Scope to a Council Session ID")
 
-	// Mailbox flags
-	mailboxListCmd.Flags().String("agent", "", "Scope to one Agent's mailbox")
-	mailboxListCmd.Flags().Int("limit", 0, "Max number of items to return (default 20)")
-
 	// Project flags
 	projectHistoryCmd.Flags().String("since", "", "Only return messages after this RFC3339 timestamp")
 	projectHistoryCmd.Flags().Int("limit", 0, "Max number of messages to return (default 100, max 500)")
@@ -504,7 +434,6 @@ func init() {
 	councilCmd.AddCommand(councilListCmd, councilGetCmd)
 	explorationCmd.AddCommand(explorationListCmd, explorationGetCmd)
 	toolBindingCmd.AddCommand(toolBindingListCmd, toolBindingGetCmd)
-	mailboxCmd.AddCommand(mailboxListCmd, mailboxGetCmd)
 	// v1.2 onboarding history surface attaches to the existing project verb
 	// declared in cmd_project.go (legacy v1.0 issue-classification CLI).
 	projectCmd.AddCommand(projectHistoryCmd)

@@ -69,6 +69,14 @@ export function projectArchivedSessionsOptions(wsId: string, projectId: string) 
   });
 }
 
+export function projectAgentMemoriesOptions(wsId: string, projectId: string) {
+  return queryOptions({
+    queryKey: projectV12Keys.memories(wsId, projectId),
+    queryFn: () => api.listProjectAgentMemories(projectId),
+    enabled: !!projectId,
+  });
+}
+
 export function projectCompactionPreviewJobOptions(
   wsId: string,
   projectId: string,

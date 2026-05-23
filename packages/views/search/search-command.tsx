@@ -116,11 +116,11 @@ const navPages: NavPage[] = [
   { key: "workbench", label: "原点工作台", icon: Compass, keywords: ["origin", "workbench", "home", "原点", "工作台", "首页"] },
   { key: "ideas", label: "想法池", icon: Lightbulb, keywords: ["idea", "ideas", "capture", "想法", "灵感", "捕捉"] },
   { key: "missions", label: "任务中枢", icon: Network, keywords: ["missions", "mission", "agent", "任务中枢", "派发", "智能体"] },
-  { key: "agents", label: "智能体", icon: Bot, keywords: ["agents", "bots", "ai", "智能体", "代理"] },
-  { key: "councils", label: "会议室", icon: Users, keywords: ["council", "meeting", "session", "会议室", "会议", "临时讨论"] },
+  { key: "agents", label: "智能体", icon: Bot, keywords: ["agents", "bots", "ai", "智能体", "代理", "记忆"] },
+  { key: "councils", label: "多角色议事", icon: Users, keywords: ["council", "meeting", "session", "会议室", "会议", "临时讨论", "多角色议事"] },
   { key: "explorations", label: "分叉探索", icon: Route, keywords: ["exploration", "branch", "fork", "分叉", "探索", "方案"] },
   { key: "runtimes", label: "能力池", icon: Monitor, keywords: ["runtimes", "environments", "能力池", "运行环境", "环境"] },
-  { key: "skills", label: "记忆 / 技能", icon: Brain, keywords: ["skills", "library", "memory", "技能", "记忆", "能力库"] },
+  { key: "skills", label: "技能", icon: Brain, keywords: ["skills", "library", "技能", "能力库"] },
   { key: "settings", label: "设置", icon: Settings, keywords: ["settings", "config", "preferences", "设置", "配置"] },
 ];
 
