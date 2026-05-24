@@ -96,6 +96,9 @@ export interface MeetingTranscriptSegment {
   audio_offset_ms: number | null;
   source: MeetingASRProvider;
   created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  edit_revision: number;
 }
 
 export interface ListMeetingTranscriptSegmentsResponse {
@@ -104,12 +107,36 @@ export interface ListMeetingTranscriptSegmentsResponse {
 }
 
 export interface CreateMeetingTranscriptSegmentRequest {
-  seq: number;
+  seq?: number;
   speaker_label?: string;
   text: string;
   confidence?: number;
   source?: MeetingASRProvider;
   audio_offset_ms?: number | null;
+}
+
+export interface UpdateMeetingTranscriptSegmentRequest {
+  speaker_label?: string;
+  text: string;
+}
+
+export interface SplitMeetingTranscriptSegmentRequest {
+  text_before: string;
+  text_after: string;
+  speaker_label_after?: string;
+}
+
+export interface SplitMeetingTranscriptSegmentResponse {
+  segments: MeetingTranscriptSegment[];
+}
+
+export interface MergeMeetingTranscriptSegmentsRequest {
+  target_segment_id: string;
+}
+
+export interface MergeMeetingTranscriptSegmentsResponse {
+  segment: MeetingTranscriptSegment;
+  deleted_segment_id: string;
 }
 
 export interface MeetingInsightCard {
@@ -158,4 +185,72 @@ export interface MeetingSummary {
   duration_seconds: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface MeetingAudioAsset {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  meeting_id: string;
+  filename: string;
+  url: string;
+  download_url: string;
+  content_type: string;
+  size_bytes: number;
+  duration_seconds: number | null;
+  status: "available" | "failed" | "deleted";
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListMeetingAudioAssetsResponse {
+  assets: MeetingAudioAsset[];
+  total: number;
+}
+
+export interface SaveMeetingAudioAssetRequest {
+  file: File;
+  duration_seconds?: number | null;
+}
+
+export type MeetingASRJobProvider = "local" | "external" | "noop";
+export type MeetingASRJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export interface MeetingASRJob {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  meeting_id: string;
+  audio_asset_id: string;
+  provider: MeetingASRJobProvider;
+  status: MeetingASRJobStatus;
+  error_message: string;
+  retry_count: number;
+  source_seq_start: number | null;
+  source_seq_end: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListMeetingASRJobsResponse {
+  jobs: MeetingASRJob[];
+  total: number;
+}
+
+export interface CreateMeetingASRJobRequest {
+  provider?: MeetingASRJobProvider;
+}
+
+export interface MeetingASRProviderStatus {
+  configured: boolean;
+  available: boolean;
+  command_name?: string;
+  timeout_seconds: number;
+  error?: string;
+}
+
+export interface MeetingASRStatus {
+  local: MeetingASRProviderStatus;
+  external: MeetingASRProviderStatus;
 }

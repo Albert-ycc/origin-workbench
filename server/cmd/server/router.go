@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -120,6 +121,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowedEmailDomains: splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
+	if pool != nil {
+		go func() {
+			jobs, err := h.RecoverStaleMeetingASRJobs(context.Background(), time.Now().Add(-time.Minute))
+			if err != nil {
+				slog.Warn("meeting ASR stale job recovery failed", "error", err)
+				return
+			}
+			if len(jobs) > 0 {
+				slog.Info("meeting ASR stale jobs recovered", "count", len(jobs))
+			}
+		}()
+	}
 	if opts.DaemonWakeup != nil {
 		h.TaskService.Wakeup = opts.DaemonWakeup
 	}
@@ -532,12 +545,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 			r.Get("/api/v12/teams/{teamId}/projects", h.ListProjectsByTeamV12)
 
-			// Meeting copilot (Origin §18 — realtime transcript + evidence cards).
-			// Raw audio stays in the desktop renderer for MVP; backend receives
-			// text transcript segments and emits workspace-scoped realtime events.
+			// Meeting copilot (Origin §18 — meeting audio, realtime transcript,
+			// evidence cards, and workspace-scoped realtime events).
 			r.Route("/api/v13/meetings", func(r chi.Router) {
 				r.Get("/", h.ListMeetingSessions)
 				r.Post("/", h.CreateMeetingSession)
+				r.Get("/asr/status", h.GetMeetingASRStatus)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetMeetingSession)
 					r.Patch("/", h.UpdateMeetingSession)
@@ -547,8 +560,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/archive", h.ArchiveMeetingSession)
 					r.Get("/summary", h.GetMeetingSummary)
 					r.Post("/summary", h.GenerateMeetingSummary)
+					r.Get("/audio-assets", h.ListMeetingAudioAssets)
+					r.Post("/audio-assets", h.UploadMeetingAudioAsset)
+					r.Delete("/audio-assets/{assetId}", h.DeleteMeetingAudioAsset)
+					r.Post("/audio-assets/{assetId}/asr-jobs", h.CreateMeetingASRJob)
+					r.Get("/asr-jobs", h.ListMeetingASRJobs)
+					r.Post("/asr-jobs/{jobId}/retry", h.RetryMeetingASRJob)
 					r.Get("/transcript-segments", h.ListMeetingTranscriptSegments)
 					r.Post("/transcript-segments", h.CreateMeetingTranscriptSegment)
+					r.Patch("/transcript-segments/{segmentId}", h.UpdateMeetingTranscriptSegment)
+					r.Delete("/transcript-segments/{segmentId}", h.DeleteMeetingTranscriptSegment)
+					r.Post("/transcript-segments/{segmentId}/split", h.SplitMeetingTranscriptSegment)
+					r.Post("/transcript-segments/{segmentId}/merge", h.MergeMeetingTranscriptSegments)
 					r.Get("/insights", h.ListMeetingInsightCards)
 					r.Patch("/insights/{insightId}", h.UpdateMeetingInsightStatus)
 				})

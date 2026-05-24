@@ -70,6 +70,9 @@ export type WSEventType =
   | "meeting:stopped"
   | "meeting:deleted"
   | "meeting:transcript_segment_created"
+  | "meeting:transcript_segment_updated"
+  | "meeting:transcript_segment_deleted"
+  | "meeting:asr_job_updated"
   | "meeting:insight_created"
   | "meeting:insight_updated"
   | "meeting:strong_alert_created"
@@ -210,6 +213,16 @@ export interface MeetingSessionPayload {
 export interface MeetingTranscriptSegmentCreatedPayload {
   meeting_id: string;
   segment: MeetingTranscriptSegment;
+}
+
+export interface MeetingTranscriptSegmentUpdatedPayload {
+  meeting_id: string;
+  segment: MeetingTranscriptSegment;
+}
+
+export interface MeetingTranscriptSegmentDeletedPayload {
+  meeting_id: string;
+  segment_id: string;
 }
 
 export interface MeetingInsightCardPayload {

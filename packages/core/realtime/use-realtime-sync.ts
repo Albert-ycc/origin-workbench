@@ -71,8 +71,10 @@ import type {
   ChatDonePayload,
   ChatPendingTask,
   InvitationCreatedPayload,
+  ListMeetingASRJobsResponse,
   ListMeetingInsightCardsResponse,
   ListMeetingTranscriptSegmentsResponse,
+  MeetingASRJob,
   TeamMessageCreatedPayload,
   AgentMemoryCreatedPayload,
   AgentSkillCandidateCreatedPayload,
@@ -81,6 +83,8 @@ import type {
   MeetingSessionPayload,
   MeetingSummaryCreatedPayload,
   MeetingTranscriptSegmentCreatedPayload,
+  MeetingTranscriptSegmentDeletedPayload,
+  MeetingTranscriptSegmentUpdatedPayload,
   TaskMessageChunkPayload,
   TaskMessageCompletePayload,
   ListRoomMessagesResponse,
@@ -264,6 +268,9 @@ export function useRealtimeSync(
       "meeting:stopped",
       "meeting:deleted",
       "meeting:transcript_segment_created",
+      "meeting:transcript_segment_updated",
+      "meeting:transcript_segment_deleted",
+      "meeting:asr_job_updated",
       "meeting:insight_created",
       "meeting:insight_updated",
       "meeting:strong_alert_created",
@@ -347,27 +354,86 @@ export function useRealtimeSync(
       qc.removeQueries({ queryKey: meetingKeys.transcript(wsId, meeting_id) });
       qc.removeQueries({ queryKey: meetingKeys.insights(wsId, meeting_id) });
       qc.removeQueries({ queryKey: meetingKeys.summary(wsId, meeting_id) });
+      qc.removeQueries({ queryKey: meetingKeys.audioAssets(wsId, meeting_id) });
+      qc.removeQueries({ queryKey: meetingKeys.asrJobs(wsId, meeting_id) });
       if (project_id) qc.invalidateQueries({ queryKey: meetingKeys.list(wsId, project_id) });
       qc.invalidateQueries({ queryKey: meetingKeys.list(wsId) });
     });
 
+    const upsertMeetingTranscriptSegment = (
+      payload: MeetingTranscriptSegmentCreatedPayload | MeetingTranscriptSegmentUpdatedPayload,
+    ) => {
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.meeting_id || !payload.segment?.id) return;
+      qc.setQueryData<ListMeetingTranscriptSegmentsResponse>(
+        meetingKeys.transcript(wsId, payload.meeting_id),
+        (old) => {
+          if (!old) return old;
+          const segments = [
+            ...old.segments.filter((segment) => segment.id !== payload.segment.id),
+            payload.segment,
+          ].sort((a, b) => a.seq - b.seq);
+          return { segments, total: segments.length };
+        },
+      );
+    };
+
     const unsubMeetingTranscriptSegmentCreated = ws.on(
       "meeting:transcript_segment_created",
+      (p) => upsertMeetingTranscriptSegment(p as MeetingTranscriptSegmentCreatedPayload),
+    );
+    const unsubMeetingTranscriptSegmentUpdated = ws.on(
+      "meeting:transcript_segment_updated",
       (p) => {
-        const payload = p as MeetingTranscriptSegmentCreatedPayload;
+        const payload = p as MeetingTranscriptSegmentUpdatedPayload;
+        upsertMeetingTranscriptSegment(payload);
         const wsId = getCurrentWsId();
-        if (!wsId || !payload.meeting_id || !payload.segment?.id) return;
+        if (!wsId || !payload.meeting_id) return;
+        qc.invalidateQueries({ queryKey: meetingKeys.summary(wsId, payload.meeting_id) });
+        qc.invalidateQueries({ queryKey: meetingKeys.insights(wsId, payload.meeting_id) });
+      },
+    );
+    const unsubMeetingTranscriptSegmentDeleted = ws.on(
+      "meeting:transcript_segment_deleted",
+      (p) => {
+        const payload = p as MeetingTranscriptSegmentDeletedPayload;
+        const wsId = getCurrentWsId();
+        if (!wsId || !payload.meeting_id || !payload.segment_id) return;
         qc.setQueryData<ListMeetingTranscriptSegmentsResponse>(
           meetingKeys.transcript(wsId, payload.meeting_id),
           (old) => {
             if (!old) return old;
-            if (old.segments.some((segment) => segment.id === payload.segment.id)) return old;
-            const segments = [...old.segments, payload.segment].sort((a, b) => a.seq - b.seq);
+            const segments = old.segments.filter((segment) => segment.id !== payload.segment_id);
             return { segments, total: segments.length };
           },
         );
+        qc.invalidateQueries({ queryKey: meetingKeys.summary(wsId, payload.meeting_id) });
+        qc.invalidateQueries({ queryKey: meetingKeys.insights(wsId, payload.meeting_id) });
       },
     );
+
+    const unsubMeetingASRJobUpdated = ws.on("meeting:asr_job_updated", (p) => {
+      const payload = p as { meeting_id?: string; job?: MeetingASRJob };
+      const wsId = getCurrentWsId();
+      if (!wsId || !payload.meeting_id || !payload.job?.id) return;
+      qc.setQueryData<ListMeetingASRJobsResponse>(
+        meetingKeys.asrJobs(wsId, payload.meeting_id),
+        (old) => {
+          const existingJobs = old?.jobs ?? [];
+          const jobs = [
+            payload.job!,
+            ...existingJobs.filter((job) => job.id !== payload.job!.id),
+          ];
+          return { jobs, total: jobs.length };
+        },
+      );
+      qc.invalidateQueries({ queryKey: meetingKeys.asrJobs(wsId, payload.meeting_id) });
+      if (payload.job.status === "completed") {
+        qc.invalidateQueries({ queryKey: meetingKeys.transcript(wsId, payload.meeting_id) });
+        qc.invalidateQueries({ queryKey: meetingKeys.insights(wsId, payload.meeting_id) });
+        qc.invalidateQueries({ queryKey: meetingKeys.summary(wsId, payload.meeting_id) });
+      }
+    });
 
     const upsertMeetingInsight = (payload: MeetingInsightCardPayload) => {
       const wsId = getCurrentWsId();
@@ -980,6 +1046,9 @@ export function useRealtimeSync(
       unsubMeetingStopped();
       unsubMeetingDeleted();
       unsubMeetingTranscriptSegmentCreated();
+      unsubMeetingTranscriptSegmentUpdated();
+      unsubMeetingTranscriptSegmentDeleted();
+      unsubMeetingASRJobUpdated();
       unsubMeetingInsightCreated();
       unsubMeetingInsightUpdated();
       unsubMeetingStrongAlertCreated();

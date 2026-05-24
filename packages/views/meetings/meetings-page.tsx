@@ -11,6 +11,7 @@ import {
   Clock3,
   Download,
   FileText,
+  Merge,
   MessageSquareText,
   Mic,
   MoreHorizontal,
@@ -19,6 +20,8 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Save,
+  Scissors,
   Send,
   Sparkles,
   Square,
@@ -26,29 +29,45 @@ import {
   Upload,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import {
   meetingDetailOptions,
+  meetingASRJobOptions,
+  meetingASRStatusOptions,
+  meetingAudioAssetOptions,
   meetingInsightOptions,
   meetingListOptions,
   meetingSummaryOptions,
   meetingTranscriptOptions,
   useArchiveMeetingSession,
+  useCreateMeetingASRJob,
   useCreateMeetingSession,
   useCreateMeetingTranscriptSegment,
+  useDeleteMeetingAudioAsset,
   useDeleteMeetingSession,
+  useDeleteMeetingTranscriptSegment,
   useGenerateMeetingSummary,
+  useMergeMeetingTranscriptSegments,
+  useRetryMeetingASRJob,
+  useSaveMeetingAudioAsset,
+  useSplitMeetingTranscriptSegment,
   useStartMeetingSession,
   useStopMeetingSession,
+  useUpdateMeetingTranscriptSegment,
   useUpdateMeetingInsightStatus,
   useUpdateMeetingSession,
 } from "@multica/core/meetings";
 import { projectV12ListOptions } from "@multica/core/projects-v12";
 import type {
+  MeetingASRJob,
+  MeetingASRJobStatus,
   MeetingASRProvider,
+  MeetingASRStatus,
+  MeetingAudioAsset,
   MeetingInsightCard,
   MeetingSession,
   MeetingSummary,
@@ -101,12 +120,12 @@ import {
   type MeetingAudioRecorderController,
   useMeetingAudioRecorder,
 } from "./audio-recorder";
-import { useLiveTranscription } from "./live-transcription";
+import { type LiveTranscriptionStatus, useLiveTranscription } from "./live-transcription";
 
 const EMPTY_PROJECTS: ProjectV12[] = [];
 
 export const meetingPrimarySurfaces = ["实时转写流", "关键洞察 / 旁听提示"] as const;
-export const meetingBackupSurfaces = ["本地录音备份"] as const;
+export const meetingBackupSurfaces = ["临时录音"] as const;
 
 export const meetingNavigationCopy = {
   routeTitle: "会议",
@@ -124,6 +143,16 @@ export const meetingDangerActions = ["归档", "删除"] as const;
 export const meetingDangerConfirmations = {
   meetingDelete: "alert-dialog",
 } as const;
+
+export function meetingTranscriptionAsideCopy(
+  provider: MeetingASRProvider,
+  liveStatus: LiveTranscriptionStatus,
+): string {
+  if (provider === "manual") return "手动记录";
+  if (provider === "external") return "外部转写待接入";
+  if (provider === "local") return "录音保存后转写";
+  return transcriptionStatusCopy[liveStatus] ?? "待启动";
+}
 
 type MeetingTemplate = {
   id: string;
@@ -388,14 +417,24 @@ function MeetingSessionView({
   const { data: transcriptPage } = useQuery(meetingTranscriptOptions(wsId, meetingId));
   const { data: insightPage } = useQuery(meetingInsightOptions(wsId, meetingId));
   const { data: summary } = useQuery(meetingSummaryOptions(wsId, meetingId));
+  const { data: audioAssetsPage } = useQuery(meetingAudioAssetOptions(wsId, meetingId));
+  const { data: asrJobsPage } = useQuery(meetingASRJobOptions(wsId, meetingId));
   const startMeeting = useStartMeetingSession(wsId);
   const stopMeeting = useStopMeetingSession(wsId);
   const archiveMeeting = useArchiveMeetingSession(wsId);
   const deleteMeeting = useDeleteMeetingSession(wsId);
   const updateMeeting = useUpdateMeetingSession(wsId);
   const addSegment = useCreateMeetingTranscriptSegment(wsId);
+  const updateSegment = useUpdateMeetingTranscriptSegment(wsId);
+  const deleteSegment = useDeleteMeetingTranscriptSegment(wsId);
+  const splitSegment = useSplitMeetingTranscriptSegment(wsId);
+  const mergeSegment = useMergeMeetingTranscriptSegments(wsId);
   const updateInsight = useUpdateMeetingInsightStatus(wsId);
   const generateSummary = useGenerateMeetingSummary(wsId);
+  const saveAudioAsset = useSaveMeetingAudioAsset(wsId);
+  const deleteAudioAsset = useDeleteMeetingAudioAsset(wsId);
+  const createASRJob = useCreateMeetingASRJob(wsId);
+  const retryASRJob = useRetryMeetingASRJob(wsId);
   const audioRecorder = useMeetingAudioRecorder();
   const audioRecordingState = audioRecorder.state;
   const stopAudioRecording = audioRecorder.stop;
@@ -407,10 +446,14 @@ function MeetingSessionView({
   const [importOpen, setImportOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [savedRecordingAssetId, setSavedRecordingAssetId] = useState<string | null>(null);
+  const [activeASRJobId, setActiveASRJobId] = useState<string | null>(null);
+  const [highlightedTranscriptSeq, setHighlightedTranscriptSeq] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const segments = transcriptPage?.segments ?? [];
   const cards = insightPage?.cards ?? [];
-  const nextSeqRef = useRef(0);
+  const audioAssets = audioAssetsPage?.assets ?? [];
+  const asrJobs = asrJobsPage?.jobs ?? [];
   const seenStrongAlertIdsRef = useRef<Set<string>>(new Set());
   const initializedStrongAlertsRef = useRef(false);
   const autoStartAttemptedMeetingIdRef = useRef<string | null>(null);
@@ -421,10 +464,23 @@ function MeetingSessionView({
   );
   const activeStrongAlert =
     strongAlerts.find((card) => card.id === activeStrongAlertId) ?? strongAlerts[0] ?? null;
+  const savedRecordingAsset = savedRecordingAssetId
+    ? audioAssets.find((asset) => asset.id === savedRecordingAssetId)
+    : null;
+  const activeASRJob = activeASRJobId
+    ? asrJobs.find((job) => job.id === activeASRJobId)
+    : asrJobs[0] ?? null;
 
   useEffect(() => {
-    nextSeqRef.current = Math.max(nextSeqRef.current, segments.at(-1)?.seq ?? 0);
-  }, [segments]);
+    setSavedRecordingAssetId(null);
+    setActiveASRJobId(null);
+  }, [audioRecorder.recording?.url]);
+
+  useEffect(() => {
+    if (!highlightedTranscriptSeq || typeof document === "undefined") return;
+    const element = document.getElementById(transcriptSegmentDomId(highlightedTranscriptSeq));
+    element?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedTranscriptSeq]);
 
   const createTranscriptSegment = useCallback(
     async (
@@ -434,13 +490,10 @@ function MeetingSessionView({
     ): Promise<boolean> => {
       const trimmed = text.trim();
       if (!trimmed) return false;
-      const seq = nextSeqRef.current + 1;
-      nextSeqRef.current = seq;
       try {
         await addSegment.mutateAsync({
           meetingId,
           data: {
-            seq,
             text: trimmed,
             speaker_label: speakerLabel,
             source,
@@ -449,7 +502,6 @@ function MeetingSessionView({
         });
         return true;
       } catch (error) {
-        nextSeqRef.current = Math.max(0, nextSeqRef.current - 1);
         toast.error(error instanceof Error ? error.message : "保存转写失败");
         return false;
       }
@@ -462,6 +514,73 @@ function MeetingSessionView({
       await createTranscriptSegment(text, "renderer");
     },
   });
+
+  const saveRecordingToMeeting = async () => {
+    const recording = audioRecorder.recording;
+    if (!recording || !meeting) return;
+    const filename = buildMeetingAudioFileName(meeting.title, recording.startedAt, recording.mimeType);
+    const file = new File([recording.blob], filename, {
+      type: recording.mimeType,
+      lastModified: recording.startedAt.getTime(),
+    });
+    try {
+      const asset = await saveAudioAsset.mutateAsync({
+        meetingId: meeting.id,
+        data: {
+          file,
+          duration_seconds: recording.durationSeconds,
+        },
+      });
+      setSavedRecordingAssetId(asset.id);
+      const provider = meeting.asr_provider === "external" ? "external" : "local";
+      const job = await createASRJob.mutateAsync({
+        meetingId: meeting.id,
+        audioAssetId: asset.id,
+        data: { provider },
+      });
+      setActiveASRJobId(job.id);
+      if (job.status === "failed") {
+        toast.message("录音已保存到会议，自动转写暂不可用");
+      } else {
+        toast.success("录音已保存到会议，转写任务已在后台执行");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "录音保存或转写任务创建失败");
+    }
+  };
+
+  const retryActiveASRJob = async () => {
+    if (!meeting || !activeASRJob) return;
+    await retryMeetingASRJobById(activeASRJob.id);
+  };
+
+  const retryMeetingASRJobById = async (jobId: string) => {
+    if (!meeting) return;
+    try {
+      const job = await retryASRJob.mutateAsync({ meetingId: meeting.id, jobId });
+      setActiveASRJobId(job.id);
+      if (job.status === "failed") {
+        toast.message("转写重试失败，仍可手动导入转写");
+      } else {
+        toast.success("转写任务已重试");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "转写重试失败");
+    }
+  };
+
+  const deleteAudioAssetById = async (assetId: string) => {
+    if (!meeting) return;
+    try {
+      await deleteAudioAsset.mutateAsync({ meetingId: meeting.id, assetId });
+      if (savedRecordingAssetId === assetId) {
+        setSavedRecordingAssetId(null);
+      }
+      toast.success("录音已删除");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除录音失败");
+    }
+  };
 
   useEffect(() => {
     if (meeting?.status !== "running" && audioRecordingState === "recording") {
@@ -568,14 +687,10 @@ function MeetingSessionView({
   const projectTitle = projectById.get(meeting.project_id)?.title ?? "未命名项目";
   const effectiveASRProvider =
     manualFallbackMeetingId === meeting.id ? "manual" : meeting.asr_provider;
-  const transcriptionAside =
-    effectiveASRProvider === "manual"
-      ? "手动记录"
-      : effectiveASRProvider === "external"
-        ? "外部转写待接入"
-        : effectiveASRProvider === "local"
-          ? "本地转写待接入"
-          : transcriptionStatusCopy[liveTranscription.status];
+  const transcriptionAside = meetingTranscriptionAsideCopy(
+    effectiveASRProvider,
+    liveTranscription.status,
+  );
   const durationSeconds = getMeetingDurationSeconds(meeting);
   const openCards = cards.filter((card) => card.status === "open");
 
@@ -585,6 +700,60 @@ function MeetingSessionView({
     const saved = await createTranscriptSegment(text, "manual");
     if (saved) {
       setDraft("");
+    }
+  };
+
+  const updateTranscriptSegmentById = async (
+    segmentId: string,
+    data: { speaker_label?: string; text: string },
+  ) => {
+    try {
+      await updateSegment.mutateAsync({
+        meetingId: meeting.id,
+        segmentId,
+        data,
+      });
+      toast.success("转写已更新");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新转写失败");
+    }
+  };
+
+  const deleteTranscriptSegmentById = async (segmentId: string) => {
+    try {
+      await deleteSegment.mutateAsync({ meetingId: meeting.id, segmentId });
+      toast.success("转写已删除");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除转写失败");
+    }
+  };
+
+  const splitTranscriptSegmentById = async (
+    segmentId: string,
+    data: { text_before: string; text_after: string; speaker_label_after?: string },
+  ) => {
+    try {
+      await splitSegment.mutateAsync({
+        meetingId: meeting.id,
+        segmentId,
+        data,
+      });
+      toast.success("转写已拆分");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "拆分转写失败");
+    }
+  };
+
+  const mergeTranscriptSegmentsById = async (segmentId: string, targetSegmentId: string) => {
+    try {
+      await mergeSegment.mutateAsync({
+        meetingId: meeting.id,
+        segmentId,
+        data: { target_segment_id: targetSegmentId },
+      });
+      toast.success("转写已合并");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "合并转写失败");
     }
   };
 
@@ -735,9 +904,14 @@ function MeetingSessionView({
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <TranscriptFeed
               segments={segments}
+              highlightedSeq={highlightedTranscriptSeq}
               interimTranscript={
                 effectiveASRProvider === "renderer" ? liveTranscription.interimTranscript : ""
               }
+              onUpdateSegment={updateTranscriptSegmentById}
+              onDeleteSegment={deleteTranscriptSegmentById}
+              onSplitSegment={splitTranscriptSegmentById}
+              onMergeSegment={mergeTranscriptSegmentsById}
             />
           </div>
           <div className="border-t p-4">
@@ -760,6 +934,28 @@ function MeetingSessionView({
               realtimeUnavailable={
                 effectiveASRProvider !== "renderer" || !liveTranscription.isSupported
               }
+              saveStatus={
+                saveAudioAsset.isPending
+                  ? "saving"
+                  : savedRecordingAsset
+                    ? "saved"
+                    : saveAudioAsset.isError
+                      ? "error"
+                      : "idle"
+              }
+              savedAssetName={savedRecordingAsset?.filename ?? null}
+              onSaveToMeeting={saveRecordingToMeeting}
+              asrJobStatus={activeASRJob?.status}
+              asrJobError={activeASRJob?.error_message ?? ""}
+              asrJobSourceSeqStart={activeASRJob?.source_seq_start ?? null}
+              asrJobSourceSeqEnd={activeASRJob?.source_seq_end ?? null}
+              onRetryASRJob={activeASRJob?.status === "failed" ? retryActiveASRJob : undefined}
+            />
+            <MeetingAudioAssetHistory
+              assets={audioAssets}
+              jobs={asrJobs}
+              onRetryASRJob={retryMeetingASRJobById}
+              onDeleteAudioAsset={deleteAudioAssetById}
             />
             <div className="flex gap-2">
               <Textarea
@@ -837,8 +1033,13 @@ function MeetingSessionView({
         open={summaryOpen}
         onOpenChange={setSummaryOpen}
         summary={summary}
+        transcriptSegments={segments}
         segmentCount={segments.length}
         pending={generateSummary.isPending}
+        onSelectEvidenceSeq={(seq) => {
+          setSummaryOpen(false);
+          setHighlightedTranscriptSeq(seq);
+        }}
         onGenerate={async () => {
           try {
             await generateSummary.mutateAsync(meeting.id);
@@ -1082,6 +1283,7 @@ function EditMeetingDialog({
   onSaved: () => void;
 }) {
   const wsId = useWorkspaceId();
+  const { data: asrStatus } = useQuery(meetingASRStatusOptions(wsId));
   const updateMeeting = useUpdateMeetingSession(wsId);
   const [title, setTitle] = useState(meeting.title);
   const [goal, setGoal] = useState(meeting.goal);
@@ -1165,6 +1367,7 @@ function EditMeetingDialog({
                   <SelectItem value="external">外部服务</SelectItem>
                 </SelectContent>
               </Select>
+              <MeetingASRStatusNotice selectedProvider={asrProvider} status={asrStatus} />
             </div>
           </div>
         </div>
@@ -1178,6 +1381,56 @@ function EditMeetingDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function MeetingASRStatusNotice({
+  selectedProvider,
+  status,
+}: {
+  selectedProvider: MeetingASRProvider;
+  status?: MeetingASRStatus;
+}) {
+  if (selectedProvider !== "local" && selectedProvider !== "external") return null;
+  const provider = selectedProvider === "local" ? status?.local : status?.external;
+  const copy =
+    selectedProvider === "local"
+      ? {
+          checking: "本地模型检测中",
+          available: "本地模型可用",
+          unavailable: "本地模型不可用",
+          unconfigured: "本地模型未配置",
+          fallback: "设置 MEETING_ASR_LOCAL_COMMAND 后可用",
+          name: "本地命令",
+        }
+      : {
+          checking: "外部服务检测中",
+          available: "外部服务可用",
+          unavailable: "外部服务不可用",
+          unconfigured: "外部服务未配置",
+          fallback: "设置 MEETING_ASR_EXTERNAL_ENDPOINT 后可用",
+          name: "外部服务",
+        };
+  const label = !provider
+    ? copy.checking
+    : provider.available
+      ? copy.available
+      : provider.configured
+        ? copy.unavailable
+        : copy.unconfigured;
+  const detail = !provider
+    ? `正在读取${selectedProvider === "local" ? "本地" : "外部"}转写配置`
+    : provider.available
+      ? `${provider.command_name ?? copy.name} · ${provider.timeout_seconds} 秒超时`
+      : provider.error || copy.fallback;
+
+  return (
+    <div className="mt-2 rounded-md border bg-background px-2 py-1.5 text-xs">
+      <div className="flex items-center gap-2">
+        <Badge variant={provider?.available ? "default" : "secondary"}>{label}</Badge>
+        <span className="min-w-0 truncate text-muted-foreground">{detail}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1320,15 +1573,19 @@ function SummaryDialog({
   open,
   onOpenChange,
   summary,
+  transcriptSegments,
   segmentCount,
   pending,
+  onSelectEvidenceSeq,
   onGenerate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   summary?: MeetingSummary;
+  transcriptSegments: MeetingTranscriptSegment[];
   segmentCount: number;
   pending: boolean;
+  onSelectEvidenceSeq: (seq: number) => void;
   onGenerate: () => void;
 }) {
   return (
@@ -1340,8 +1597,10 @@ function SummaryDialog({
         <div className="min-h-0 overflow-y-auto">
           <SummaryPanel
             summary={summary}
+            transcriptSegments={transcriptSegments}
             segmentCount={segmentCount}
             pending={pending}
+            onSelectEvidenceSeq={onSelectEvidenceSeq}
             onGenerate={onGenerate}
           />
         </div>
@@ -1427,13 +1686,52 @@ function MeetingListItem({
   );
 }
 
-function TranscriptFeed({
-  segments,
-  interimTranscript,
-}: {
+type TranscriptFeedProps = {
   segments: MeetingTranscriptSegment[];
+  highlightedSeq?: number | null;
   interimTranscript: string;
-}) {
+  onUpdateSegment?: (
+    segmentId: string,
+    data: { speaker_label?: string; text: string },
+  ) => void | Promise<void>;
+  onDeleteSegment?: (segmentId: string) => void | Promise<void>;
+  onSplitSegment?: (
+    segmentId: string,
+    data: { text_before: string; text_after: string; speaker_label_after?: string },
+  ) => void | Promise<void>;
+  onMergeSegment?: (segmentId: string, targetSegmentId: string) => void | Promise<void>;
+};
+
+export function buildTranscriptSplitDraft(text: string) {
+  const trimmed = text.trim();
+  if (trimmed.length < 2) return null;
+  const newlineIndex = trimmed.indexOf("\n");
+  if (newlineIndex > 0 && newlineIndex < trimmed.length - 1) {
+    return {
+      text_before: trimmed.slice(0, newlineIndex).trim(),
+      text_after: trimmed.slice(newlineIndex + 1).trim(),
+    };
+  }
+  const midpoint = Math.floor(trimmed.length / 2);
+  if (midpoint <= 0 || midpoint >= trimmed.length) return null;
+  return {
+    text_before: trimmed.slice(0, midpoint).trim(),
+    text_after: trimmed.slice(midpoint).trim(),
+  };
+}
+
+export function TranscriptFeed({
+  segments,
+  highlightedSeq,
+  interimTranscript,
+  onUpdateSegment,
+  onDeleteSegment,
+  onSplitSegment,
+  onMergeSegment,
+}: TranscriptFeedProps) {
+  const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
+  const [editSpeaker, setEditSpeaker] = useState("");
+  const [editText, setEditText] = useState("");
   const trimmedInterim = interimTranscript.trim();
   if (segments.length === 0 && !trimmedInterim) {
     return (
@@ -1444,17 +1742,125 @@ function TranscriptFeed({
       />
     );
   }
+  const beginEdit = (segment: MeetingTranscriptSegment) => {
+    setEditingSegmentId(segment.id);
+    setEditSpeaker(segment.speaker_label);
+    setEditText(segment.text);
+  };
+  const cancelEdit = () => {
+    setEditingSegmentId(null);
+    setEditSpeaker("");
+    setEditText("");
+  };
+  const saveEdit = async (segmentId: string) => {
+    if (!editText.trim() || !onUpdateSegment) return;
+    await onUpdateSegment(segmentId, {
+      speaker_label: editSpeaker.trim() || undefined,
+      text: editText.trim(),
+    });
+    cancelEdit();
+  };
+
   return (
     <div className="space-y-2">
-      {segments.map((segment) => (
-        <div key={segment.id} className="rounded-md border bg-background px-3 py-2">
-          <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span className="truncate">{segment.speaker_label || sourceCopy[segment.source] || "现场"}</span>
-            <span className="shrink-0">#{segment.seq}</span>
+      {segments.map((segment, index) => {
+        const nextSegment = segments[index + 1];
+        const isEditing = editingSegmentId === segment.id;
+        const splitDraft = buildTranscriptSplitDraft(segment.text);
+        return (
+          <div
+            id={transcriptSegmentDomId(segment.seq)}
+            key={segment.id}
+            className={cn(
+              "rounded-md border bg-background px-3 py-2",
+              highlightedSeq === segment.seq && "border-primary bg-primary/5 ring-1 ring-primary/20",
+            )}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span className="truncate">
+                {segment.speaker_label || sourceCopy[segment.source] || "现场"}
+              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <span>#{segment.seq}</span>
+                {onUpdateSegment && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => beginEdit(segment)}
+                    title="编辑转写"
+                    aria-label={`编辑第 ${segment.seq} 段转写`}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                )}
+                {onSplitSegment && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={!splitDraft}
+                    onClick={() => splitDraft && onSplitSegment(segment.id, splitDraft)}
+                    title="拆分转写"
+                    aria-label={`拆分第 ${segment.seq} 段转写`}
+                  >
+                    <Scissors className="size-3.5" />
+                  </Button>
+                )}
+                {onMergeSegment && nextSegment && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => onMergeSegment(segment.id, nextSegment.id)}
+                    title="合并下一段"
+                    aria-label={`合并第 ${segment.seq} 段和第 ${nextSegment.seq} 段转写`}
+                  >
+                    <Merge className="size-3.5" />
+                  </Button>
+                )}
+                {onDeleteSegment && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => onDeleteSegment(segment.id)}
+                    title="删除转写"
+                    aria-label={`删除第 ${segment.seq} 段转写`}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            {isEditing ? (
+              <div className="space-y-2">
+                <Input
+                  value={editSpeaker}
+                  onChange={(event) => setEditSpeaker(event.target.value)}
+                  aria-label="转写说话人"
+                  className="h-8 text-sm"
+                />
+                <Textarea
+                  value={editText}
+                  onChange={(event) => setEditText(event.target.value)}
+                  aria-label="转写内容"
+                  rows={3}
+                  className="min-h-[88px] resize-none text-sm"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                    <X className="size-4" />
+                    取消
+                  </Button>
+                  <Button size="sm" onClick={() => saveEdit(segment.id)} disabled={!editText.trim()}>
+                    <Save className="size-4" />
+                    保存
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-6">{segment.text}</p>
+            )}
           </div>
-          <p className="whitespace-pre-wrap text-sm leading-6">{segment.text}</p>
-        </div>
-      ))}
+        );
+      })}
       {trimmedInterim && (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
           <div className="mb-1 flex items-center gap-2 text-[11px] font-medium text-primary">
@@ -1511,32 +1917,138 @@ export function SourceImportPanel({
   );
 }
 
-function AudioRecorderPanel({
+export function MeetingAudioAssetHistory({
+  assets,
+  jobs,
+  onRetryASRJob,
+  onDeleteAudioAsset,
+}: {
+  assets: MeetingAudioAsset[];
+  jobs: MeetingASRJob[];
+  onRetryASRJob?: (jobId: string) => void;
+  onDeleteAudioAsset?: (assetId: string) => void;
+}) {
+  if (assets.length === 0) return null;
+  const history = groupMeetingAudioHistory(assets, jobs);
+
+  return (
+    <div className="mb-2 rounded-md border bg-background px-3 py-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Volume2 className="size-4 text-muted-foreground" />
+          已保存录音
+        </div>
+        <span className="shrink-0 text-xs text-muted-foreground">{assets.length} 个文件</span>
+      </div>
+      <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+        {history.map(({ asset, latestJob, jobs: assetJobs }) => {
+          return (
+            <div
+              key={asset.id}
+              className="flex items-center justify-between gap-3 rounded-md bg-muted/30 px-2 py-1.5"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{asset.filename}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {formatMeetingAudioAssetHistory(asset, latestJob, assetJobs.length)}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {latestJob && <MeetingASRJobBadge status={latestJob.status} />}
+                {latestJob?.status === "failed" && onRetryASRJob && (
+                  <Button size="sm" variant="outline" onClick={() => onRetryASRJob(latestJob.id)}>
+                    <RefreshCw className="size-4" />
+                    重试
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  render={<a href={asset.download_url || asset.url} download={asset.filename} />}
+                >
+                  <Download className="size-4" />
+                  下载
+                </Button>
+                {onDeleteAudioAsset && (
+                  <Button size="sm" variant="ghost" onClick={() => onDeleteAudioAsset(asset.id)}>
+                    <Trash2 className="size-4" />
+                    删除
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function groupMeetingAudioHistory(assets: MeetingAudioAsset[], jobs: MeetingASRJob[]) {
+  const jobsByAssetId = new Map<string, MeetingASRJob[]>();
+  for (const job of jobs) {
+    const assetJobs = jobsByAssetId.get(job.audio_asset_id) ?? [];
+    assetJobs.push(job);
+    jobsByAssetId.set(job.audio_asset_id, assetJobs);
+  }
+
+  return assets.map((asset) => {
+    const assetJobs = [...(jobsByAssetId.get(asset.id) ?? [])].sort((a, b) =>
+      (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at),
+    );
+    return {
+      asset,
+      jobs: assetJobs,
+      latestJob: assetJobs[0],
+    };
+  });
+}
+
+export function AudioRecorderPanel({
   meetingTitle,
   recorder,
   disabled,
   realtimeUnavailable,
+  saveStatus = "idle",
+  savedAssetName,
+  onSaveToMeeting,
+  asrJobStatus,
+  asrJobError,
+  asrJobSourceSeqStart,
+  asrJobSourceSeqEnd,
+  onRetryASRJob,
 }: {
   meetingTitle: string;
   recorder: MeetingAudioRecorderController;
   disabled: boolean;
   realtimeUnavailable: boolean;
+  saveStatus?: "idle" | "saving" | "saved" | "error";
+  savedAssetName?: string | null;
+  onSaveToMeeting?: () => void;
+  asrJobStatus?: MeetingASRJobStatus;
+  asrJobError?: string;
+  asrJobSourceSeqStart?: number | null;
+  asrJobSourceSeqEnd?: number | null;
+  onRetryASRJob?: () => void;
 }) {
   const recording = recorder.recording;
   const isRecording = recorder.state === "recording";
   const canDownload = Boolean(recording);
+  const temporaryRecordingWarning = "停止后先保存到会议，下载副本只是本地兜底";
+  const recordingErrorNextStep = "检查系统麦克风权限或外接麦克风，也可继续手动记录";
+  const canSaveToMeeting = Boolean(recording && onSaveToMeeting);
   const statusText =
     recorder.state === "recording"
-      ? `录音中 ${formatRecordingDuration(recorder.elapsedSeconds)}`
+      ? `临时录音中 ${formatRecordingDuration(recorder.elapsedSeconds)}，${temporaryRecordingWarning}`
       : recorder.state === "ready" && recording
-        ? `已录制 ${formatRecordingDuration(recording.durationSeconds)}`
+        ? `已临时录制 ${formatRecordingDuration(recording.durationSeconds)}，${temporaryRecordingWarning}`
         : recorder.state === "error" && recorder.error
           ? recorder.error
           : disabled
             ? "开始会议后可录音"
             : realtimeUnavailable
-              ? "实时转写不可用，先录音备份"
-              : "可同步保存录音备份";
+              ? `实时转写不可用，可先临时录音；${temporaryRecordingWarning}`
+              : `临时录音；${temporaryRecordingWarning}`;
   const downloadName = recording
     ? buildMeetingAudioFileName(meetingTitle, recording.startedAt, recording.mimeType)
     : "";
@@ -1549,15 +2061,47 @@ function AudioRecorderPanel({
     <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 px-3 py-2">
       <div className="flex min-w-[180px] flex-1 items-center gap-2 text-sm">
         <Mic className={cn("size-4", isRecording ? "text-red-600" : "text-muted-foreground")} />
-        <span className="font-medium">录音备份</span>
-        <span
-          className={cn(
-            "truncate text-xs",
-            recorder.state === "error" ? "text-destructive" : "text-muted-foreground",
+        <span className="font-medium">临时录音</span>
+        <div className="min-w-0 text-xs">
+          <div
+            className={cn(
+              "truncate",
+              recorder.state === "error" ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            {statusText}
+          </div>
+          {recorder.state === "error" && (
+            <div className="truncate text-muted-foreground">{recordingErrorNextStep}</div>
           )}
-        >
-          {statusText}
-        </span>
+          <div className="text-muted-foreground">
+            当前只录麦克风，不捕获系统声音或会议软件扬声器音频；需要完整会议音频时，请用会议软件录制后导入。
+          </div>
+          {saveStatus === "saved" && (
+            <div className="truncate text-muted-foreground">
+              已保存到会议{savedAssetName ? `：${savedAssetName}` : ""}
+            </div>
+          )}
+          {saveStatus === "error" && (
+            <div className="truncate text-destructive">保存到会议失败，可重试或下载副本</div>
+          )}
+          {asrJobStatus === "running" && (
+            <div className="truncate text-muted-foreground">自动转写任务处理中</div>
+          )}
+          {asrJobStatus === "failed" && (
+            <div className="truncate text-destructive">
+              自动转写失败{asrJobError ? `：${asrJobError}` : ""}
+            </div>
+          )}
+          {asrJobStatus === "completed" && (
+            <div className="truncate text-muted-foreground">
+              自动转写已完成
+              {asrJobSourceSeqStart && asrJobSourceSeqEnd
+                ? `，已追加 ${asrJobSourceSeqStart}-${asrJobSourceSeqEnd} 段转写`
+                : ""}
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {isRecording ? (
@@ -1571,24 +2115,100 @@ function AudioRecorderPanel({
             开始录音
           </Button>
         )}
-        {canDownload && recording && (
+        {canSaveToMeeting && (
           <Button
             size="sm"
             variant="secondary"
+            onClick={onSaveToMeeting}
+            disabled={saveStatus === "saving" || saveStatus === "saved"}
+          >
+            <Upload className={cn("size-4", saveStatus === "saving" && "animate-pulse")} />
+            {saveStatus === "saving"
+              ? "保存中"
+              : saveStatus === "saved"
+                ? "已保存到会议"
+                : "保存到会议"}
+          </Button>
+        )}
+        {canDownload && recording && (
+          <Button
+            size="sm"
+            variant={canSaveToMeeting ? "outline" : "secondary"}
             render={<a href={recording.url} download={downloadName} />}
           >
             <Download className="size-4" />
-            保存录音
+            {canSaveToMeeting ? "下载副本" : "保存录音"}
           </Button>
         )}
         {canDownload && (
-          <Button size="icon-sm" variant="ghost" onClick={recorder.reset} title="清除录音">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={recorder.reset}
+            disabled={saveStatus === "saving"}
+            title="清除录音"
+          >
             <RotateCcw className="size-4" />
+          </Button>
+        )}
+        {asrJobStatus === "failed" && onRetryASRJob && (
+          <Button size="sm" variant="outline" onClick={onRetryASRJob}>
+            <RefreshCw className="size-4" />
+            重试转写
           </Button>
         )}
       </div>
     </div>
   );
+}
+
+function MeetingASRJobBadge({ status }: { status: MeetingASRJobStatus }) {
+  const tone: Partial<Record<MeetingASRJobStatus, string>> = {
+    completed: "bg-emerald-500/15 text-emerald-700",
+    failed: "bg-red-500/15 text-red-600",
+    running: "bg-blue-500/15 text-blue-700",
+    queued: "bg-muted text-muted-foreground",
+    cancelled: "bg-muted text-muted-foreground",
+  };
+  const label: Record<MeetingASRJobStatus, string> = {
+    queued: "排队中",
+    running: "转写中",
+    completed: "已转写",
+    failed: "失败",
+    cancelled: "已取消",
+  };
+
+  return (
+    <Badge variant="secondary" className={cn("shrink-0", tone[status])}>
+      {label[status]}
+    </Badge>
+  );
+}
+
+function formatMeetingAudioAssetHistory(
+  asset: MeetingAudioAsset,
+  job?: MeetingASRJob,
+  jobCount = job ? 1 : 0,
+): string {
+  const durationText =
+    asset.duration_seconds && asset.duration_seconds > 0
+      ? `录音 ${formatRecordingDuration(asset.duration_seconds)}`
+      : "录音已保存";
+  const attemptsText = jobCount > 1 ? `，共 ${jobCount} 次转写任务` : "";
+  if (!job) return `${durationText}，未创建自动转写任务`;
+  if (job.status === "completed") {
+    const range =
+      job.source_seq_start && job.source_seq_end
+        ? `，已追加 ${job.source_seq_start}-${job.source_seq_end} 段`
+        : "";
+    return `自动转写已完成${range}${attemptsText}`;
+  }
+  if (job.status === "failed") {
+    return `自动转写失败${job.error_message ? `：${job.error_message}` : ""}${attemptsText}`;
+  }
+  if (job.status === "running") return `自动转写处理中${attemptsText}`;
+  if (job.status === "queued") return `自动转写排队中${attemptsText}`;
+  return `自动转写已取消${attemptsText}`;
 }
 
 function InsightRow({
@@ -1690,17 +2310,23 @@ function ActiveStrongAlertBanner({
   );
 }
 
-function SummaryPanel({
+export function SummaryPanel({
   summary,
+  transcriptSegments = [],
   segmentCount,
   pending,
+  onSelectEvidenceSeq,
   onGenerate,
 }: {
   summary?: MeetingSummary;
+  transcriptSegments?: MeetingTranscriptSegment[];
   segmentCount: number;
   pending: boolean;
+  onSelectEvidenceSeq?: (seq: number) => void;
   onGenerate: () => void;
 }) {
+  const evidenceLinks = summary ? buildSummaryEvidenceLinks(summary, transcriptSegments) : [];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4">
       <div className="mb-3 grid grid-cols-3 gap-2">
@@ -1708,6 +2334,42 @@ function SummaryPanel({
         <SummaryMetric label="决策" value={String(summary?.decisions.length ?? 0)} />
         <SummaryMetric label="行动项" value={String(summary?.action_items.length ?? 0)} />
       </div>
+      {summary && (
+        <div className="mb-3 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="bg-background">
+              规则草稿
+            </Badge>
+            <span className="font-medium text-foreground">需人工复核</span>
+          </div>
+          <p className="mt-1 leading-5">
+            当前纪要由规则/关键词自动整理，仅作为复盘草稿，确认后再作为正式会议纪要使用。
+          </p>
+        </div>
+      )}
+      {evidenceLinks.length > 0 && (
+        <div className="mb-3 rounded-md border bg-background px-3 py-2">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <MessageSquareText className="size-4 text-muted-foreground" />
+            转写依据
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {evidenceLinks.map((link) => (
+              <Button
+                key={`${link.section}-${link.seq}-${link.item}`}
+                size="sm"
+                variant="outline"
+                onClick={() => onSelectEvidenceSeq?.(link.seq)}
+              >
+                <span className="max-w-40 truncate text-xs text-muted-foreground">
+                  {link.section}
+                </span>
+                第 {link.seq} 段
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto rounded-md border bg-background p-3">
         {summary ? (
           <pre className="whitespace-pre-wrap font-sans text-sm leading-6">{summary.summary_md}</pre>
@@ -1730,6 +2392,58 @@ function SummaryPanel({
       </Button>
     </div>
   );
+}
+
+function buildSummaryEvidenceLinks(
+  summary: MeetingSummary,
+  transcriptSegments: MeetingTranscriptSegment[],
+): Array<{ section: string; item: string; seq: number }> {
+  if (transcriptSegments.length === 0) return [];
+  const sections = [
+    ["核心结论", summary.decisions],
+    ["风险与阻塞", summary.risks],
+    ["待澄清问题", summary.questions],
+    ["行动项", summary.action_items],
+    ["用户反馈", summary.feedback],
+    ["约束冲突", summary.tensions],
+    ["项目记忆候选", summary.memory_candidates],
+  ] as const;
+  const links: Array<{ section: string; item: string; seq: number }> = [];
+  const seenSeq = new Set<number>();
+
+  for (const [section, items] of sections) {
+    for (const item of items) {
+      const segment = findSummaryEvidenceSegment(item, transcriptSegments);
+      if (!segment || seenSeq.has(segment.seq)) continue;
+      links.push({ section, item, seq: segment.seq });
+      seenSeq.add(segment.seq);
+    }
+  }
+
+  return links.slice(0, 8);
+}
+
+function findSummaryEvidenceSegment(
+  item: string,
+  transcriptSegments: MeetingTranscriptSegment[],
+): MeetingTranscriptSegment | undefined {
+  const normalizedItem = normalizeSummaryEvidenceText(item);
+  if (!normalizedItem) return undefined;
+  return transcriptSegments.find((segment) => {
+    const segmentText = normalizeSummaryEvidenceText(meetingTranscriptSegmentText(segment));
+    const rawText = normalizeSummaryEvidenceText(segment.text);
+    return normalizedItem === segmentText || normalizedItem.includes(rawText);
+  });
+}
+
+function meetingTranscriptSegmentText(segment: MeetingTranscriptSegment): string {
+  const text = segment.text.trim();
+  const speaker = segment.speaker_label.trim();
+  return speaker ? `${speaker}：${text}` : text;
+}
+
+function normalizeSummaryEvidenceText(value: string): string {
+  return value.trim().replace(/\s+/g, "");
 }
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
@@ -1870,12 +2584,15 @@ function formatRecordingDuration(totalSeconds: number): string {
   return hours > 0 ? `${hours.toString().padStart(2, "0")}:${mmss}` : mmss;
 }
 
-function splitTranscriptText(text: string): string[] {
+function transcriptSegmentDomId(seq: number): string {
+  return `meeting-transcript-${seq}`;
+}
+
+export function splitTranscriptText(text: string): string[] {
   return text
     .split(/\n{2,}|\r?\n/)
     .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 50);
+    .filter(Boolean);
 }
 
 function playMeetingAlertSound() {

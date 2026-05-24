@@ -177,13 +177,121 @@ INSERT INTO meeting_transcript_segment (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
+-- name: GetMeetingTranscriptSegment :one
+SELECT * FROM meeting_transcript_segment
+WHERE id = $1
+  AND meeting_id = $2
+  AND workspace_id = $3
+  AND project_id = $4
+  AND deleted_at IS NULL;
+
+-- name: UpdateMeetingTranscriptSegment :one
+UPDATE meeting_transcript_segment SET
+    speaker_label = $5,
+    text = $6,
+    confidence = $7,
+    audio_offset_ms = $8,
+    edit_revision = edit_revision + 1,
+    updated_at = now()
+WHERE id = $1
+  AND meeting_id = $2
+  AND workspace_id = $3
+  AND project_id = $4
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SoftDeleteMeetingTranscriptSegment :one
+UPDATE meeting_transcript_segment SET
+    deleted_at = now(),
+    deleted_by_user_id = $5,
+    edit_revision = edit_revision + 1,
+    updated_at = now()
+WHERE id = $1
+  AND meeting_id = $2
+  AND workspace_id = $3
+  AND project_id = $4
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: MarkMeetingTranscriptSeqAfterForShift :exec
+UPDATE meeting_transcript_segment SET
+    seq = -seq,
+    edit_revision = edit_revision + 1,
+    updated_at = now()
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+  AND seq > $4
+  AND deleted_at IS NULL;
+
+-- name: ShiftMarkedMeetingTranscriptSeqAfter :exec
+UPDATE meeting_transcript_segment SET
+    seq = -seq + 1,
+    updated_at = now()
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+  AND seq < -(sqlc.arg('after_seq')::int)
+  AND deleted_at IS NULL;
+
+-- name: LockMeetingTranscriptSequence :one
+SELECT id FROM meeting_session
+WHERE id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+FOR UPDATE;
+
+-- name: NextMeetingTranscriptSeq :one
+SELECT COALESCE(MAX(seq), 0)::int + 1
+FROM meeting_transcript_segment
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3;
+
 -- name: ListMeetingTranscriptSegments :many
 SELECT * FROM meeting_transcript_segment
 WHERE meeting_id = $1
   AND workspace_id = $2
+  AND deleted_at IS NULL
   AND seq > $3
 ORDER BY seq ASC
 LIMIT $4;
+
+-- name: DeleteMeetingSummaryChunks :exec
+DELETE FROM meeting_summary_chunk
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3;
+
+-- name: CreateMeetingSummaryChunk :one
+INSERT INTO meeting_summary_chunk (
+    workspace_id,
+    project_id,
+    meeting_id,
+    chunk_index,
+    source_seq_start,
+    source_seq_end,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    generated_by
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+)
+RETURNING *;
+
+-- name: ListMeetingSummaryChunks :many
+SELECT * FROM meeting_summary_chunk
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+ORDER BY chunk_index ASC;
 
 -- name: CreateMeetingInsightCard :one
 INSERT INTO meeting_insight_card (

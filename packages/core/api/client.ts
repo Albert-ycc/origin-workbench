@@ -146,16 +146,28 @@ import type {
   ListAgentProjectMemoriesResponse,
   NotificationPreferenceResponse,
   NotificationPreferences,
+  CreateMeetingASRJobRequest,
   CreateMeetingSessionRequest,
   CreateMeetingTranscriptSegmentRequest,
+  ListMeetingAudioAssetsResponse,
+  ListMeetingASRJobsResponse,
   ListMeetingInsightCardsResponse,
   ListMeetingSessionsResponse,
   ListMeetingTranscriptSegmentsResponse,
+  MeetingASRStatus,
+  MeetingASRJob,
+  MeetingAudioAsset,
   MeetingInsightCard,
   MeetingInsightStatus,
   MeetingSession,
   MeetingSummary,
   MeetingTranscriptSegment,
+  MergeMeetingTranscriptSegmentsRequest,
+  MergeMeetingTranscriptSegmentsResponse,
+  SaveMeetingAudioAssetRequest,
+  SplitMeetingTranscriptSegmentRequest,
+  SplitMeetingTranscriptSegmentResponse,
+  UpdateMeetingTranscriptSegmentRequest,
   UpdateMeetingSessionRequest,
   Room,
   RoomMember,
@@ -1756,6 +1768,10 @@ export class ApiClient {
     return this.fetch(`/api/v13/meetings${qs ? `?${qs}` : ""}`);
   }
 
+  async getMeetingASRStatus(): Promise<MeetingASRStatus> {
+    return this.fetch("/api/v13/meetings/asr/status");
+  }
+
   async getMeeting(id: string): Promise<MeetingSession> {
     return this.fetch(`/api/v13/meetings/${id}`);
   }
@@ -1798,6 +1814,70 @@ export class ApiClient {
     return this.fetch(`/api/v13/meetings/${id}/summary`, { method: "POST" });
   }
 
+  async listMeetingAudioAssets(meetingId: string): Promise<ListMeetingAudioAssetsResponse> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/audio-assets`);
+  }
+
+  async saveMeetingAudioAsset(
+    meetingId: string,
+    data: SaveMeetingAudioAssetRequest,
+  ): Promise<MeetingAudioAsset> {
+    const formData = new FormData();
+    formData.append("file", data.file);
+    if (data.duration_seconds !== undefined && data.duration_seconds !== null) {
+      formData.append("duration_seconds", String(data.duration_seconds));
+    }
+
+    const rid = createRequestId();
+    const start = Date.now();
+    const path = `/api/v13/meetings/${meetingId}/audio-assets`;
+    this.logger.info(`→ POST ${path}`, { rid });
+
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: this.authHeaders(),
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) this.handleUnauthorized();
+      const message = await this.parseErrorMessage(res, `Save meeting audio failed: ${res.status}`);
+      this.logger.error(`← ${res.status} ${path}`, { rid, duration: `${Date.now() - start}ms`, error: message });
+      throw new Error(message);
+    }
+
+    this.logger.info(`← ${res.status} ${path}`, { rid, duration: `${Date.now() - start}ms` });
+    return res.json() as Promise<MeetingAudioAsset>;
+  }
+
+  async deleteMeetingAudioAsset(meetingId: string, assetId: string): Promise<void> {
+    await this.fetch(`/api/v13/meetings/${meetingId}/audio-assets/${assetId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async listMeetingASRJobs(meetingId: string): Promise<ListMeetingASRJobsResponse> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/asr-jobs`);
+  }
+
+  async createMeetingASRJob(
+    meetingId: string,
+    audioAssetId: string,
+    data: CreateMeetingASRJobRequest = {},
+  ): Promise<MeetingASRJob> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/audio-assets/${audioAssetId}/asr-jobs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async retryMeetingASRJob(meetingId: string, jobId: string): Promise<MeetingASRJob> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/asr-jobs/${jobId}/retry`, {
+      method: "POST",
+    });
+  }
+
   async listMeetingTranscriptSegments(
     meetingId: string,
     filter: { after_seq?: number; limit?: number } = {},
@@ -1814,6 +1894,45 @@ export class ApiClient {
     data: CreateMeetingTranscriptSegmentRequest,
   ): Promise<MeetingTranscriptSegment> {
     return this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateMeetingTranscriptSegment(
+    meetingId: string,
+    segmentId: string,
+    data: UpdateMeetingTranscriptSegmentRequest,
+  ): Promise<MeetingTranscriptSegment> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments/${segmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteMeetingTranscriptSegment(meetingId: string, segmentId: string): Promise<void> {
+    await this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments/${segmentId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async splitMeetingTranscriptSegment(
+    meetingId: string,
+    segmentId: string,
+    data: SplitMeetingTranscriptSegmentRequest,
+  ): Promise<SplitMeetingTranscriptSegmentResponse> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments/${segmentId}/split`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async mergeMeetingTranscriptSegments(
+    meetingId: string,
+    segmentId: string,
+    data: MergeMeetingTranscriptSegmentsRequest,
+  ): Promise<MergeMeetingTranscriptSegmentsResponse> {
+    return this.fetch(`/api/v13/meetings/${meetingId}/transcript-segments/${segmentId}/merge`, {
       method: "POST",
       body: JSON.stringify(data),
     });

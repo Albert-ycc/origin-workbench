@@ -471,6 +471,39 @@ type IssueToLabel struct {
 	LabelID pgtype.UUID `json:"label_id"`
 }
 
+type MeetingAsrJob struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	MeetingID      pgtype.UUID        `json:"meeting_id"`
+	AudioAssetID   pgtype.UUID        `json:"audio_asset_id"`
+	Provider       string             `json:"provider"`
+	Status         string             `json:"status"`
+	ErrorMessage   string             `json:"error_message"`
+	RetryCount     int32              `json:"retry_count"`
+	SourceSeqStart pgtype.Int4        `json:"source_seq_start"`
+	SourceSeqEnd   pgtype.Int4        `json:"source_seq_end"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MeetingAudioAsset struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	MeetingID       pgtype.UUID        `json:"meeting_id"`
+	StorageKey      string             `json:"storage_key"`
+	FileUrl         string             `json:"file_url"`
+	Filename        string             `json:"filename"`
+	ContentType     string             `json:"content_type"`
+	SizeBytes       int64              `json:"size_bytes"`
+	DurationSeconds pgtype.Int4        `json:"duration_seconds"`
+	Status          string             `json:"status"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type MeetingInsightCard struct {
 	ID                pgtype.UUID        `json:"id"`
 	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
@@ -535,20 +568,44 @@ type MeetingSummary struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
+type MeetingSummaryChunk struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
+	MeetingID        pgtype.UUID        `json:"meeting_id"`
+	ChunkIndex       int32              `json:"chunk_index"`
+	SourceSeqStart   int32              `json:"source_seq_start"`
+	SourceSeqEnd     int32              `json:"source_seq_end"`
+	SummaryMd        string             `json:"summary_md"`
+	Decisions        []byte             `json:"decisions"`
+	Questions        []byte             `json:"questions"`
+	Risks            []byte             `json:"risks"`
+	Feedback         []byte             `json:"feedback"`
+	Tensions         []byte             `json:"tensions"`
+	ActionItems      []byte             `json:"action_items"`
+	MemoryCandidates []byte             `json:"memory_candidates"`
+	GeneratedBy      string             `json:"generated_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type MeetingTranscriptSegment struct {
-	ID            pgtype.UUID        `json:"id"`
-	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
-	ProjectID     pgtype.UUID        `json:"project_id"`
-	MeetingID     pgtype.UUID        `json:"meeting_id"`
-	Seq           int32              `json:"seq"`
-	StartedAt     pgtype.Timestamptz `json:"started_at"`
-	EndedAt       pgtype.Timestamptz `json:"ended_at"`
-	SpeakerLabel  string             `json:"speaker_label"`
-	Text          string             `json:"text"`
-	Confidence    float64            `json:"confidence"`
-	AudioOffsetMs pgtype.Int4        `json:"audio_offset_ms"`
-	Source        string             `json:"source"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	MeetingID       pgtype.UUID        `json:"meeting_id"`
+	Seq             int32              `json:"seq"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	EndedAt         pgtype.Timestamptz `json:"ended_at"`
+	SpeakerLabel    string             `json:"speaker_label"`
+	Text            string             `json:"text"`
+	Confidence      float64            `json:"confidence"`
+	AudioOffsetMs   pgtype.Int4        `json:"audio_offset_ms"`
+	Source          string             `json:"source"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletedByUserID pgtype.UUID        `json:"deleted_by_user_id"`
+	EditRevision    int32              `json:"edit_revision"`
 }
 
 type Member struct {

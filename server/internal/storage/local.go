@@ -102,6 +102,14 @@ func (s *LocalStorage) Upload(ctx context.Context, key string, data []byte, cont
 	return fmt.Sprintf("/uploads/%s", key), nil
 }
 
+func (s *LocalStorage) Read(ctx context.Context, key string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(s.uploadDir, key))
+	if err != nil {
+		return nil, fmt.Errorf("local storage ReadFile: %w", err)
+	}
+	return data, nil
+}
+
 func (s *LocalStorage) GetFilePath(key string) string {
 	return filepath.Join(s.uploadDir, key)
 }

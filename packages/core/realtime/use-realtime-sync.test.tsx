@@ -7,12 +7,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WSClient } from "../api/ws-client";
 import type { AuthState } from "../auth/store";
 import { issueKeys } from "../issues/queries";
+import { meetingKeys } from "../meetings/queries";
 import { setCurrentWorkspace } from "../platform/workspace-storage";
 import { projectKeys } from "../projects/queries";
 import { projectV12Keys } from "../projects-v12/queries";
 import { roomKeys } from "../rooms/queries";
 import { teamKeys } from "../teams/queries";
-import type { ListRoomMessagesResponse } from "../types";
+import type {
+  ListMeetingASRJobsResponse,
+  ListMeetingTranscriptSegmentsResponse,
+  ListRoomMessagesResponse,
+} from "../types";
 import type { StoreApi, UseBoundStore } from "zustand";
 import { useRealtimeSync } from "./use-realtime-sync";
 
@@ -227,5 +232,67 @@ describe("useRealtimeSync", () => {
       content: "在，我先接一下。",
     });
     expect(invalidatedKeys(spy)).toContainEqual(roomKeys.messages("room-1"));
+  });
+
+  it("writes meeting ASR job updates into cache and invalidates completed outputs", async () => {
+    const qc = createQueryClient();
+    const ws = new FakeWS();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    qc.setQueryData<ListMeetingASRJobsResponse>(meetingKeys.asrJobs(wsId, "meeting-1"), {
+      jobs: [
+        {
+          id: "job-2",
+          workspace_id: wsId,
+          project_id: "project-1",
+          meeting_id: "meeting-1",
+          audio_asset_id: "asset-2",
+          provider: "local",
+          status: "failed",
+          error_message: "old failure",
+          retry_count: 0,
+          source_seq_start: null,
+          source_seq_end: null,
+          created_at: "2026-05-24T00:00:00Z",
+          updated_at: "2026-05-24T00:00:00Z",
+        },
+      ],
+      total: 1,
+    });
+    qc.setQueryData<ListMeetingTranscriptSegmentsResponse>(
+      meetingKeys.transcript(wsId, "meeting-1"),
+      { segments: [], total: 0 },
+    );
+
+    renderRealtimeSync(qc, ws);
+    await flushEffects();
+
+    act(() => {
+      ws.emit("meeting:asr_job_updated", {
+        meeting_id: "meeting-1",
+        job: {
+          id: "job-1",
+          workspace_id: wsId,
+          project_id: "project-1",
+          meeting_id: "meeting-1",
+          audio_asset_id: "asset-1",
+          provider: "local",
+          status: "completed",
+          error_message: "",
+          retry_count: 0,
+          source_seq_start: 1,
+          source_seq_end: 2,
+          created_at: "2026-05-24T00:00:01Z",
+          updated_at: "2026-05-24T00:00:02Z",
+        },
+      });
+    });
+
+    expect(qc.getQueryData<ListMeetingASRJobsResponse>(
+      meetingKeys.asrJobs(wsId, "meeting-1"),
+    )?.jobs.map((job) => job.id)).toEqual(["job-1", "job-2"]);
+    expect(invalidatedKeys(spy)).toContainEqual(meetingKeys.asrJobs(wsId, "meeting-1"));
+    expect(invalidatedKeys(spy)).toContainEqual(meetingKeys.transcript(wsId, "meeting-1"));
+    expect(invalidatedKeys(spy)).toContainEqual(meetingKeys.insights(wsId, "meeting-1"));
+    expect(invalidatedKeys(spy)).toContainEqual(meetingKeys.summary(wsId, "meeting-1"));
   });
 });

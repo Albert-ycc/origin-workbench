@@ -230,6 +230,89 @@ func (q *Queries) CreateMeetingSession(ctx context.Context, arg CreateMeetingSes
 	return i, err
 }
 
+const createMeetingSummaryChunk = `-- name: CreateMeetingSummaryChunk :one
+INSERT INTO meeting_summary_chunk (
+    workspace_id,
+    project_id,
+    meeting_id,
+    chunk_index,
+    source_seq_start,
+    source_seq_end,
+    summary_md,
+    decisions,
+    questions,
+    risks,
+    feedback,
+    tensions,
+    action_items,
+    memory_candidates,
+    generated_by
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+)
+RETURNING id, workspace_id, project_id, meeting_id, chunk_index, source_seq_start, source_seq_end, summary_md, decisions, questions, risks, feedback, tensions, action_items, memory_candidates, generated_by, created_at
+`
+
+type CreateMeetingSummaryChunkParams struct {
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ProjectID        pgtype.UUID `json:"project_id"`
+	MeetingID        pgtype.UUID `json:"meeting_id"`
+	ChunkIndex       int32       `json:"chunk_index"`
+	SourceSeqStart   int32       `json:"source_seq_start"`
+	SourceSeqEnd     int32       `json:"source_seq_end"`
+	SummaryMd        string      `json:"summary_md"`
+	Decisions        []byte      `json:"decisions"`
+	Questions        []byte      `json:"questions"`
+	Risks            []byte      `json:"risks"`
+	Feedback         []byte      `json:"feedback"`
+	Tensions         []byte      `json:"tensions"`
+	ActionItems      []byte      `json:"action_items"`
+	MemoryCandidates []byte      `json:"memory_candidates"`
+	GeneratedBy      string      `json:"generated_by"`
+}
+
+func (q *Queries) CreateMeetingSummaryChunk(ctx context.Context, arg CreateMeetingSummaryChunkParams) (MeetingSummaryChunk, error) {
+	row := q.db.QueryRow(ctx, createMeetingSummaryChunk,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.MeetingID,
+		arg.ChunkIndex,
+		arg.SourceSeqStart,
+		arg.SourceSeqEnd,
+		arg.SummaryMd,
+		arg.Decisions,
+		arg.Questions,
+		arg.Risks,
+		arg.Feedback,
+		arg.Tensions,
+		arg.ActionItems,
+		arg.MemoryCandidates,
+		arg.GeneratedBy,
+	)
+	var i MeetingSummaryChunk
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.MeetingID,
+		&i.ChunkIndex,
+		&i.SourceSeqStart,
+		&i.SourceSeqEnd,
+		&i.SummaryMd,
+		&i.Decisions,
+		&i.Questions,
+		&i.Risks,
+		&i.Feedback,
+		&i.Tensions,
+		&i.ActionItems,
+		&i.MemoryCandidates,
+		&i.GeneratedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createMeetingTranscriptSegment = `-- name: CreateMeetingTranscriptSegment :one
 INSERT INTO meeting_transcript_segment (
     workspace_id,
@@ -243,7 +326,7 @@ INSERT INTO meeting_transcript_segment (
     audio_offset_ms
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at
+RETURNING id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at, updated_at, deleted_at, deleted_by_user_id, edit_revision
 `
 
 type CreateMeetingTranscriptSegmentParams struct {
@@ -285,6 +368,10 @@ func (q *Queries) CreateMeetingTranscriptSegment(ctx context.Context, arg Create
 		&i.AudioOffsetMs,
 		&i.Source,
 		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.DeletedByUserID,
+		&i.EditRevision,
 	)
 	return i, err
 }
@@ -300,6 +387,24 @@ type DeleteMeetingSessionParams struct {
 
 func (q *Queries) DeleteMeetingSession(ctx context.Context, arg DeleteMeetingSessionParams) error {
 	_, err := q.db.Exec(ctx, deleteMeetingSession, arg.ID, arg.WorkspaceID)
+	return err
+}
+
+const deleteMeetingSummaryChunks = `-- name: DeleteMeetingSummaryChunks :exec
+DELETE FROM meeting_summary_chunk
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+`
+
+type DeleteMeetingSummaryChunksParams struct {
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) DeleteMeetingSummaryChunks(ctx context.Context, arg DeleteMeetingSummaryChunksParams) error {
+	_, err := q.db.Exec(ctx, deleteMeetingSummaryChunks, arg.MeetingID, arg.WorkspaceID, arg.ProjectID)
 	return err
 }
 
@@ -388,6 +493,52 @@ func (q *Queries) GetMeetingSummary(ctx context.Context, arg GetMeetingSummaryPa
 		&i.GeneratedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getMeetingTranscriptSegment = `-- name: GetMeetingTranscriptSegment :one
+SELECT id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at, updated_at, deleted_at, deleted_by_user_id, edit_revision FROM meeting_transcript_segment
+WHERE id = $1
+  AND meeting_id = $2
+  AND workspace_id = $3
+  AND project_id = $4
+  AND deleted_at IS NULL
+`
+
+type GetMeetingTranscriptSegmentParams struct {
+	ID          pgtype.UUID `json:"id"`
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) GetMeetingTranscriptSegment(ctx context.Context, arg GetMeetingTranscriptSegmentParams) (MeetingTranscriptSegment, error) {
+	row := q.db.QueryRow(ctx, getMeetingTranscriptSegment,
+		arg.ID,
+		arg.MeetingID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+	)
+	var i MeetingTranscriptSegment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.MeetingID,
+		&i.Seq,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.SpeakerLabel,
+		&i.Text,
+		&i.Confidence,
+		&i.AudioOffsetMs,
+		&i.Source,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.DeletedByUserID,
+		&i.EditRevision,
 	)
 	return i, err
 }
@@ -496,10 +647,63 @@ func (q *Queries) ListMeetingSessions(ctx context.Context, workspaceID pgtype.UU
 	return items, nil
 }
 
-const listMeetingTranscriptSegments = `-- name: ListMeetingTranscriptSegments :many
-SELECT id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at FROM meeting_transcript_segment
+const listMeetingSummaryChunks = `-- name: ListMeetingSummaryChunks :many
+SELECT id, workspace_id, project_id, meeting_id, chunk_index, source_seq_start, source_seq_end, summary_md, decisions, questions, risks, feedback, tensions, action_items, memory_candidates, generated_by, created_at FROM meeting_summary_chunk
 WHERE meeting_id = $1
   AND workspace_id = $2
+  AND project_id = $3
+ORDER BY chunk_index ASC
+`
+
+type ListMeetingSummaryChunksParams struct {
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListMeetingSummaryChunks(ctx context.Context, arg ListMeetingSummaryChunksParams) ([]MeetingSummaryChunk, error) {
+	rows, err := q.db.Query(ctx, listMeetingSummaryChunks, arg.MeetingID, arg.WorkspaceID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MeetingSummaryChunk{}
+	for rows.Next() {
+		var i MeetingSummaryChunk
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.MeetingID,
+			&i.ChunkIndex,
+			&i.SourceSeqStart,
+			&i.SourceSeqEnd,
+			&i.SummaryMd,
+			&i.Decisions,
+			&i.Questions,
+			&i.Risks,
+			&i.Feedback,
+			&i.Tensions,
+			&i.ActionItems,
+			&i.MemoryCandidates,
+			&i.GeneratedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMeetingTranscriptSegments = `-- name: ListMeetingTranscriptSegments :many
+SELECT id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at, updated_at, deleted_at, deleted_by_user_id, edit_revision FROM meeting_transcript_segment
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND deleted_at IS NULL
   AND seq > $3
 ORDER BY seq ASC
 LIMIT $4
@@ -540,6 +744,10 @@ func (q *Queries) ListMeetingTranscriptSegments(ctx context.Context, arg ListMee
 			&i.AudioOffsetMs,
 			&i.Source,
 			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.DeletedByUserID,
+			&i.EditRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -602,6 +810,158 @@ func (q *Queries) ListProjectMeetingSessions(ctx context.Context, arg ListProjec
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockMeetingTranscriptSequence = `-- name: LockMeetingTranscriptSequence :one
+SELECT id FROM meeting_session
+WHERE id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+FOR UPDATE
+`
+
+type LockMeetingTranscriptSequenceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) LockMeetingTranscriptSequence(ctx context.Context, arg LockMeetingTranscriptSequenceParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockMeetingTranscriptSequence, arg.ID, arg.WorkspaceID, arg.ProjectID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const markMeetingTranscriptSeqAfterForShift = `-- name: MarkMeetingTranscriptSeqAfterForShift :exec
+UPDATE meeting_transcript_segment SET
+    seq = -seq,
+    edit_revision = edit_revision + 1,
+    updated_at = now()
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+  AND seq > $4
+  AND deleted_at IS NULL
+`
+
+type MarkMeetingTranscriptSeqAfterForShiftParams struct {
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	Seq         int32       `json:"seq"`
+}
+
+func (q *Queries) MarkMeetingTranscriptSeqAfterForShift(ctx context.Context, arg MarkMeetingTranscriptSeqAfterForShiftParams) error {
+	_, err := q.db.Exec(ctx, markMeetingTranscriptSeqAfterForShift,
+		arg.MeetingID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.Seq,
+	)
+	return err
+}
+
+const nextMeetingTranscriptSeq = `-- name: NextMeetingTranscriptSeq :one
+SELECT COALESCE(MAX(seq), 0)::int + 1
+FROM meeting_transcript_segment
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+`
+
+type NextMeetingTranscriptSeqParams struct {
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) NextMeetingTranscriptSeq(ctx context.Context, arg NextMeetingTranscriptSeqParams) (int32, error) {
+	row := q.db.QueryRow(ctx, nextMeetingTranscriptSeq, arg.MeetingID, arg.WorkspaceID, arg.ProjectID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const shiftMarkedMeetingTranscriptSeqAfter = `-- name: ShiftMarkedMeetingTranscriptSeqAfter :exec
+UPDATE meeting_transcript_segment SET
+    seq = -seq + 1,
+    updated_at = now()
+WHERE meeting_id = $1
+  AND workspace_id = $2
+  AND project_id = $3
+  AND seq < -($4::int)
+  AND deleted_at IS NULL
+`
+
+type ShiftMarkedMeetingTranscriptSeqAfterParams struct {
+	MeetingID   pgtype.UUID `json:"meeting_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	AfterSeq    int32       `json:"after_seq"`
+}
+
+func (q *Queries) ShiftMarkedMeetingTranscriptSeqAfter(ctx context.Context, arg ShiftMarkedMeetingTranscriptSeqAfterParams) error {
+	_, err := q.db.Exec(ctx, shiftMarkedMeetingTranscriptSeqAfter,
+		arg.MeetingID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.AfterSeq,
+	)
+	return err
+}
+
+const softDeleteMeetingTranscriptSegment = `-- name: SoftDeleteMeetingTranscriptSegment :one
+UPDATE meeting_transcript_segment SET
+    deleted_at = now(),
+    deleted_by_user_id = $5,
+    edit_revision = edit_revision + 1,
+    updated_at = now()
+WHERE id = $1
+  AND meeting_id = $2
+  AND workspace_id = $3
+  AND project_id = $4
+  AND deleted_at IS NULL
+RETURNING id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at, updated_at, deleted_at, deleted_by_user_id, edit_revision
+`
+
+type SoftDeleteMeetingTranscriptSegmentParams struct {
+	ID              pgtype.UUID `json:"id"`
+	MeetingID       pgtype.UUID `json:"meeting_id"`
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	ProjectID       pgtype.UUID `json:"project_id"`
+	DeletedByUserID pgtype.UUID `json:"deleted_by_user_id"`
+}
+
+func (q *Queries) SoftDeleteMeetingTranscriptSegment(ctx context.Context, arg SoftDeleteMeetingTranscriptSegmentParams) (MeetingTranscriptSegment, error) {
+	row := q.db.QueryRow(ctx, softDeleteMeetingTranscriptSegment,
+		arg.ID,
+		arg.MeetingID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.DeletedByUserID,
+	)
+	var i MeetingTranscriptSegment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.MeetingID,
+		&i.Seq,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.SpeakerLabel,
+		&i.Text,
+		&i.Confidence,
+		&i.AudioOffsetMs,
+		&i.Source,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.DeletedByUserID,
+		&i.EditRevision,
+	)
+	return i, err
 }
 
 const startMeetingSession = `-- name: StartMeetingSession :one
@@ -806,6 +1166,67 @@ func (q *Queries) UpdateMeetingSession(ctx context.Context, arg UpdateMeetingSes
 		&i.StoppedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateMeetingTranscriptSegment = `-- name: UpdateMeetingTranscriptSegment :one
+UPDATE meeting_transcript_segment SET
+    speaker_label = $5,
+    text = $6,
+    confidence = $7,
+    audio_offset_ms = $8,
+    edit_revision = edit_revision + 1,
+    updated_at = now()
+WHERE id = $1
+  AND meeting_id = $2
+  AND workspace_id = $3
+  AND project_id = $4
+  AND deleted_at IS NULL
+RETURNING id, workspace_id, project_id, meeting_id, seq, started_at, ended_at, speaker_label, text, confidence, audio_offset_ms, source, created_at, updated_at, deleted_at, deleted_by_user_id, edit_revision
+`
+
+type UpdateMeetingTranscriptSegmentParams struct {
+	ID            pgtype.UUID `json:"id"`
+	MeetingID     pgtype.UUID `json:"meeting_id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	ProjectID     pgtype.UUID `json:"project_id"`
+	SpeakerLabel  string      `json:"speaker_label"`
+	Text          string      `json:"text"`
+	Confidence    float64     `json:"confidence"`
+	AudioOffsetMs pgtype.Int4 `json:"audio_offset_ms"`
+}
+
+func (q *Queries) UpdateMeetingTranscriptSegment(ctx context.Context, arg UpdateMeetingTranscriptSegmentParams) (MeetingTranscriptSegment, error) {
+	row := q.db.QueryRow(ctx, updateMeetingTranscriptSegment,
+		arg.ID,
+		arg.MeetingID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.SpeakerLabel,
+		arg.Text,
+		arg.Confidence,
+		arg.AudioOffsetMs,
+	)
+	var i MeetingTranscriptSegment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.MeetingID,
+		&i.Seq,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.SpeakerLabel,
+		&i.Text,
+		&i.Confidence,
+		&i.AudioOffsetMs,
+		&i.Source,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.DeletedByUserID,
+		&i.EditRevision,
 	)
 	return i, err
 }

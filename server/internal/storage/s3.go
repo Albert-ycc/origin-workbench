@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -158,6 +159,22 @@ func (s *S3Storage) Upload(ctx context.Context, key string, data []byte, content
 		return "", fmt.Errorf("s3 PutObject: %w", err)
 	}
 	return s.uploadedURL(key), nil
+}
+
+func (s *S3Storage) Read(ctx context.Context, key string) ([]byte, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3 GetObject: %w", err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return nil, fmt.Errorf("s3 ReadAll: %w", err)
+	}
+	return data, nil
 }
 
 // uploadedURL returns the URL stored for client consumption after an upload.

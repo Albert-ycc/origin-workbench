@@ -3,22 +3,32 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // Meeting copilot endpoints (PRD §18).
-//
-// MVP capture path is intentionally narrow: the desktop renderer captures mic
-// permission and submits text transcript segments. The backend stores session
-// state, transcript, evidence-backed cards, and realtime events; it does not
-// receive raw audio in this phase.
+
+var meetingAudioContentTypesByExt = map[string]string{
+	".aac":  "audio/aac",
+	".m4a":  "audio/mp4",
+	".mp3":  "audio/mpeg",
+	".mp4":  "audio/mp4",
+	".wav":  "audio/wav",
+	".webm": "audio/webm",
+}
 
 type MeetingSessionResponse struct {
 	ID                string          `json:"id"`
@@ -61,11 +71,23 @@ type MeetingTranscriptSegmentResponse struct {
 	AudioOffsetMs *int32  `json:"audio_offset_ms"`
 	Source        string  `json:"source"`
 	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
+	DeletedAt     *string `json:"deleted_at"`
+	EditRevision  int32   `json:"edit_revision"`
 }
 
 type ListMeetingTranscriptSegmentsResponse struct {
 	Segments []MeetingTranscriptSegmentResponse `json:"segments"`
 	Total    int                                `json:"total"`
+}
+
+type SplitMeetingTranscriptSegmentResponse struct {
+	Segments []MeetingTranscriptSegmentResponse `json:"segments"`
+}
+
+type MergeMeetingTranscriptSegmentsResponse struct {
+	Segment          MeetingTranscriptSegmentResponse `json:"segment"`
+	DeletedSegmentID string                           `json:"deleted_segment_id"`
 }
 
 type MeetingInsightCardResponse struct {
@@ -116,6 +138,49 @@ type MeetingSummaryResponse struct {
 	UpdatedAt        string   `json:"updated_at"`
 }
 
+type MeetingAudioAssetResponse struct {
+	ID              string `json:"id"`
+	WorkspaceID     string `json:"workspace_id"`
+	ProjectID       string `json:"project_id"`
+	MeetingID       string `json:"meeting_id"`
+	Filename        string `json:"filename"`
+	URL             string `json:"url"`
+	DownloadURL     string `json:"download_url"`
+	ContentType     string `json:"content_type"`
+	SizeBytes       int64  `json:"size_bytes"`
+	DurationSeconds *int32 `json:"duration_seconds"`
+	Status          string `json:"status"`
+	CreatedByUserID string `json:"created_by_user_id"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
+type ListMeetingAudioAssetsResponse struct {
+	Assets []MeetingAudioAssetResponse `json:"assets"`
+	Total  int                         `json:"total"`
+}
+
+type MeetingASRJobResponse struct {
+	ID             string `json:"id"`
+	WorkspaceID    string `json:"workspace_id"`
+	ProjectID      string `json:"project_id"`
+	MeetingID      string `json:"meeting_id"`
+	AudioAssetID   string `json:"audio_asset_id"`
+	Provider       string `json:"provider"`
+	Status         string `json:"status"`
+	ErrorMessage   string `json:"error_message"`
+	RetryCount     int32  `json:"retry_count"`
+	SourceSeqStart *int32 `json:"source_seq_start"`
+	SourceSeqEnd   *int32 `json:"source_seq_end"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+type ListMeetingASRJobsResponse struct {
+	Jobs  []MeetingASRJobResponse `json:"jobs"`
+	Total int                     `json:"total"`
+}
+
 type CreateMeetingSessionRequest struct {
 	ProjectID         string          `json:"project_id"`
 	Title             string          `json:"title"`
@@ -150,6 +215,27 @@ type CreateMeetingTranscriptSegmentRequest struct {
 	Confidence    float64 `json:"confidence"`
 	Source        string  `json:"source"`
 	AudioOffsetMs *int32  `json:"audio_offset_ms"`
+}
+
+type UpdateMeetingTranscriptSegmentRequest struct {
+	SpeakerLabel  *string  `json:"speaker_label"`
+	Text          *string  `json:"text"`
+	Confidence    *float64 `json:"confidence"`
+	AudioOffsetMs *int32   `json:"audio_offset_ms"`
+}
+
+type SplitMeetingTranscriptSegmentRequest struct {
+	TextBefore        string `json:"text_before"`
+	TextAfter         string `json:"text_after"`
+	SpeakerLabelAfter string `json:"speaker_label_after"`
+}
+
+type MergeMeetingTranscriptSegmentsRequest struct {
+	TargetSegmentID string `json:"target_segment_id"`
+}
+
+type CreateMeetingASRJobRequest struct {
+	Provider string `json:"provider"`
 }
 
 type UpdateMeetingInsightStatusRequest struct {
@@ -199,6 +285,9 @@ func meetingTranscriptSegmentToResponse(s db.MeetingTranscriptSegment) MeetingTr
 		AudioOffsetMs: int4ToPtr(s.AudioOffsetMs),
 		Source:        s.Source,
 		CreatedAt:     timestampToString(s.CreatedAt),
+		UpdatedAt:     timestampToString(s.UpdatedAt),
+		DeletedAt:     timestampToPtr(s.DeletedAt),
+		EditRevision:  s.EditRevision,
 	}
 }
 
@@ -225,6 +314,73 @@ func meetingInsightCardToResponse(c db.MeetingInsightCard) MeetingInsightCardRes
 		CreatedAt:         timestampToString(c.CreatedAt),
 		UpdatedAt:         timestampToString(c.UpdatedAt),
 	}
+}
+
+func (h *Handler) meetingAudioAssetToResponse(a db.MeetingAudioAsset) MeetingAudioAssetResponse {
+	resp := MeetingAudioAssetResponse{
+		ID:              uuidToString(a.ID),
+		WorkspaceID:     uuidToString(a.WorkspaceID),
+		ProjectID:       uuidToString(a.ProjectID),
+		MeetingID:       uuidToString(a.MeetingID),
+		Filename:        a.Filename,
+		URL:             a.FileUrl,
+		DownloadURL:     a.FileUrl,
+		ContentType:     a.ContentType,
+		SizeBytes:       a.SizeBytes,
+		Status:          a.Status,
+		CreatedByUserID: uuidToString(a.CreatedByUserID),
+		CreatedAt:       timestampToString(a.CreatedAt),
+		UpdatedAt:       timestampToString(a.UpdatedAt),
+	}
+	if a.DurationSeconds.Valid {
+		resp.DurationSeconds = &a.DurationSeconds.Int32
+	}
+	if h.CFSigner != nil {
+		resp.DownloadURL = h.CFSigner.SignedURL(a.FileUrl, time.Now().Add(30*time.Minute))
+	}
+	return resp
+}
+
+func meetingASRJobToResponse(j db.MeetingAsrJob) MeetingASRJobResponse {
+	return MeetingASRJobResponse{
+		ID:             uuidToString(j.ID),
+		WorkspaceID:    uuidToString(j.WorkspaceID),
+		ProjectID:      uuidToString(j.ProjectID),
+		MeetingID:      uuidToString(j.MeetingID),
+		AudioAssetID:   uuidToString(j.AudioAssetID),
+		Provider:       j.Provider,
+		Status:         j.Status,
+		ErrorMessage:   j.ErrorMessage,
+		RetryCount:     j.RetryCount,
+		SourceSeqStart: int4ToPtr(j.SourceSeqStart),
+		SourceSeqEnd:   int4ToPtr(j.SourceSeqEnd),
+		CreatedAt:      timestampToString(j.CreatedAt),
+		UpdatedAt:      timestampToString(j.UpdatedAt),
+	}
+}
+
+func (h *Handler) publishMeetingASRJobUpdated(meeting db.MeetingSession, job db.MeetingAsrJob, actorID string) {
+	resp := meetingASRJobToResponse(job)
+	h.publish(protocol.EventMeetingASRJobUpdated, resp.WorkspaceID, "member", actorID, map[string]any{
+		"meeting_id": resp.MeetingID,
+		"job":        resp,
+	})
+}
+
+func (h *Handler) publishMeetingTranscriptSegmentUpdated(meeting db.MeetingSession, segment db.MeetingTranscriptSegment, actorID string) {
+	resp := meetingTranscriptSegmentToResponse(segment)
+	h.publish(protocol.EventMeetingTranscriptSegmentUpdated, resp.WorkspaceID, "member", actorID, map[string]any{
+		"meeting_id": resp.MeetingID,
+		"segment":    resp,
+	})
+}
+
+func (h *Handler) publishMeetingTranscriptSegmentDeleted(meeting db.MeetingSession, segment db.MeetingTranscriptSegment, actorID string) {
+	h.publish(protocol.EventMeetingTranscriptSegmentDeleted, uuidToString(meeting.WorkspaceID), "member", actorID, map[string]any{
+		"meeting_id": uuidToString(meeting.ID),
+		"segment_id": uuidToString(segment.ID),
+		"seq":        segment.Seq,
+	})
 }
 
 func meetingSummaryToResponse(s db.MeetingSummary, meeting db.MeetingSession) MeetingSummaryResponse {
@@ -676,12 +832,7 @@ func (h *Handler) GenerateMeetingSummary(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	segments, err := h.Queries.ListMeetingTranscriptSegments(r.Context(), db.ListMeetingTranscriptSegmentsParams{
-		MeetingID:   meeting.ID,
-		WorkspaceID: meeting.WorkspaceID,
-		Seq:         0,
-		Limit:       1000,
-	})
+	segments, err := h.listAllMeetingTranscriptSegments(r.Context(), meeting)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list transcript segments")
 		return
@@ -699,7 +850,49 @@ func (h *Handler) GenerateMeetingSummary(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	draft := buildMeetingSummaryDraft(meeting, segments, cards)
-	summary, err := h.Queries.UpsertMeetingSummary(r.Context(), db.UpsertMeetingSummaryParams{
+	chunks := buildMeetingSummaryChunks(meeting, segments)
+	if len(chunks) > 1 {
+		draft.SummaryMd = appendMeetingSummaryChunkIndex(draft.SummaryMd, chunks)
+	}
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate meeting summary")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+	if err := qtx.DeleteMeetingSummaryChunks(r.Context(), db.DeleteMeetingSummaryChunksParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate meeting summary")
+		return
+	}
+	for i, chunk := range chunks {
+		_, err := qtx.CreateMeetingSummaryChunk(r.Context(), db.CreateMeetingSummaryChunkParams{
+			WorkspaceID:      meeting.WorkspaceID,
+			ProjectID:        meeting.ProjectID,
+			MeetingID:        meeting.ID,
+			ChunkIndex:       int32(i + 1),
+			SourceSeqStart:   chunk.SourceSeqStart,
+			SourceSeqEnd:     chunk.SourceSeqEnd,
+			SummaryMd:        chunk.Draft.SummaryMd,
+			Decisions:        meetingJSONList(chunk.Draft.Decisions),
+			Questions:        meetingJSONList(chunk.Draft.Questions),
+			Risks:            meetingJSONList(chunk.Draft.Risks),
+			Feedback:         meetingJSONList(chunk.Draft.Feedback),
+			Tensions:         meetingJSONList(chunk.Draft.Tensions),
+			ActionItems:      meetingJSONList(chunk.Draft.ActionItems),
+			MemoryCandidates: meetingJSONList(chunk.Draft.MemoryCandidates),
+			GeneratedBy:      "origin-rule-summarizer",
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to generate meeting summary")
+			return
+		}
+	}
+	summary, err := qtx.UpsertMeetingSummary(r.Context(), db.UpsertMeetingSummaryParams{
 		MeetingID:        meeting.ID,
 		WorkspaceID:      meeting.WorkspaceID,
 		ProjectID:        meeting.ProjectID,
@@ -719,12 +912,299 @@ func (h *Handler) GenerateMeetingSummary(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "failed to generate meeting summary")
 		return
 	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate meeting summary")
+		return
+	}
 	resp := meetingSummaryToResponse(summary, meeting)
 	h.publish(protocol.EventMeetingSummaryCreated, resp.WorkspaceID, "system", "", map[string]any{
 		"meeting_id": resp.MeetingID,
 		"summary":    resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listAllMeetingTranscriptSegments(ctx context.Context, meeting db.MeetingSession) ([]db.MeetingTranscriptSegment, error) {
+	const pageLimit int32 = 1000
+	afterSeq := int32(0)
+	var all []db.MeetingTranscriptSegment
+	for {
+		page, err := h.Queries.ListMeetingTranscriptSegments(ctx, db.ListMeetingTranscriptSegmentsParams{
+			MeetingID:   meeting.ID,
+			WorkspaceID: meeting.WorkspaceID,
+			Seq:         afterSeq,
+			Limit:       pageLimit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			return all, nil
+		}
+		all = append(all, page...)
+		afterSeq = page[len(page)-1].Seq
+		if len(page) < int(pageLimit) {
+			return all, nil
+		}
+	}
+}
+
+func (h *Handler) UploadMeetingAudioAsset(w http.ResponseWriter, r *http.Request) {
+	if h.Storage == nil {
+		writeError(w, http.StatusServiceUnavailable, "file upload not configured")
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large or invalid multipart form")
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("missing file field: %v", err))
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(path.Ext(header.Filename))
+	contentType := meetingAudioContentTypesByExt[ext]
+	if contentType == "" {
+		writeError(w, http.StatusBadRequest, "unsupported audio file type")
+		return
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read file")
+		return
+	}
+	if len(data) == 0 {
+		writeError(w, http.StatusBadRequest, "audio file is empty")
+		return
+	}
+
+	var duration pgtype.Int4
+	if raw := strings.TrimSpace(r.FormValue("duration_seconds")); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || v < 0 {
+			writeError(w, http.StatusBadRequest, "invalid duration_seconds")
+			return
+		}
+		duration = pgtype.Int4{Int32: int32(v), Valid: true}
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		slog.Error("failed to generate meeting audio asset uuid", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	storageKey := "workspaces/" + uuidToString(meeting.WorkspaceID) + "/meetings/" + uuidToString(meeting.ID) + "/audio-assets/" + id.String() + ext
+	link, err := h.Storage.Upload(r.Context(), storageKey, data, contentType, header.Filename)
+	if err != nil {
+		slog.Error("meeting audio upload failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "upload failed")
+		return
+	}
+
+	asset, err := h.Queries.CreateMeetingAudioAsset(r.Context(), db.CreateMeetingAudioAssetParams{
+		ID:              pgtype.UUID{Bytes: id, Valid: true},
+		WorkspaceID:     meeting.WorkspaceID,
+		ProjectID:       meeting.ProjectID,
+		MeetingID:       meeting.ID,
+		StorageKey:      storageKey,
+		FileUrl:         link,
+		Filename:        header.Filename,
+		ContentType:     contentType,
+		SizeBytes:       int64(len(data)),
+		DurationSeconds: duration,
+		CreatedByUserID: parseUUID(userID),
+	})
+	if err != nil {
+		slog.Error("failed to create meeting audio asset record", "error", err)
+		h.Storage.Delete(r.Context(), storageKey)
+		writeError(w, http.StatusInternalServerError, "failed to create meeting audio asset")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, h.meetingAudioAssetToResponse(asset))
+}
+
+func (h *Handler) ListMeetingAudioAssets(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.Queries.ListMeetingAudioAssets(r.Context(), db.ListMeetingAudioAssetsParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list meeting audio assets")
+		return
+	}
+	assets := make([]MeetingAudioAssetResponse, len(rows))
+	for i, row := range rows {
+		assets[i] = h.meetingAudioAssetToResponse(row)
+	}
+	writeJSON(w, http.StatusOK, ListMeetingAudioAssetsResponse{Assets: assets, Total: len(assets)})
+}
+
+func (h *Handler) DeleteMeetingAudioAsset(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	assetID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "assetId"), "audio asset id")
+	if !ok {
+		return
+	}
+	asset, err := h.Queries.MarkMeetingAudioAssetDeleted(r.Context(), db.MarkMeetingAudioAssetDeletedParams{
+		ID:          assetID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "meeting audio asset not found")
+		return
+	}
+	if h.Storage != nil {
+		h.Storage.Delete(r.Context(), asset.StorageKey)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) CreateMeetingASRJob(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	assetID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "assetId"), "audio asset id")
+	if !ok {
+		return
+	}
+	var req CreateMeetingASRJobRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	provider, ok := normalizeMeetingChoice(req.Provider, "local", map[string]bool{
+		"local":    true,
+		"external": true,
+		"noop":     true,
+	})
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid provider")
+		return
+	}
+	asset, err := h.Queries.GetMeetingAudioAsset(r.Context(), db.GetMeetingAudioAssetParams{
+		ID:          assetID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil || asset.Status == "deleted" {
+		writeError(w, http.StatusNotFound, "meeting audio asset not found")
+		return
+	}
+	job, err := h.Queries.CreateMeetingASRJob(r.Context(), db.CreateMeetingASRJobParams{
+		WorkspaceID:  meeting.WorkspaceID,
+		ProjectID:    meeting.ProjectID,
+		MeetingID:    meeting.ID,
+		AudioAssetID: asset.ID,
+		Provider:     provider,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create meeting asr job")
+		return
+	}
+	h.startMeetingASRJob(meeting, asset, job, requestUserID(r))
+	writeJSON(w, http.StatusCreated, meetingASRJobToResponse(job))
+}
+
+func (h *Handler) ListMeetingASRJobs(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.Queries.ListMeetingASRJobs(r.Context(), db.ListMeetingASRJobsParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list meeting asr jobs")
+		return
+	}
+	jobs := make([]MeetingASRJobResponse, len(rows))
+	for i, row := range rows {
+		jobs[i] = meetingASRJobToResponse(row)
+	}
+	writeJSON(w, http.StatusOK, ListMeetingASRJobsResponse{Jobs: jobs, Total: len(jobs)})
+}
+
+func (h *Handler) RetryMeetingASRJob(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	jobID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "jobId"), "asr job id")
+	if !ok {
+		return
+	}
+	existingJob, err := h.Queries.GetMeetingASRJob(r.Context(), db.GetMeetingASRJobParams{
+		ID:          jobID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "meeting asr job not found")
+		return
+	}
+	if existingJob.Status != "failed" {
+		writeError(w, http.StatusConflict, "meeting asr job cannot be retried")
+		return
+	}
+	asset, err := h.Queries.GetMeetingAudioAsset(r.Context(), db.GetMeetingAudioAssetParams{
+		ID:          existingJob.AudioAssetID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil || asset.Status == "deleted" {
+		writeError(w, http.StatusNotFound, "meeting audio asset not found")
+		return
+	}
+	job, err := h.Queries.MarkMeetingASRJobRunningForRetry(r.Context(), db.MarkMeetingASRJobRunningForRetryParams{
+		ID:          jobID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusConflict, "meeting asr job cannot be retried")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to retry meeting asr job")
+		return
+	}
+	h.startMeetingASRJob(meeting, asset, job, requestUserID(r))
+	writeJSON(w, http.StatusOK, meetingASRJobToResponse(job))
 }
 
 func (h *Handler) CreateMeetingTranscriptSegment(w http.ResponseWriter, r *http.Request) {
@@ -735,10 +1215,6 @@ func (h *Handler) CreateMeetingTranscriptSegment(w http.ResponseWriter, r *http.
 	var req CreateMeetingTranscriptSegmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if req.Seq <= 0 {
-		writeError(w, http.StatusBadRequest, "seq must be positive")
 		return
 	}
 	if strings.TrimSpace(req.Text) == "" {
@@ -759,11 +1235,46 @@ func (h *Handler) CreateMeetingTranscriptSegment(w http.ResponseWriter, r *http.
 	if req.AudioOffsetMs != nil {
 		offset = pgtype.Int4{Int32: *req.AudioOffsetMs, Valid: true}
 	}
-	segment, err := h.Queries.CreateMeetingTranscriptSegment(r.Context(), db.CreateMeetingTranscriptSegmentParams{
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create transcript segment")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	if _, err := qtx.LockMeetingTranscriptSequence(r.Context(), db.LockMeetingTranscriptSequenceParams{
+		ID:          meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	}); err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "meeting not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to create transcript segment")
+		return
+	}
+
+	seq := req.Seq
+	if seq <= 0 {
+		seq, err = qtx.NextMeetingTranscriptSeq(r.Context(), db.NextMeetingTranscriptSeqParams{
+			MeetingID:   meeting.ID,
+			WorkspaceID: meeting.WorkspaceID,
+			ProjectID:   meeting.ProjectID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create transcript segment")
+			return
+		}
+	}
+
+	segment, err := qtx.CreateMeetingTranscriptSegment(r.Context(), db.CreateMeetingTranscriptSegmentParams{
 		WorkspaceID:   meeting.WorkspaceID,
 		ProjectID:     meeting.ProjectID,
 		MeetingID:     meeting.ID,
-		Seq:           req.Seq,
+		Seq:           seq,
 		SpeakerLabel:  strings.TrimSpace(req.SpeakerLabel),
 		Text:          strings.TrimSpace(req.Text),
 		Confidence:    req.Confidence,
@@ -778,6 +1289,11 @@ func (h *Handler) CreateMeetingTranscriptSegment(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to create transcript segment")
 		return
 	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create transcript segment")
+		return
+	}
+
 	resp := meetingTranscriptSegmentToResponse(segment)
 	h.publish(protocol.EventMeetingTranscriptSegmentCreated, resp.WorkspaceID, "member", requestUserID(r), map[string]any{
 		"meeting_id": resp.MeetingID,
@@ -785,6 +1301,318 @@ func (h *Handler) CreateMeetingTranscriptSegment(w http.ResponseWriter, r *http.
 	})
 	h.createMeetingQuickInsight(r.Context(), meeting, segment)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *Handler) UpdateMeetingTranscriptSegment(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	segmentID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "segmentId"), "transcript segment id")
+	if !ok {
+		return
+	}
+	existing, err := h.Queries.GetMeetingTranscriptSegment(r.Context(), db.GetMeetingTranscriptSegmentParams{
+		ID:          segmentID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "transcript segment not found")
+		return
+	}
+	var req UpdateMeetingTranscriptSegmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	text := existing.Text
+	if req.Text != nil {
+		text = strings.TrimSpace(*req.Text)
+	}
+	if text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	speaker := existing.SpeakerLabel
+	if req.SpeakerLabel != nil {
+		speaker = strings.TrimSpace(*req.SpeakerLabel)
+	}
+	confidence := existing.Confidence
+	if req.Confidence != nil {
+		confidence = *req.Confidence
+	}
+	offset := existing.AudioOffsetMs
+	if req.AudioOffsetMs != nil {
+		offset = pgtype.Int4{Int32: *req.AudioOffsetMs, Valid: true}
+	}
+	updated, err := h.Queries.UpdateMeetingTranscriptSegment(r.Context(), db.UpdateMeetingTranscriptSegmentParams{
+		ID:            segmentID,
+		MeetingID:     meeting.ID,
+		WorkspaceID:   meeting.WorkspaceID,
+		ProjectID:     meeting.ProjectID,
+		SpeakerLabel:  speaker,
+		Text:          text,
+		Confidence:    confidence,
+		AudioOffsetMs: offset,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update transcript segment")
+		return
+	}
+	h.publishMeetingTranscriptSegmentUpdated(meeting, updated, requestUserID(r))
+	writeJSON(w, http.StatusOK, meetingTranscriptSegmentToResponse(updated))
+}
+
+func (h *Handler) DeleteMeetingTranscriptSegment(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	segmentID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "segmentId"), "transcript segment id")
+	if !ok {
+		return
+	}
+	userID, ok := parseUUIDOrBadRequest(w, requestUserID(r), "user id")
+	if !ok {
+		return
+	}
+	deleted, err := h.Queries.SoftDeleteMeetingTranscriptSegment(r.Context(), db.SoftDeleteMeetingTranscriptSegmentParams{
+		ID:              segmentID,
+		MeetingID:       meeting.ID,
+		WorkspaceID:     meeting.WorkspaceID,
+		ProjectID:       meeting.ProjectID,
+		DeletedByUserID: userID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "transcript segment not found")
+		return
+	}
+	h.publishMeetingTranscriptSegmentDeleted(meeting, deleted, requestUserID(r))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) SplitMeetingTranscriptSegment(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	segmentID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "segmentId"), "transcript segment id")
+	if !ok {
+		return
+	}
+	var req SplitMeetingTranscriptSegmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	before := strings.TrimSpace(req.TextBefore)
+	after := strings.TrimSpace(req.TextAfter)
+	if before == "" || after == "" {
+		writeError(w, http.StatusBadRequest, "split text_before and text_after are required")
+		return
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	if _, err := qtx.LockMeetingTranscriptSequence(r.Context(), db.LockMeetingTranscriptSequenceParams{
+		ID:          meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	original, err := qtx.GetMeetingTranscriptSegment(r.Context(), db.GetMeetingTranscriptSegmentParams{
+		ID:          segmentID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "transcript segment not found")
+		return
+	}
+	if err := qtx.MarkMeetingTranscriptSeqAfterForShift(r.Context(), db.MarkMeetingTranscriptSeqAfterForShiftParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+		Seq:         original.Seq,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	updated, err := qtx.UpdateMeetingTranscriptSegment(r.Context(), db.UpdateMeetingTranscriptSegmentParams{
+		ID:            original.ID,
+		MeetingID:     meeting.ID,
+		WorkspaceID:   meeting.WorkspaceID,
+		ProjectID:     meeting.ProjectID,
+		SpeakerLabel:  original.SpeakerLabel,
+		Text:          before,
+		Confidence:    original.Confidence,
+		AudioOffsetMs: original.AudioOffsetMs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	speakerAfter := strings.TrimSpace(req.SpeakerLabelAfter)
+	if speakerAfter == "" {
+		speakerAfter = original.SpeakerLabel
+	}
+	created, err := qtx.CreateMeetingTranscriptSegment(r.Context(), db.CreateMeetingTranscriptSegmentParams{
+		WorkspaceID:   meeting.WorkspaceID,
+		ProjectID:     meeting.ProjectID,
+		MeetingID:     meeting.ID,
+		Seq:           original.Seq + 1,
+		SpeakerLabel:  speakerAfter,
+		Text:          after,
+		Confidence:    original.Confidence,
+		Source:        original.Source,
+		AudioOffsetMs: original.AudioOffsetMs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	if err := qtx.ShiftMarkedMeetingTranscriptSeqAfter(r.Context(), db.ShiftMarkedMeetingTranscriptSeqAfterParams{
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+		AfterSeq:    original.Seq,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to split transcript segment")
+		return
+	}
+	h.publishMeetingTranscriptSegmentUpdated(meeting, updated, requestUserID(r))
+	respCreated := meetingTranscriptSegmentToResponse(created)
+	h.publish(protocol.EventMeetingTranscriptSegmentCreated, respCreated.WorkspaceID, "member", requestUserID(r), map[string]any{
+		"meeting_id": respCreated.MeetingID,
+		"segment":    respCreated,
+	})
+	writeJSON(w, http.StatusOK, SplitMeetingTranscriptSegmentResponse{
+		Segments: []MeetingTranscriptSegmentResponse{
+			meetingTranscriptSegmentToResponse(updated),
+			respCreated,
+		},
+	})
+}
+
+func (h *Handler) MergeMeetingTranscriptSegments(w http.ResponseWriter, r *http.Request) {
+	meeting, ok := h.meetingFromURL(w, r)
+	if !ok {
+		return
+	}
+	segmentID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "segmentId"), "transcript segment id")
+	if !ok {
+		return
+	}
+	var req MergeMeetingTranscriptSegmentsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	targetID, ok := parseUUIDOrBadRequest(w, req.TargetSegmentID, "target segment id")
+	if !ok {
+		return
+	}
+	userID, ok := parseUUIDOrBadRequest(w, requestUserID(r), "user id")
+	if !ok {
+		return
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to merge transcript segments")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+	if _, err := qtx.LockMeetingTranscriptSequence(r.Context(), db.LockMeetingTranscriptSequenceParams{
+		ID:          meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to merge transcript segments")
+		return
+	}
+	first, err := qtx.GetMeetingTranscriptSegment(r.Context(), db.GetMeetingTranscriptSegmentParams{
+		ID:          segmentID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "transcript segment not found")
+		return
+	}
+	second, err := qtx.GetMeetingTranscriptSegment(r.Context(), db.GetMeetingTranscriptSegmentParams{
+		ID:          targetID,
+		MeetingID:   meeting.ID,
+		WorkspaceID: meeting.WorkspaceID,
+		ProjectID:   meeting.ProjectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "target transcript segment not found")
+		return
+	}
+	if first.Seq-second.Seq != 1 && second.Seq-first.Seq != 1 {
+		writeError(w, http.StatusBadRequest, "transcript segments must be adjacent")
+		return
+	}
+	keep := first
+	remove := second
+	if second.Seq < first.Seq {
+		keep = second
+		remove = first
+	}
+	mergedText := strings.TrimSpace(keep.Text) + "\n" + strings.TrimSpace(remove.Text)
+	updated, err := qtx.UpdateMeetingTranscriptSegment(r.Context(), db.UpdateMeetingTranscriptSegmentParams{
+		ID:            keep.ID,
+		MeetingID:     meeting.ID,
+		WorkspaceID:   meeting.WorkspaceID,
+		ProjectID:     meeting.ProjectID,
+		SpeakerLabel:  keep.SpeakerLabel,
+		Text:          strings.TrimSpace(mergedText),
+		Confidence:    keep.Confidence,
+		AudioOffsetMs: keep.AudioOffsetMs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to merge transcript segments")
+		return
+	}
+	deleted, err := qtx.SoftDeleteMeetingTranscriptSegment(r.Context(), db.SoftDeleteMeetingTranscriptSegmentParams{
+		ID:              remove.ID,
+		MeetingID:       meeting.ID,
+		WorkspaceID:     meeting.WorkspaceID,
+		ProjectID:       meeting.ProjectID,
+		DeletedByUserID: userID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to merge transcript segments")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to merge transcript segments")
+		return
+	}
+	h.publishMeetingTranscriptSegmentUpdated(meeting, updated, requestUserID(r))
+	h.publishMeetingTranscriptSegmentDeleted(meeting, deleted, requestUserID(r))
+	writeJSON(w, http.StatusOK, MergeMeetingTranscriptSegmentsResponse{
+		Segment:          meetingTranscriptSegmentToResponse(updated),
+		DeletedSegmentID: uuidToString(deleted.ID),
+	})
 }
 
 func (h *Handler) ListMeetingTranscriptSegments(w http.ResponseWriter, r *http.Request) {
@@ -917,6 +1745,50 @@ type meetingSummaryDraft struct {
 	Tensions         []string
 	ActionItems      []string
 	MemoryCandidates []string
+}
+
+type meetingSummaryChunkDraft struct {
+	SourceSeqStart int32
+	SourceSeqEnd   int32
+	Draft          meetingSummaryDraft
+}
+
+const meetingSummaryChunkSize = 250
+
+func buildMeetingSummaryChunks(meeting db.MeetingSession, segments []db.MeetingTranscriptSegment) []meetingSummaryChunkDraft {
+	if len(segments) == 0 {
+		return nil
+	}
+	chunks := make([]meetingSummaryChunkDraft, 0, (len(segments)+meetingSummaryChunkSize-1)/meetingSummaryChunkSize)
+	for start := 0; start < len(segments); start += meetingSummaryChunkSize {
+		end := start + meetingSummaryChunkSize
+		if end > len(segments) {
+			end = len(segments)
+		}
+		window := segments[start:end]
+		chunks = append(chunks, meetingSummaryChunkDraft{
+			SourceSeqStart: window[0].Seq,
+			SourceSeqEnd:   window[len(window)-1].Seq,
+			Draft:          buildMeetingSummaryDraft(meeting, window, nil),
+		})
+	}
+	return chunks
+}
+
+func appendMeetingSummaryChunkIndex(summaryMd string, chunks []meetingSummaryChunkDraft) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(summaryMd, "\n"))
+	b.WriteString("\n\n## 分段纪要索引\n")
+	for i, chunk := range chunks {
+		b.WriteString("- 第 ")
+		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString(" 段窗口：第 ")
+		b.WriteString(strconv.Itoa(int(chunk.SourceSeqStart)))
+		b.WriteString(" 到第 ")
+		b.WriteString(strconv.Itoa(int(chunk.SourceSeqEnd)))
+		b.WriteString(" 段\n")
+	}
+	return b.String()
 }
 
 func buildMeetingSummaryDraft(meeting db.MeetingSession, segments []db.MeetingTranscriptSegment, cards []db.MeetingInsightCard) meetingSummaryDraft {
