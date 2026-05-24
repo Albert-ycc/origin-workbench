@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, PanelLeftClose, Plus } from "lucide-react";
+import {
+  FolderKanban,
+  FolderOpen,
+  MessageSquareText,
+  Network,
+  PanelLeftClose,
+  Plus,
+  Users,
+} from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import {
@@ -187,14 +195,7 @@ export function ProjectWorkspacesListPage({ projectId }: { projectId?: string })
             onExpandSidebar={() => setSidebarCollapsed(false)}
           />
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center p-12 text-center">
-            <FolderOpen className="mb-3 size-12 text-muted-foreground opacity-40" />
-            <p className="mb-1 text-base font-medium">从左侧选一个项目</p>
-            <p className="max-w-md text-sm text-muted-foreground leading-relaxed">
-              项目把团队的工作收敛到一个本地工作目录——所有 Mission、Idea、
-              Council、产出都归在项目下。
-            </p>
-          </div>
+          <ProjectWorkspaceEmptyState onCreate={() => setCreating(true)} />
         )}
       </main>
 
@@ -229,6 +230,132 @@ const projectStatusCopy: Record<string, string> = {
   completed: "已完成",
   archived: "归档",
 };
+
+function ProjectWorkspaceEmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <div className="flex items-center justify-between gap-4 border-b bg-background px-8 py-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-600">
+            <FolderKanban className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-lg font-semibold">项目工作区</h1>
+              <span className="shrink-0 rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600">
+                本地
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              把长期目标、协作成员和产出收束到一个本地工作目录。
+            </p>
+          </div>
+        </div>
+        <Button size="sm" onClick={onCreate} className="shrink-0">
+          <Plus className="size-3.5" />
+          新建项目
+        </Button>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
+        <div className="mx-auto grid min-h-[520px] w-full max-w-5xl items-center gap-8 py-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="text-left">
+            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-600">
+              本地项目
+            </span>
+            <h2 className="mt-4 text-2xl font-semibold tracking-normal text-foreground">
+              还没有项目
+            </h2>
+            <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">
+              创建第一个项目后，主聊、Mission、Idea、Council 和产出都会归到同一个工作目录下。
+            </p>
+            <div className="mt-5 grid max-w-md gap-2 sm:grid-cols-3">
+              <ProjectEmptyFeature icon={FolderOpen} label="本地目录" />
+              <ProjectEmptyFeature icon={Users} label="协作成员" />
+              <ProjectEmptyFeature icon={MessageSquareText} label="项目主聊" />
+            </div>
+            <Button onClick={onCreate} className="mt-6">
+              <Plus className="size-4" />
+              新建第一个项目
+            </Button>
+          </div>
+
+          <div className="w-full justify-self-end rounded-lg border bg-card p-4 text-card-foreground shadow-sm lg:max-w-[560px]">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex size-9 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-600">
+                  <FolderKanban className="size-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">项目样板</div>
+                  <div className="text-xs text-muted-foreground">创建后会形成一个可持续推进的工作面</div>
+                </div>
+              </div>
+              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-600">
+                准备中
+              </span>
+            </div>
+
+            <div className="divide-y">
+              <ProjectPreviewRow
+                icon={MessageSquareText}
+                title="项目主聊"
+                body="团队围绕项目持续对话，关键结论会沉淀到项目记忆。"
+              />
+              <ProjectPreviewRow
+                icon={Network}
+                title="Mission / Idea / Council"
+                body="任务、想法和多角色议事都从这里进入同一个上下文。"
+              />
+              <ProjectPreviewRow
+                icon={Users}
+                title="协作成员"
+                body="选择参与 agent 并指定 captain，后续分工和推进都围绕它展开。"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectEmptyFeature({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof FolderOpen;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+      <Icon className="size-3.5 text-blue-600" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ProjectPreviewRow({
+  icon: Icon,
+  title,
+  body,
+}: {
+  icon: typeof FolderOpen;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="flex gap-3 py-4">
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-medium">{title}</div>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{body}</p>
+      </div>
+    </div>
+  );
+}
 
 function CreateProjectDialog({ onClose }: { onClose: () => void }) {
   const wsId = useWorkspaceId();
