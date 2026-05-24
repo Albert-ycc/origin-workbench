@@ -76,7 +76,7 @@ export const agentPrimarySurface = {
 
 export const agentListLayout = "badge-grid" as const;
 export const agentBadgeGridClassName =
-  "grid grid-cols-[repeat(auto-fill,minmax(21rem,21rem))] justify-center gap-4" as const;
+  "grid grid-cols-[repeat(auto-fill,minmax(220px,220px))] justify-center gap-4" as const;
 
 export function AgentsPage() {
   const wsId = useWorkspaceId();

@@ -13,7 +13,7 @@ export const agentBadgeMetaLabels = [
 ] as const;
 
 export const agentBadgeCardClassName =
-  "group relative flex min-h-[18rem] w-[21rem] overflow-hidden rounded-lg border border-border/80 bg-card text-card-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_22px_rgba(0,0,0,0.14)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_26px_rgba(0,0,0,0.2)]" as const;
+  "group relative flex min-h-[18rem] w-[220px] overflow-hidden rounded-lg border border-border/80 bg-card text-card-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_22px_rgba(0,0,0,0.14)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_26px_rgba(0,0,0,0.2)]" as const;
 
 export function formatAgentStartDate(value: string) {
   const date = new Date(value);

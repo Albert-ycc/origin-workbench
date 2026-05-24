@@ -30,7 +30,7 @@ describe("AgentsPage IA", () => {
 
   it("uses fixed-width badge columns that wrap to however many fit", () => {
     expect(agentBadgeGridClassName).toContain(
-      "grid-cols-[repeat(auto-fill,minmax(21rem,21rem))]",
+      "grid-cols-[repeat(auto-fill,minmax(220px,220px))]",
     );
     expect(agentBadgeGridClassName).toContain("justify-center");
     expect(agentBadgeGridClassName).not.toMatch(
@@ -39,7 +39,7 @@ describe("AgentsPage IA", () => {
   });
 
   it("keeps badge cards compact and focused on the required fields", () => {
-    expect(agentBadgeCardClassName).toContain("w-[21rem]");
+    expect(agentBadgeCardClassName).toContain("w-[220px]");
     expect(agentBadgeCardClassName).toContain("min-h-[18rem]");
     expect(agentBadgeCardClassName).not.toContain("min-h-[28rem]");
     expect(agentBadgeMetaLabels).toEqual(["入职时间", "当前模型", "运行次数"]);
