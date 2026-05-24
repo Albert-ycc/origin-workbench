@@ -9,6 +9,7 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  Download,
   FileText,
   MessageSquareText,
   Mic,
@@ -17,6 +18,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Send,
   Sparkles,
   Square,
@@ -94,11 +96,17 @@ import { Textarea } from "@multica/ui/components/ui/textarea";
 import { cn } from "@multica/ui/lib/utils";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
+import {
+  buildMeetingAudioFileName,
+  type MeetingAudioRecorderController,
+  useMeetingAudioRecorder,
+} from "./audio-recorder";
 import { useLiveTranscription } from "./live-transcription";
 
 const EMPTY_PROJECTS: ProjectV12[] = [];
 
 export const meetingPrimarySurfaces = ["实时转写流", "关键洞察 / 旁听提示"] as const;
+export const meetingBackupSurfaces = ["本地录音备份"] as const;
 
 export const meetingNavigationCopy = {
   routeTitle: "会议",
@@ -388,6 +396,10 @@ function MeetingSessionView({
   const addSegment = useCreateMeetingTranscriptSegment(wsId);
   const updateInsight = useUpdateMeetingInsightStatus(wsId);
   const generateSummary = useGenerateMeetingSummary(wsId);
+  const audioRecorder = useMeetingAudioRecorder();
+  const audioRecordingState = audioRecorder.state;
+  const stopAudioRecording = audioRecorder.stop;
+  const resetAudioRecording = audioRecorder.reset;
   const [draft, setDraft] = useState("");
   const [importText, setImportText] = useState("");
   const [manualFallbackMeetingId, setManualFallbackMeetingId] = useState<string | null>(null);
@@ -451,6 +463,12 @@ function MeetingSessionView({
     },
   });
 
+  useEffect(() => {
+    if (meeting?.status !== "running" && audioRecordingState === "recording") {
+      stopAudioRecording();
+    }
+  }, [audioRecordingState, meeting?.status, stopAudioRecording]);
+
   const switchToManualTranscription = useCallback(
     async (targetMeeting: MeetingSession, message = "实时转写不可用，已切到手动记录") => {
       liveTranscription.reset();
@@ -481,7 +499,8 @@ function MeetingSessionView({
     initializedStrongAlertsRef.current = false;
     setActiveStrongAlertId(null);
     liveTranscription.reset();
-  }, [liveTranscription.reset, meetingId]);
+    resetAudioRecording();
+  }, [liveTranscription.reset, meetingId, resetAudioRecording]);
 
   useEffect(() => {
     if (!meeting) {
@@ -589,6 +608,7 @@ function MeetingSessionView({
 
   const stopSession = async () => {
     liveTranscription.stop();
+    if (audioRecordingState === "recording") stopAudioRecording();
     try {
       await stopMeeting.mutateAsync(meeting.id);
       if (segments.length > 0) {
@@ -648,6 +668,7 @@ function MeetingSessionView({
 
     if (savedCount === chunks.length) {
       setImportText("");
+      setImportOpen(false);
       toast.success(`已保存 ${chunks.length} 段文件转写`);
       return;
     }
@@ -732,6 +753,14 @@ function MeetingSessionView({
                 {liveTranscription.error}
               </div>
             )}
+            <AudioRecorderPanel
+              meetingTitle={meeting.title}
+              recorder={audioRecorder}
+              disabled={meeting.status !== "running"}
+              realtimeUnavailable={
+                effectiveASRProvider !== "renderer" || !liveTranscription.isSupported
+              }
+            />
             <div className="flex gap-2">
               <Textarea
                 value={draft}
@@ -1441,7 +1470,7 @@ function TranscriptFeed({
   );
 }
 
-function SourceImportPanel({
+export function SourceImportPanel({
   text,
   onTextChange,
   onUploadClick,
@@ -1470,13 +1499,93 @@ function SourceImportPanel({
         value={text}
         onChange={(event) => onTextChange(event.target.value)}
         placeholder="粘贴会议文件转写内容，保存后按段落写入本场会议"
-        rows={2}
-        className="min-h-[54px] resize-none bg-background text-sm"
+        rows={8}
+        className="h-40 min-h-40 max-h-40 resize-none overflow-y-auto bg-background text-sm [field-sizing:fixed]"
       />
       <div className="mt-2 flex justify-end">
         <Button size="sm" variant="secondary" onClick={onSave} disabled={disabled || !text.trim()}>
           保存为转写
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function AudioRecorderPanel({
+  meetingTitle,
+  recorder,
+  disabled,
+  realtimeUnavailable,
+}: {
+  meetingTitle: string;
+  recorder: MeetingAudioRecorderController;
+  disabled: boolean;
+  realtimeUnavailable: boolean;
+}) {
+  const recording = recorder.recording;
+  const isRecording = recorder.state === "recording";
+  const canDownload = Boolean(recording);
+  const statusText =
+    recorder.state === "recording"
+      ? `录音中 ${formatRecordingDuration(recorder.elapsedSeconds)}`
+      : recorder.state === "ready" && recording
+        ? `已录制 ${formatRecordingDuration(recording.durationSeconds)}`
+        : recorder.state === "error" && recorder.error
+          ? recorder.error
+          : disabled
+            ? "开始会议后可录音"
+            : realtimeUnavailable
+              ? "实时转写不可用，先录音备份"
+              : "可同步保存录音备份";
+  const downloadName = recording
+    ? buildMeetingAudioFileName(meetingTitle, recording.startedAt, recording.mimeType)
+    : "";
+
+  const startRecording = async () => {
+    await recorder.start();
+  };
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 px-3 py-2">
+      <div className="flex min-w-[180px] flex-1 items-center gap-2 text-sm">
+        <Mic className={cn("size-4", isRecording ? "text-red-600" : "text-muted-foreground")} />
+        <span className="font-medium">录音备份</span>
+        <span
+          className={cn(
+            "truncate text-xs",
+            recorder.state === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {statusText}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {isRecording ? (
+          <Button size="sm" variant="outline" onClick={recorder.stop}>
+            <Square className="size-4" />
+            停止
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={startRecording} disabled={disabled}>
+            <Mic className="size-4" />
+            开始录音
+          </Button>
+        )}
+        {canDownload && recording && (
+          <Button
+            size="sm"
+            variant="secondary"
+            render={<a href={recording.url} download={downloadName} />}
+          >
+            <Download className="size-4" />
+            保存录音
+          </Button>
+        )}
+        {canDownload && (
+          <Button size="icon-sm" variant="ghost" onClick={recorder.reset} title="清除录音">
+            <RotateCcw className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -1748,6 +1857,17 @@ function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
   return `${Math.max(1, minutes)} 分钟`;
+}
+
+function formatRecordingDuration(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  const mmss = `${minutes.toString().padStart(2, "0")}:${seconds
+    .toString()
+    .padStart(2, "0")}`;
+  return hours > 0 ? `${hours.toString().padStart(2, "0")}:${mmss}` : mmss;
 }
 
 function splitTranscriptText(text: string): string[] {

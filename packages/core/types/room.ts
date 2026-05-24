@@ -49,12 +49,14 @@ export interface RoomAgentPersona {
 export interface CreateRoomRequest {
   name: string;
   description?: string;
+  theme?: string;
   agent_ids?: string[];
 }
 
 export interface UpdateRoomRequest {
   name?: string;
   description?: string;
+  theme?: string;
 }
 
 export interface AddRoomMemberRequest {

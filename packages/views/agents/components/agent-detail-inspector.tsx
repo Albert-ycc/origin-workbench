@@ -236,6 +236,8 @@ function AvatarEditor({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { upload, uploading } = useFileUpload(api);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [savingPreset, setSavingPreset] = useState<string | null>(null);
 
   if (!canEdit) {
     return (
@@ -249,9 +251,6 @@ function AvatarEditor({
       </div>
     );
   }
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [savingPreset, setSavingPreset] = useState<string | null>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

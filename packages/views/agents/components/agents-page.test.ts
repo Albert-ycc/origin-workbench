@@ -28,14 +28,18 @@ describe("AgentsPage IA", () => {
     expect(agentPrimarySurface.controls).not.toContain("全部");
   });
 
-  it("uses a responsive badge grid that reaches four cards on wide desktop", () => {
-    expect(agentBadgeGridClassName).toContain("grid-cols-1");
-    expect(agentBadgeGridClassName).toContain("sm:grid-cols-2");
-    expect(agentBadgeGridClassName).toContain("lg:grid-cols-3");
-    expect(agentBadgeGridClassName).toContain("xl:grid-cols-4");
+  it("uses fixed-width badge columns that wrap to however many fit", () => {
+    expect(agentBadgeGridClassName).toContain(
+      "grid-cols-[repeat(auto-fill,minmax(21rem,21rem))]",
+    );
+    expect(agentBadgeGridClassName).toContain("justify-center");
+    expect(agentBadgeGridClassName).not.toMatch(
+      /(?:^|\s)(?:sm:|lg:|xl:)?grid-cols-[1-6](?:\s|$)/,
+    );
   });
 
   it("keeps badge cards compact and focused on the required fields", () => {
+    expect(agentBadgeCardClassName).toContain("w-[21rem]");
     expect(agentBadgeCardClassName).toContain("min-h-[18rem]");
     expect(agentBadgeCardClassName).not.toContain("min-h-[28rem]");
     expect(agentBadgeMetaLabels).toEqual(["入职时间", "当前模型", "运行次数"]);

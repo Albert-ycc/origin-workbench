@@ -7,6 +7,7 @@ import type { Agent, Room } from "@multica/core/types";
 const api = vi.hoisted(() => ({
   createRoom: vi.fn(),
   listAgents: vi.fn(),
+  listRoomMembers: vi.fn(),
   listRooms: vi.fn(),
 }));
 
@@ -101,6 +102,7 @@ describe("RoomsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.listAgents.mockResolvedValue([]);
+    api.listRoomMembers.mockResolvedValue({ members: [] });
     api.listRooms.mockResolvedValue({ rooms: [], total: 0 });
     api.createRoom.mockResolvedValue(createRoom({ id: "room-created" }));
   });
@@ -144,6 +146,7 @@ describe("RoomsPage", () => {
       expect(api.createRoom).toHaveBeenCalledWith({
         name: "新茶水间",
         description: undefined,
+        theme: expect.stringMatching(/^tea-room-cover-\d{2}$/),
         agent_ids: ["agent-1"],
       });
     });

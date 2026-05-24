@@ -70,13 +70,15 @@ export function RoomMessageBubble({
   return (
     <div className={cn("group flex gap-2", isMerged ? "mt-0.5" : "mt-3")}>
       {!isMerged ? (
-        <ActorAvatar
-          actorType="agent"
-          actorId={message.sender_id}
-          size={32}
-          className="mt-0.5 rounded-full"
-          showStatusDot
-        />
+        <div className="mt-0.5 shrink-0">
+          <ActorAvatar
+            actorType="agent"
+            actorId={message.sender_id}
+            size={32}
+            className="rounded-full"
+            showStatusDot
+          />
+        </div>
       ) : (
         <div className="mt-0.5 size-8 shrink-0" />
       )}

@@ -80,7 +80,7 @@ export function createMobileApiClient(baseUrl: string, token: string | null) {
   const client = new ApiClient(baseUrl, {
     identity: {
       platform: "mobile",
-      version: "1.1.0",
+      version: "1.1.1",
       os: getClientOS(),
     },
   });

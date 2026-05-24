@@ -40,9 +40,9 @@ describe("collectSpeechRecognitionTranscript", () => {
   });
 });
 
-let lastRecognition: MockSpeechRecognition | null = null;
-
 class MockSpeechRecognition {
+  static lastInstance: MockSpeechRecognition | null = null;
+
   continuous = false;
   interimResults = false;
   lang = "";
@@ -54,7 +54,7 @@ class MockSpeechRecognition {
   abort = vi.fn();
 
   constructor() {
-    lastRecognition = this;
+    MockSpeechRecognition.lastInstance = this;
   }
 }
 
@@ -72,7 +72,7 @@ describe("useLiveTranscription", () => {
       configurable: true,
       value: undefined,
     });
-    lastRecognition = null;
+    MockSpeechRecognition.lastInstance = null;
     vi.restoreAllMocks();
   });
 
@@ -99,10 +99,10 @@ describe("useLiveTranscription", () => {
       await expect(result.current.start()).resolves.toBe(true);
     });
 
-    expect(lastRecognition?.interimResults).toBe(true);
+    expect(MockSpeechRecognition.lastInstance?.interimResults).toBe(true);
 
     act(() => {
-      lastRecognition?.onresult?.({
+      MockSpeechRecognition.lastInstance?.onresult?.({
         resultIndex: 0,
         results: [{ isFinal: false, 0: { transcript: "正在流式识别" } }],
       });
@@ -112,7 +112,7 @@ describe("useLiveTranscription", () => {
     expect(onFinalTranscript).not.toHaveBeenCalled();
 
     act(() => {
-      lastRecognition?.onresult?.({
+      MockSpeechRecognition.lastInstance?.onresult?.({
         resultIndex: 0,
         results: [{ isFinal: true, 0: { transcript: "已经确认入库" } }],
       });

@@ -41,6 +41,20 @@ export function RuntimePicker({
   const selected = runtimes.find((r) => r.id === value) ?? null;
   const Icon = selected?.runtime_mode === "cloud" ? Cloud : Monitor;
 
+  const filtered = useMemo(() => {
+    const list =
+      filter === "mine" && currentUserId
+        ? runtimes.filter((r) => r.owner_id === currentUserId)
+        : runtimes;
+    return [...list].sort((a, b) => {
+      if (a.owner_id === currentUserId && b.owner_id !== currentUserId)
+        return -1;
+      if (a.owner_id !== currentUserId && b.owner_id === currentUserId)
+        return 1;
+      return 0;
+    });
+  }, [runtimes, filter, currentUserId]);
+
   if (!canEdit) {
     const isOnline = selected?.status === "online";
     return (
@@ -73,20 +87,6 @@ export function RuntimePicker({
     : "运行环境 · 未选择";
 
   const hasOtherRuntimes = runtimes.some((r) => r.owner_id !== currentUserId);
-
-  const filtered = useMemo(() => {
-    const list =
-      filter === "mine" && currentUserId
-        ? runtimes.filter((r) => r.owner_id === currentUserId)
-        : runtimes;
-    return [...list].sort((a, b) => {
-      if (a.owner_id === currentUserId && b.owner_id !== currentUserId)
-        return -1;
-      if (a.owner_id !== currentUserId && b.owner_id === currentUserId)
-        return 1;
-      return 0;
-    });
-  }, [runtimes, filter, currentUserId]);
 
   const getOwner = (id: string | null) =>
     id ? members.find((m) => m.user_id === id) ?? null : null;

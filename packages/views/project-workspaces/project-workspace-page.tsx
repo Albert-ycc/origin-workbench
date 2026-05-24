@@ -94,6 +94,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -241,7 +242,7 @@ export function ProjectWorkspacePage({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
         <span>项目不存在或已归档</span>
-        <Button variant="outline" size="sm" onClick={() => window.history.back()}>
+        <Button variant="outline" size="sm" onClick={() => navigation.push(paths.projectWorkspaces())}>
           返回
         </Button>
       </div>
@@ -1203,35 +1204,41 @@ function ProjectMoreMenu({
           更多
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>协作类</DropdownMenuLabel>
-          <DropdownMenuItem
-            disabled={!mainChatSessionId}
-            onClick={() => setCouncilOpen(true)}
-          >
-            <Users className="size-3.5" />
-            多角色议事 / Council
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>维护类</DropdownMenuLabel>
-          <DropdownMenuItem onClick={() => setCompactOpen(true)}>
-            <Sparkles className="size-3.5" />
-            整理 + 重新出发
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>危险类</DropdownMenuLabel>
-          {!archived && (
-            <DropdownMenuItem onClick={() => setArchiveOpen(true)}>
-              <ArchiveX className="size-3.5" />
-              归档
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>协作类</DropdownMenuLabel>
+            <DropdownMenuItem
+              disabled={!mainChatSessionId}
+              onClick={() => setCouncilOpen(true)}
+            >
+              <Users className="size-3.5" />
+              多角色议事 / Council
             </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="size-3.5" />
-            删除
-          </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>维护类</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => setCompactOpen(true)}>
+              <Sparkles className="size-3.5" />
+              整理 + 重新出发
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>危险类</DropdownMenuLabel>
+            {!archived && (
+              <DropdownMenuItem onClick={() => setArchiveOpen(true)}>
+                <ArchiveX className="size-3.5" />
+                归档
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="size-3.5" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
       {mainChatSessionId && (

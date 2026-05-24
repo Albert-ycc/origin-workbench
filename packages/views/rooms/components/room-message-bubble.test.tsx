@@ -12,14 +12,17 @@ vi.mock("@multica/views/common/actor-avatar", () => ({
   ActorAvatar: ({
     actorType,
     actorId,
+    className,
   }: {
     actorType: string;
     actorId: string;
+    className?: string;
   }) => (
     <span
       data-testid="actor-avatar"
       data-actor-type={actorType}
       data-actor-id={actorId}
+      data-class-name={className ?? ""}
     />
   ),
 }));
@@ -53,6 +56,14 @@ describe("RoomMessageBubble", () => {
     expect(avatar).toHaveAttribute("data-actor-id", "agent-1");
     expect(screen.getByText("前端开发工程师")).toBeInTheDocument();
     expect(screen.getByText("我来看看这个交互。")).toBeInTheDocument();
+  });
+
+  it("keeps the status dot anchored to the avatar instead of the row spacing", () => {
+    render(<RoomMessageBubble message={createMessage()} />);
+
+    const avatar = screen.getByTestId("actor-avatar");
+    expect(avatar.parentElement).toHaveClass("mt-0.5");
+    expect(avatar).toHaveAttribute("data-class-name", "rounded-full");
   });
 
   it("lets users quote an agent message", async () => {

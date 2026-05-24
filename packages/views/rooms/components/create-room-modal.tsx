@@ -10,6 +10,7 @@ import { useCurrentWorkspace } from "@multica/core/paths";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import { ActorAvatar } from "@multica/views/common/actor-avatar";
 import type { Agent } from "@multica/core/types";
+import { pickRandomTeaRoomCoverTheme } from "../room-covers";
 
 interface CreateRoomModalProps {
   onClose: () => void;
@@ -40,7 +41,12 @@ export function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
   const handleCreate = () => {
     if (!name.trim()) return;
     createRoom.mutate(
-      { name: name.trim(), description: description.trim() || undefined, agent_ids: selectedAgentIds },
+      {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        theme: pickRandomTeaRoomCoverTheme(),
+        agent_ids: selectedAgentIds,
+      },
       {
         onSuccess: (room) => {
           onCreated?.(room.id);
