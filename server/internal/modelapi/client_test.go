@@ -144,6 +144,75 @@ func TestClientChatAcceptsFullChatCompletionsEndpointAsBaseURL(t *testing.T) {
 	}
 }
 
+func TestClientListModelsParsesOpenAICompatibleResponse(t *testing.T) {
+	var gotAuth string
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"object":"list",
+			"data":[
+				{"id":"model-a","object":"model"},
+				{"id":" model-b "},
+				{"id":""},
+				{"object":"model"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("sk-test", server.URL+"/v1/chat/completions", server.Client())
+	models, err := client.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+
+	if gotPath != "/v1/models" {
+		t.Fatalf("path = %q, want /v1/models", gotPath)
+	}
+	if gotAuth != "Bearer sk-test" {
+		t.Fatalf("authorization header mismatch: %q", gotAuth)
+	}
+	if len(models) != 2 || models[0] != "model-a" || models[1] != "model-b" {
+		t.Fatalf("models = %+v", models)
+	}
+}
+
+func TestClientListModelsClassifiesUnsupportedEndpointWithoutBreakingChat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"message":"not found"}}`))
+		case "/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient("sk-test", server.URL, server.Client())
+	models, err := client.ListModels(context.Background())
+	if !errors.Is(err, ErrModelsEndpointUnsupported) {
+		t.Fatalf("expected ErrModelsEndpointUnsupported, got models=%+v err=%v", models, err)
+	}
+
+	res, err := client.Chat(context.Background(), ChatRequest{
+		Model:    "model-a",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("chat should still use chat completions: %v", err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("chat content = %q", res.Content)
+	}
+}
+
 func TestClientChatSurfacesAPIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -158,6 +227,47 @@ func TestClientChatSurfacesAPIError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "bad model") {
 		t.Fatalf("expected API error, got %v", err)
+	}
+}
+
+func TestClientTestConnectionSucceedsWithMinimalChatCompletion(t *testing.T) {
+	var gotReq ChatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("sk-test", server.URL, server.Client())
+	result := client.TestConnection(context.Background(), "model-a")
+	if !result.OK {
+		t.Fatalf("expected successful connection test, got %+v", result)
+	}
+	if gotReq.Model != "model-a" || len(gotReq.Messages) != 1 {
+		t.Fatalf("unexpected test request: %+v", gotReq)
+	}
+}
+
+func TestClientTestConnectionClassifiesAuthFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("sk-bad", server.URL, server.Client())
+	result := client.TestConnection(context.Background(), "model-a")
+	if result.OK {
+		t.Fatalf("expected failed connection test")
+	}
+	if result.Code != "auth_failed" {
+		t.Fatalf("code = %q, want auth_failed (full result: %+v)", result.Code, result)
+	}
+	if strings.Contains(strings.ToLower(result.Message), "sk-bad") || strings.Contains(result.Detail, "sk-bad") {
+		t.Fatalf("connection test result must not echo API key: %+v", result)
 	}
 }
 

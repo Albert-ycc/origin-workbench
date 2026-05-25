@@ -36,6 +36,7 @@ services:
       - "${PORT:-8080}:8080"
     volumes:
       - backend_uploads:/app/data/uploads
+      - backend_config:/app/config
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-multica}:${POSTGRES_PASSWORD:-multica}@postgres:5432/${POSTGRES_DB:-multica}?sslmode=disable
       PORT: "8080"
@@ -60,6 +61,7 @@ services:
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}                                     
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}                                     
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-} 
+      ORIGIN_MODEL_CONFIG_FILE: ${ORIGIN_MODEL_CONFIG_FILE:-/app/config/model_api_config.json}
     restart: unless-stopped
 
 # Note: Origin fork removed the legacy Multica web frontend; the desktop
@@ -69,3 +71,4 @@ services:
 volumes:
   pgdata:
   backend_uploads:
+  backend_config:

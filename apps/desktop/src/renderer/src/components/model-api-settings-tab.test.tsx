@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildGuidedSetupDisplaySnippets,
   buildGuidedSetupSnippets,
+  getPrimaryConnectionFields,
+  modelApiProviderDefaults,
   type GuidedSetupForm,
 } from "./model-api-settings-tab";
 
@@ -97,5 +99,23 @@ describe("buildGuidedSetupSnippets", () => {
     expect(display.launchctl).not.toContain("sk-super-secret-key");
     expect(display.shell).not.toContain("sk-super-secret-key");
     expect(display.launchctl).toContain("sk-s********-key");
+  });
+});
+
+describe("model API settings product helpers", () => {
+  it("keeps the primary setup path focused on the required connection fields", () => {
+    expect(getPrimaryConnectionFields("relay")).toEqual(["apiKey", "baseUrl", "modelName"]);
+    expect(getPrimaryConnectionFields("official")).toEqual(["apiKey", "modelName"]);
+  });
+
+  it("uses real provider defaults without exposing environment variable details in the primary path", () => {
+    expect(modelApiProviderDefaults("relay")).toMatchObject({
+      baseUrl: "https://openrouter.ai/api/v1",
+      runtimeName: "OpenRouter / 中转站",
+    });
+    expect(modelApiProviderDefaults("ccSwitch")).toMatchObject({
+      baseUrl: "https://your-cc-switch.example/v1",
+      runtimeName: "cc-switch",
+    });
   });
 });

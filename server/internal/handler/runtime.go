@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -407,7 +408,7 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) syncConfiguredAPIRuntime(r *http.Request, workspaceID, userID string) error {
-	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromEnv()
+	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
 	if !ok {
 		return nil
 	}

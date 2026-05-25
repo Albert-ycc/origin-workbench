@@ -330,6 +330,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
 
+			// Model API configuration
+			r.Route("/api/model-api-config", func(r chi.Router) {
+				r.Get("/", h.GetModelAPIConfig)
+				r.Put("/", h.SaveModelAPIConfig)
+				r.Post("/test", h.TestModelAPIConfig)
+			})
+
 			// Issues
 			r.Route("/api/issues", func(r chi.Router) {
 				r.Get("/search", h.SearchIssues)

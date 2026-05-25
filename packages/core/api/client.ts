@@ -207,6 +207,58 @@ export interface ApiClientOptions {
   identity?: ApiClientIdentity;
 }
 
+export interface ModelAPIConfigPayload {
+  provider?: string;
+  api_key?: string;
+  base_url?: string;
+  model_name?: string;
+  model_names?: string;
+  runtime_name?: string;
+  tool_roots?: string;
+}
+
+export interface ModelAPILastTest {
+  last_tested_at?: string;
+  ok: boolean;
+  code?: string;
+  message: string;
+  detail?: string;
+  latency_ms?: number;
+}
+
+export interface ModelAPIConfigResponse {
+  provider: string;
+  api_key_configured: boolean;
+  base_url?: string;
+  base_url_configured: boolean;
+  model_name?: string;
+  model_names?: string;
+  runtime_name?: string;
+  tool_roots?: string;
+  config_source: string;
+  status: "online" | "offline";
+  ready: boolean;
+  env_override: boolean;
+  models?: Array<{
+    id: string;
+    label?: string;
+    provider?: string;
+    default?: boolean;
+  }>;
+  last_test?: ModelAPILastTest;
+  discovered_models?: string[];
+}
+
+export interface ModelAPIConnectionTestResponse {
+  ok: boolean;
+  code?: string;
+  message: string;
+  detail?: string;
+  last_tested_at?: string;
+  latency_ms?: number;
+  discovered_models?: string[];
+}
+
 export interface LoginResponse {
   token: string;
   user: User;
@@ -989,6 +1041,24 @@ export class ApiClient {
     posthog_host?: string;
   }> {
     return this.fetch("/api/config");
+  }
+
+  async getModelAPIConfig(): Promise<ModelAPIConfigResponse> {
+    return this.fetch("/api/model-api-config/");
+  }
+
+  async saveModelAPIConfig(data: ModelAPIConfigPayload): Promise<ModelAPIConfigResponse> {
+    return this.fetch("/api/model-api-config/", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async testModelAPIConfig(data: ModelAPIConfigPayload): Promise<ModelAPIConnectionTestResponse> {
+    return this.fetch("/api/model-api-config/test", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   // Workspaces

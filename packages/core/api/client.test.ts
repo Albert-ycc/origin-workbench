@@ -107,6 +107,58 @@ describe("ApiClient", () => {
     ]);
   });
 
+  it("uses the expected HTTP contract for model API config endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      new Response(JSON.stringify({ ready: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.getModelAPIConfig();
+    await client.saveModelAPIConfig({
+      api_key: "sk-test",
+      base_url: "https://openrouter.ai/api/v1",
+      model_name: "openrouter/auto",
+    });
+    await client.testModelAPIConfig({
+      api_key: "sk-test",
+      base_url: "https://openrouter.ai/api/v1",
+      model_name: "openrouter/auto",
+    });
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => ({
+      url,
+      method: init?.method ?? "GET",
+      body: init?.body,
+    }));
+
+    expect(calls).toMatchObject([
+      { url: "https://api.example.test/api/model-api-config/", method: "GET" },
+      {
+        url: "https://api.example.test/api/model-api-config/",
+        method: "PUT",
+        body: JSON.stringify({
+          api_key: "sk-test",
+          base_url: "https://openrouter.ai/api/v1",
+          model_name: "openrouter/auto",
+        }),
+      },
+      {
+        url: "https://api.example.test/api/model-api-config/test",
+        method: "POST",
+        body: JSON.stringify({
+          api_key: "sk-test",
+          base_url: "https://openrouter.ai/api/v1",
+          model_name: "openrouter/auto",
+        }),
+      },
+    ]);
+  });
+
   it("emits X-Client-* headers when identity is configured", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify([]), {

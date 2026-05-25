@@ -20,9 +20,11 @@ The current implementation is the API runtime with read-only file tools.
 
 The current API runtime:
 
-- reads configuration from backend process environment variables;
-- accepts either Origin-specific `ORIGIN_MODEL_*` variables or common
-  OpenAI-compatible variables written by tools such as cc-switch;
+- reads configuration from the desktop settings page or backend process
+  environment variables;
+- accepts either saved Origin config, Origin-specific `ORIGIN_MODEL_*`
+  variables, or common OpenAI-compatible variables written by tools such as
+  cc-switch;
 - creates a synthetic runtime marked with `managed_by=origin_api`;
 - exposes model metadata to the desktop settings page;
 - sends chat-style task prompts to an OpenAI-compatible `/chat/completions`
@@ -47,6 +49,38 @@ Codex or Claude Code yet.
 
 ## Configuration
 
+### Desktop Settings
+
+Use `设置 -> 大模型 API` for the normal path:
+
+1. Pick a provider: OpenAI, OpenRouter / relay, cc-switch, or custom
+   OpenAI-compatible service.
+2. Fill API Key, Base URL when required, and Model ID.
+3. Optional: run a connection test without saving.
+4. Click "test and save" to run the same connection test before writing the
+   config file. Failed tests are not saved.
+5. Pick the runtime from an agent's capability source.
+
+The settings page persists API config in a backend-local JSON file. The key is
+never returned to the frontend after saving; the page only receives a boolean
+that says whether a key exists. The default path is
+`~/.multica/model_api_config.json`; operators can override it with:
+
+```bash
+export ORIGIN_MODEL_CONFIG_FILE="/secure/path/model_api_config.json"
+```
+
+Self-hosted Docker sets this path to `/app/config/model_api_config.json` and
+mounts it on a named volume so the saved API config survives container
+re-creation.
+
+Successful saves also persist the last connection test result and any model IDs
+discovered from an OpenAI-compatible `/models` endpoint. The `/models` endpoint
+is best-effort: services that return 404, 405, or 501 still work as long as the
+minimum `/chat/completions` connection test passes.
+
+### Environment Variables
+
 Required:
 
 ```bash
@@ -61,11 +95,13 @@ export ORIGIN_MODEL_PROVIDER="openai"
 export ORIGIN_MODEL_BASE_URL="https://api.openai.com/v1"
 export ORIGIN_MODEL_NAMES="gpt-4.1-mini,gpt-4.1"
 export ORIGIN_MODEL_RUNTIME_NAME="Model API"
-export ORIGIN_MODEL_TOOL_ROOTS="/Users/albert/OriginWorkbenchMount"
+export ORIGIN_MODEL_TOOL_ROOTS="$HOME/OriginWorkbenchMount"
 ```
 
-Origin-specific variables take precedence. If they are not set, Origin also
-accepts these OpenAI-compatible aliases:
+Environment variables take precedence over the saved settings-page config. This
+keeps existing automation and cc-switch setups backward compatible. If
+Origin-specific variables are not set, Origin also accepts these
+OpenAI-compatible aliases:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
@@ -84,12 +120,13 @@ full `/v1/chat/completions` endpoint, Origin normalizes it to avoid appending
 `/chat/completions` twice.
 
 API keys are read by the backend process. The desktop UI only shows whether a
-key is configured; it does not store or display the key.
+key is configured; it does not display the saved key.
 
 `ORIGIN_MODEL_TOOL_ROOTS` is a comma-separated allowlist. Relative tool paths are
 resolved under the first root. Absolute tool paths are allowed only when they
 stay inside one of the configured roots. If unset, the backend working directory
-is used as the only tool root.
+is used as the only tool root. Saved roots support `~`, `$HOME`, and `${HOME}`
+and are validated before a config file is written.
 
 ## Full Agent Runtime Roadmap
 

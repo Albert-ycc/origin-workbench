@@ -457,9 +457,9 @@ func (s *TaskService) enqueueChatTaskForAgent(ctx context.Context, chatSession d
 		}
 	}
 	if apiRuntime {
-		cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromEnv()
+		cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
 		if !ok || cfg.Status() != "online" {
-			err := fmt.Errorf("API runtime is not online; set %s and %s", runtimeconfig.EnvAPIKey, runtimeconfig.EnvModelName)
+			err := fmt.Errorf("API runtime is not online; configure Model API settings or set %s and %s", runtimeconfig.EnvAPIKey, runtimeconfig.EnvModelName)
 			slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "agent_id", util.UUIDToString(agentID), "error", err)
 			return db.AgentTaskQueue{}, err
 		}
@@ -551,9 +551,9 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 		return fail("claimed task does not belong to an API runtime")
 	}
 
-	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromEnv()
+	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
 	if !ok || cfg.Status() != "online" {
-		return fail("API runtime is not configured; set ORIGIN_MODEL_API_KEY and ORIGIN_MODEL_NAME")
+		return fail("API runtime is not configured; configure Model API settings or set ORIGIN_MODEL_API_KEY and ORIGIN_MODEL_NAME")
 	}
 
 	agent, err := s.Queries.GetAgent(ctx, task.AgentID)

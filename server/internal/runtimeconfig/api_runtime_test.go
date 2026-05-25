@@ -2,6 +2,7 @@ package runtimeconfig
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -144,6 +145,133 @@ func TestLoadAPIRuntimeConfigParsesToolRoots(t *testing.T) {
 	}
 }
 
+func TestLoadAPIRuntimeConfigExpandsHomeInToolRoots(t *testing.T) {
+	env := map[string]string{
+		EnvAPIKey:    "sk-origin",
+		EnvModelName: "origin-model",
+		EnvToolRoots: "$HOME/OriginWorkbenchMount,~/projects,${HOME}/OriginWorkbenchMount",
+		"HOME":       "/Users/tester",
+	}
+
+	cfg, ok := LoadAPIRuntimeConfig(func(key string) string { return env[key] })
+	if !ok {
+		t.Fatal("expected API runtime config")
+	}
+	want := []string{"/Users/tester/OriginWorkbenchMount", "/Users/tester/projects"}
+	if len(cfg.ToolRoots) != len(want) {
+		t.Fatalf("tool roots = %+v, want %+v", cfg.ToolRoots, want)
+	}
+	for i := range want {
+		if cfg.ToolRoots[i] != want[i] {
+			t.Fatalf("tool roots = %+v, want %+v", cfg.ToolRoots, want)
+		}
+	}
+}
+
+func TestLoadAPIRuntimeConfigFromSourcesReadsSavedConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{
+		"provider":"openai_compatible",
+		"api_key":"sk-file-secret",
+		"base_url":"https://saved.example.test/v1",
+		"model_name":"saved-model",
+		"model_names":"saved-model, saved-alt",
+		"runtime_name":"Saved API",
+		"tool_roots":" /workspace , /tmp/project "
+	}`)
+
+	env := map[string]string{EnvConfigFile: path}
+	cfg, ok := LoadAPIRuntimeConfigFromSources(func(key string) string { return env[key] })
+	if !ok {
+		t.Fatal("expected API runtime config from saved file")
+	}
+	if cfg.APIKey != "sk-file-secret" || cfg.BaseURL != "https://saved.example.test/v1" {
+		t.Fatalf("saved config not loaded: %+v", cfg)
+	}
+	if cfg.DefaultModel != "saved-model" || len(cfg.ModelIDs) != 2 || cfg.ModelIDs[1] != "saved-alt" {
+		t.Fatalf("saved model config mismatch: %+v", cfg)
+	}
+	if cfg.RuntimeName != "Saved API" {
+		t.Fatalf("runtime name = %q", cfg.RuntimeName)
+	}
+	if cfg.ConfigSource != "file" {
+		t.Fatalf("config source = %q", cfg.ConfigSource)
+	}
+	if len(cfg.ToolRoots) != 2 || cfg.ToolRoots[0] != "/workspace" || cfg.ToolRoots[1] != "/tmp/project" {
+		t.Fatalf("tool roots = %+v", cfg.ToolRoots)
+	}
+}
+
+func TestLoadAPIRuntimeConfigFromSourcesPrefersEnvOverSavedConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{
+		"api_key":"sk-file-secret",
+		"base_url":"https://saved.example.test/v1",
+		"model_name":"saved-model"
+	}`)
+
+	env := map[string]string{
+		EnvConfigFile: path,
+		EnvAPIKey:     "sk-env-secret",
+		EnvBaseURL:    "https://env.example.test/v1",
+		EnvModelName:  "env-model",
+	}
+	cfg, ok := LoadAPIRuntimeConfigFromSources(func(key string) string { return env[key] })
+	if !ok {
+		t.Fatal("expected API runtime config")
+	}
+	if cfg.APIKey != "sk-env-secret" || cfg.BaseURL != "https://env.example.test/v1" || cfg.DefaultModel != "env-model" {
+		t.Fatalf("env config should win over saved file, got %+v", cfg)
+	}
+	if cfg.ConfigSource != "environment:origin" {
+		t.Fatalf("config source = %q", cfg.ConfigSource)
+	}
+}
+
+func TestSaveAPIRuntimeConfigFilePersistsLastTestAndDiscoveredModelsWithoutLeakingSecretInLastTest(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+
+	err := SaveAPIRuntimeConfigFile(path, SavedAPIRuntimeConfig{
+		Provider:   "openai_compatible",
+		APIKey:     "sk-file-secret",
+		BaseURL:    "https://saved.example.test/v1",
+		ModelName:  "model-a",
+		ModelNames: "model-a",
+		LastTest: &APIRuntimeConnectionTest{
+			TestedAt:  "2026-05-24T10:20:30Z",
+			OK:        false,
+			Code:      "auth_failed",
+			Message:   "API Key 无效或没有访问权限。",
+			Detail:    "request failed with sk-file-secret",
+			LatencyMS: 123,
+		},
+		DiscoveredModels: []string{"model-a", "model-b"},
+	})
+	if err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	saved, ok, err := LoadSavedAPIRuntimeConfig(path)
+	if err != nil || !ok {
+		t.Fatalf("load saved config ok=%v err=%v", ok, err)
+	}
+	if saved.LastTest == nil {
+		t.Fatal("expected last_test to be persisted")
+	}
+	if saved.LastTest.Code != "auth_failed" || saved.LastTest.LatencyMS != 123 {
+		t.Fatalf("last_test mismatch: %+v", saved.LastTest)
+	}
+	if strings.Contains(saved.LastTest.Detail, "sk-file-secret") {
+		t.Fatalf("last_test detail must not leak API key: %+v", saved.LastTest)
+	}
+	if len(saved.DiscoveredModels) != 2 || saved.DiscoveredModels[1] != "model-b" {
+		t.Fatalf("discovered_models mismatch: %+v", saved.DiscoveredModels)
+	}
+}
+
 func contains(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {
@@ -151,6 +279,13 @@ func contains(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func writeFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
 }
 
 func TestAPIRuntimeModelsFromMetadata(t *testing.T) {

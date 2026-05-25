@@ -5,6 +5,10 @@ export type {
   ImportStarterContentResponse,
   ImportStarterIssuePayload,
   ImportStarterWelcomeIssueTemplate,
+  ModelAPIConfigPayload,
+  ModelAPIConfigResponse,
+  ModelAPIConnectionTestResponse,
+  ModelAPILastTest,
 } from "./client";
 export { WSClient } from "./ws-client";
 
