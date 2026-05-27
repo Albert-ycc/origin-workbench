@@ -30,6 +30,9 @@ type MissionResponse struct {
 	ExecutionMode   string  `json:"execution_mode"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
+	// AI Roundtable P0 — 反向指针。Mission 从某个 Council 散会转出时记录
+	// 来源会议室 id，详情页可直跳回原议事记录。NULL = 直接创建的 Mission。
+	SourceCouncilID *string `json:"source_council_id"`
 }
 
 type MissionPlanItemResponse struct {
@@ -110,6 +113,9 @@ type CreateMissionRequest struct {
 	RiskLevel      string                         `json:"risk_level"`
 	ExecutionMode  string                         `json:"execution_mode"`
 	PlanItems      []CreateMissionPlanItemRequest `json:"plan_items"`
+	// AI Roundtable P0 — 反向指针。当 Mission 从某个 Council 散会转出时
+	// 由前端传入，后端校验该 council 属于同一 workspace。
+	SourceCouncilID *string `json:"source_council_id"`
 }
 
 type UpdateMissionRequest struct {
@@ -141,6 +147,7 @@ func missionToResponse(m db.Mission) MissionResponse {
 		ExecutionMode:   m.ExecutionMode,
 		CreatedAt:       timestampToString(m.CreatedAt),
 		UpdatedAt:       timestampToString(m.UpdatedAt),
+		SourceCouncilID: uuidToPtr(m.SourceCouncilID),
 	}
 }
 
@@ -497,6 +504,24 @@ func (h *Handler) CreateMission(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var sourceCouncilUUID pgtype.UUID
+	if req.SourceCouncilID != nil && strings.TrimSpace(*req.SourceCouncilID) != "" {
+		uuid, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(*req.SourceCouncilID), "source_council_id")
+		if !ok {
+			return
+		}
+		// Cross-workspace isolation: a Mission's source council must live in
+		// the same workspace, otherwise an attacker could synthesize a
+		// reverse pointer to someone else's council.
+		if _, err := h.Queries.GetCouncilSessionInWorkspace(r.Context(), db.GetCouncilSessionInWorkspaceParams{
+			ID:          uuid,
+			WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusBadRequest, "source_council_id must be a council session in this workspace")
+			return
+		}
+		sourceCouncilUUID = uuid
+	}
 	captainUUID, ok := parseUUIDOrBadRequest(w, req.CaptainAgentID, "captain_agent_id")
 	if !ok {
 		return
@@ -640,6 +665,7 @@ func (h *Handler) CreateMission(w http.ResponseWriter, r *http.Request) {
 		ExecutionMode:   normalizeExecutionMode(req.ExecutionMode),
 		ChatSessionID:   session.ID,
 		ProjectID:       projectID,
+		SourceCouncilID: sourceCouncilUUID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create mission")

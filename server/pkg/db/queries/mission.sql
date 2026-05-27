@@ -39,10 +39,12 @@ LIMIT 1;
 -- name: CreateMission :one
 INSERT INTO mission (
     workspace_id, team_id, captain_agent_id, chat_session_id, created_by_user_id,
-    title, prompt, summary, outcome, status, risk_level, execution_mode, project_id
+    title, prompt, summary, outcome, status, risk_level, execution_mode, project_id,
+    source_council_id
 ) VALUES (
     $1, $2, $3, sqlc.narg('chat_session_id'), $4,
-    $5, $6, $7, $8, $9, $10, $11, sqlc.narg('project_id')::uuid
+    $5, $6, $7, $8, $9, $10, $11, sqlc.narg('project_id')::uuid,
+    sqlc.narg('source_council_id')::uuid
 )
 RETURNING *;
 

@@ -33,7 +33,7 @@ LIMIT 1;
 INSERT INTO council_session (
     workspace_id, convener_user_id, convener_agent_id,
     related_mission_id, related_idea_id, source_chat_session_id, project_id,
-    topic, summary, activity_level, status, mode, max_turns
+    topic, summary, activity_level, status, mode, max_turns, strategy
 ) VALUES (
     $1,
     sqlc.narg('convener_user_id')::uuid,
@@ -44,7 +44,8 @@ INSERT INTO council_session (
     sqlc.narg('project_id')::uuid,
     $2, $3, $4, $5,
     COALESCE(sqlc.narg('mode')::text, 'relay'),
-    COALESCE(sqlc.narg('max_turns')::int, 8)
+    COALESCE(sqlc.narg('max_turns')::int, 8),
+    COALESCE(sqlc.narg('strategy')::jsonb, '{}'::jsonb)
 )
 RETURNING *;
 
@@ -54,6 +55,7 @@ UPDATE council_session SET
     summary = COALESCE(sqlc.narg('summary'), summary),
     activity_level = COALESCE(sqlc.narg('activity_level'), activity_level),
     conclusion = COALESCE(sqlc.narg('conclusion'), conclusion),
+    strategy = COALESCE(sqlc.narg('strategy')::jsonb, strategy),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
