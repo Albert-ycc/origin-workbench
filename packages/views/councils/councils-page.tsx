@@ -33,13 +33,19 @@ import {
   useCreateCouncilSession,
   useDeleteCouncilSession,
   useRemoveCouncilParticipant,
+  useUpdateCouncilSession,
 } from "@multica/core/councils";
 import type {
   Agent,
   CouncilActivityLevel,
+  CouncilConclusionStructured,
+  CouncilDisagreement,
+  CouncilRiskLevel,
+  CouncilRolePerspective,
   CouncilSession,
   CouncilSessionMode,
   CouncilSessionParticipant,
+  CouncilStrategy,
   CreateMissionPlanItemRequest,
   CreateMissionRequest,
 } from "@multica/core/types";
@@ -55,6 +61,14 @@ import {
 } from "@multica/ui/components/ui/alert-dialog";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@multica/ui/components/ui/dialog";
+import { Input } from "@multica/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -224,6 +238,34 @@ function roundtableTemplateById(id: CouncilRoundtableTemplateId): CouncilRoundta
   return councilRoundtableTemplates.find((template) => template.id === id) ?? DEFAULT_ROUNDTABLE_TEMPLATE;
 }
 
+// Build the structured strategy object the backend persists. The
+// returned shape matches CouncilStrategy in core/types. Empty arrays for
+// role_perspectives / disagreements are intentional so consumers can
+// rely on `Array.isArray(...)` without null-guards.
+export function buildRoundtableStrategy({
+  templateId,
+  expectedOutput,
+  participantRoles,
+}: {
+  templateId: CouncilRoundtableTemplateId;
+  expectedOutput?: string;
+  participantRoles?: Array<{ agent_id: string; role: string; role_hint?: string }>;
+}): CouncilStrategy {
+  const template = roundtableTemplateById(templateId);
+  return {
+    roundtable_type: templateId,
+    framework_id: templateId,
+    framework_label: template.framework,
+    expected_output: expectedOutput?.trim() || template.expectedOutput,
+    participant_roles: participantRoles ?? [],
+    role_perspectives: [],
+    disagreements: [],
+  };
+}
+
+// Backwards-compat: a human-readable summary that still mentions the
+// sentinel string. Used only for the council list teaser; the strategy
+// object is the source of truth for everything else.
 export function buildRoundtableSummary({
   templateId,
   topic,
@@ -250,23 +292,26 @@ export function buildRoundtableSummary({
   ].join("\n");
 }
 
+// strategy 是权威源；老 council 没 strategy.roundtable_type 时退回 summary 文本里的标记。
 function isRoundtableSession(session: CouncilSession | null): boolean {
-  return Boolean(session?.summary?.includes("[AI_ROUNDTABLE_P0]"));
+  if (!session) return false;
+  if (session.strategy?.roundtable_type) return true;
+  return Boolean(session.summary?.includes("[AI_ROUNDTABLE_P0]"));
 }
 
 function roundtableTemplateForSession(session: CouncilSession | null): CouncilRoundtableTemplate {
-  if (!session?.summary) return DEFAULT_ROUNDTABLE_TEMPLATE;
-  const matched = councilRoundtableTemplates.find((template) =>
-    session.summary.includes(`AI 圆桌类型：${template.label}`),
-  );
-  return matched ?? DEFAULT_ROUNDTABLE_TEMPLATE;
-}
-
-function extractRoundtableLine(summary: string, label: string): string {
-  const line = summary
-    .split("\n")
-    .find((item) => item.trim().startsWith(`${label}：`));
-  return line ? line.replace(`${label}：`, "").trim() : "";
+  if (!session) return DEFAULT_ROUNDTABLE_TEMPLATE;
+  const fromStrategy = session.strategy?.roundtable_type;
+  if (fromStrategy) {
+    return roundtableTemplateById(fromStrategy);
+  }
+  if (session.summary) {
+    const matched = councilRoundtableTemplates.find((template) =>
+      session.summary.includes(`AI 圆桌类型：${template.label}`),
+    );
+    if (matched) return matched;
+  }
+  return DEFAULT_ROUNDTABLE_TEMPLATE;
 }
 
 function activeParticipantAgentIds(participants: CouncilSessionParticipant[]) {
@@ -303,6 +348,8 @@ export function buildRoundtableMissionDraft(
   const summary = session.summary.trim();
   const conclusion = session.conclusion.trim();
   const source = conclusion || summary;
+  const expectedOutput =
+    session.strategy?.expected_output?.trim() || template.expectedOutput;
   return {
     title: `执行 AI 圆桌结论：${session.topic}`,
     prompt: [
@@ -314,13 +361,14 @@ export function buildRoundtableMissionDraft(
       "请把圆桌结论转成可执行计划，并在执行中持续核对分歧、风险和自我反驳。",
     ].join("\n"),
     summary,
-    outcome: extractRoundtableLine(summary, "期望产出") || template.expectedOutput,
+    outcome: expectedOutput,
     project_id: session.project_id ?? undefined,
     captain_agent_id: captainId,
     member_agent_ids: memberIds,
     risk_level: "medium",
     execution_mode: "step_confirm",
     plan_items: planItemsForRoundtable(template, captainId, memberIds),
+    source_council_id: session.id,
   };
 }
 
@@ -475,22 +523,36 @@ function ConveneSession({
       return;
     }
     const participantNames = selectedAgentIds.map((id) => agentNameById(agents, id));
+    const isRoundtable = mode === "relay";
+    const template = isRoundtable ? roundtableTemplateById(roundtableTemplateId) : null;
+    // strategy 是权威源；summary 同时填一份人类可读的速览，方便 list 视图扫读。
+    const strategy = isRoundtable
+      ? buildRoundtableStrategy({
+          templateId: roundtableTemplateId,
+          expectedOutput,
+          participantRoles: selectedAgentIds.map((id, index) => ({
+            agent_id: id,
+            role: template?.roleHints[index] ?? `角色 ${index + 1}`,
+            role_hint: template?.roleHints[index],
+          })),
+        })
+      : undefined;
     try {
       const created = await create.mutateAsync({
         topic: trimmed,
-        summary:
-          mode === "relay"
-            ? buildRoundtableSummary({
-                templateId: roundtableTemplateId,
-                topic: trimmed,
-                expectedOutput,
-                participantNames,
-              })
-            : undefined,
+        summary: isRoundtable
+          ? buildRoundtableSummary({
+              templateId: roundtableTemplateId,
+              topic: trimmed,
+              expectedOutput,
+              participantNames,
+            })
+          : undefined,
         activity_level: activityLevel,
         participant_agent_ids: selectedAgentIds,
         mode,
         max_turns: mode === "salon" ? maxTurns : undefined,
+        strategy,
       });
       setTopic("");
       setExpectedOutput("");
@@ -905,15 +967,41 @@ function SessionInteractionPanel({
   );
 }
 
-function RoundtableSummaryBox({ summary }: { summary: string }) {
-  const rows = summary
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line && line !== "[AI_ROUNDTABLE_P0]")
-    .map((line) => {
-      const [label, ...rest] = line.split("：");
-      return { label, value: rest.join("：") || line };
+function RoundtableSummaryBox({
+  session,
+  agents,
+}: {
+  session: CouncilSession;
+  agents: Agent[];
+}) {
+  const strategy = session.strategy ?? {};
+  const template = roundtableTemplateForSession(session);
+  const rows: Array<{ label: string; value: string }> = [
+    { label: "AI 圆桌类型", value: template.label },
+    { label: "议题", value: session.topic },
+    { label: "分析框架", value: strategy.framework_label || template.framework },
+    { label: "期望产出", value: strategy.expected_output || template.expectedOutput },
+  ];
+  const roles = strategy.participant_roles ?? [];
+  if (roles.length > 0) {
+    rows.push({
+      label: "参会角色",
+      value: roles
+        .map((spec) => {
+          const name = agentNameById(agents, spec.agent_id);
+          return spec.role ? `${name}（${spec.role}）` : name;
+        })
+        .join("、"),
     });
+  }
+  rows.push({
+    label: "每位 Agent 输出",
+    value: "观点、证据、自我反驳、风险等级、建议动作",
+  });
+  rows.push({
+    label: "主持人收束",
+    value: "结论、分歧、风险、假设、行动项、记忆候选",
+  });
   return (
     <div className="mt-3 rounded-md border bg-muted/30 p-2 text-xs">
       <div className="mb-2 font-semibold text-muted-foreground">AI 圆桌结构</div>
@@ -926,6 +1014,312 @@ function RoundtableSummaryBox({ summary }: { summary: string }) {
         ))}
       </dl>
     </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// AI Roundtable P0 — perspective cards + disagreement matrix
+// ────────────────────────────────────────────────────────────────────────
+
+const ROLE_RISK_LABELS: Record<CouncilRiskLevel, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+};
+
+function emptyPerspective(agentId: string, role: string): CouncilRolePerspective {
+  return {
+    agent_id: agentId,
+    role,
+    position: "",
+    evidence: "",
+    self_rebuttal: "",
+    risk_level: "medium",
+    suggestion: "",
+  };
+}
+
+function RoundtablePerspectivesPanel({
+  session,
+  participants,
+  agents,
+}: {
+  session: CouncilSession;
+  participants: CouncilSessionParticipant[];
+  agents: Agent[];
+}) {
+  const update = useUpdateCouncilSession();
+  const activeParticipants = participants.filter((p) => !p.left_at);
+  const perspectives = session.strategy?.role_perspectives ?? [];
+  const disagreements = session.strategy?.disagreements ?? [];
+  const roleSpecs = session.strategy?.participant_roles ?? [];
+  const roleByAgent = new Map(roleSpecs.map((spec) => [spec.agent_id, spec]));
+
+  const [editing, setEditing] = useState<CouncilRolePerspective | null>(null);
+  const closeEditor = () => setEditing(null);
+
+  const upsert = async (next: CouncilRolePerspective) => {
+    const others = perspectives.filter((p) => p.agent_id !== next.agent_id);
+    const nextStrategy: CouncilStrategy = {
+      ...(session.strategy ?? {}),
+      role_perspectives: [...others, { ...next, updated_at: new Date().toISOString() }],
+    };
+    try {
+      await update.mutateAsync({ id: session.id, strategy: nextStrategy });
+      toast.success("已记录观点卡");
+      closeEditor();
+    } catch (err) {
+      toast.error("保存观点卡失败", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+      <div>
+        <div className="text-xs font-semibold text-muted-foreground">角色观点卡</div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          每位参会 Agent 沉淀：观点 · 证据 · 自我反驳 · 风险 · 建议。空卡可手动补录。
+        </p>
+      </div>
+
+      {activeParticipants.length === 0 ? (
+        <p className="text-xs text-muted-foreground">还没有参会 Agent，先加人再记录观点卡。</p>
+      ) : (
+        <div className="grid gap-2">
+          {activeParticipants.map((p) => {
+            const agentName = agentNameById(agents, p.agent_id);
+            const roleSpec = roleByAgent.get(p.agent_id);
+            const role = roleSpec?.role ?? "参会角色";
+            const filled = perspectives.find((it) => it.agent_id === p.agent_id);
+            return (
+              <article
+                key={p.agent_id}
+                className="rounded-md border bg-card p-2 text-xs"
+                aria-label={`${agentName} 观点卡`}
+              >
+                <header className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{agentName}</span>
+                    <Badge variant="outline" className="text-[10px]">{role}</Badge>
+                    {filled ? (
+                      <Badge variant="secondary" className="text-[10px]">
+                        风险 {ROLE_RISK_LABELS[filled.risk_level]}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditing(filled ?? emptyPerspective(p.agent_id, role))}
+                  >
+                    {filled ? "编辑" : "记录"}
+                  </Button>
+                </header>
+                {filled ? (
+                  <dl className="mt-2 grid gap-1.5">
+                    <PerspectiveRow label="观点" value={filled.position} />
+                    <PerspectiveRow label="证据" value={filled.evidence} />
+                    <PerspectiveRow label="自我反驳" value={filled.self_rebuttal} />
+                    <PerspectiveRow label="建议动作" value={filled.suggestion} />
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">未记录观点。点「记录」补一张卡。</p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {disagreements.length > 0 ? (
+        <DisagreementMatrix disagreements={disagreements} agents={agents} />
+      ) : null}
+
+      <PerspectiveEditorDialog
+        open={editing !== null}
+        draft={editing}
+        agentName={editing ? agentNameById(agents, editing.agent_id) : ""}
+        saving={update.isPending}
+        onCancel={closeEditor}
+        onSave={upsert}
+      />
+    </div>
+  );
+}
+
+// 6-section conclusion template. Order matters — the markdown layout
+// follows it, and the read-only renderer in SessionDetailPanel walks
+// the same array.
+const CONCLUSION_SECTIONS: Array<{
+  key: keyof CouncilConclusionStructured;
+  label: string;
+  placeholder: string;
+}> = [
+  { key: "conclusion", label: "结论", placeholder: "议事最终拍板的判断或方向" },
+  { key: "disagreements", label: "分歧", placeholder: "未对齐的观点 + 各自成立条件" },
+  { key: "risks", label: "风险", placeholder: "执行中可能出问题的点" },
+  { key: "assumptions", label: "假设", placeholder: "结论成立依赖的关键假设" },
+  { key: "action_items", label: "行动项", placeholder: "谁、做什么、什么时候之前" },
+  { key: "memory_candidates", label: "记忆候选", placeholder: "值得写入项目记忆的判断" },
+];
+
+function buildRoundtableConclusionMarkdown(parts: CouncilConclusionStructured): string {
+  return CONCLUSION_SECTIONS.map((section) => {
+    const value = (parts[section.key] ?? "").trim();
+    if (!value) return null;
+    return `## ${section.label}\n${value}`;
+  })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function PerspectiveRow({ label, value }: { label: string; value: string }) {
+  if (!value?.trim()) return null;
+  return (
+    <div className="grid grid-cols-[80px_1fr] items-baseline gap-2">
+      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
+      <dd className="whitespace-pre-wrap text-xs">{value}</dd>
+    </div>
+  );
+}
+
+function DisagreementMatrix({
+  disagreements,
+  agents,
+}: {
+  disagreements: CouncilDisagreement[];
+  agents: Agent[];
+}) {
+  return (
+    <section className="rounded-md border bg-card p-2 text-xs">
+      <div className="mb-2 text-[11px] font-semibold text-muted-foreground">分歧矩阵</div>
+      <ul className="space-y-2">
+        {disagreements.map((entry, idx) => (
+          <li key={`${entry.topic}-${idx}`} className="rounded border p-2">
+            <div className="font-medium">{entry.topic}</div>
+            <ul className="mt-1 space-y-0.5">
+              {entry.stances.map((stance, sIdx) => (
+                <li key={`${entry.topic}-stance-${sIdx}`} className="flex flex-wrap gap-x-2">
+                  <span className="text-muted-foreground">{agentNameById(agents, stance.agent_id)}：</span>
+                  <span>{stance.stance}</span>
+                  {stance.conditions ? (
+                    <span className="text-muted-foreground">（成立条件：{stance.conditions}）</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PerspectiveEditorDialog({
+  open,
+  draft,
+  agentName,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  open: boolean;
+  draft: CouncilRolePerspective | null;
+  agentName: string;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (value: CouncilRolePerspective) => void;
+}) {
+  const [local, setLocal] = useState<CouncilRolePerspective | null>(draft);
+  // Sync when parent opens with a new draft.
+  if (draft && local?.agent_id !== draft.agent_id) {
+    setLocal(draft);
+  }
+  if (!draft || !local) return null;
+  const set = <K extends keyof CouncilRolePerspective>(key: K, value: CouncilRolePerspective[K]) =>
+    setLocal({ ...local, [key]: value });
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{agentName} · 观点卡</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-2 text-xs">
+          <label className="grid gap-1">
+            <span className="text-muted-foreground">角色</span>
+            <Input value={local.role} onChange={(e) => set("role", e.target.value)} />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-muted-foreground">观点</span>
+            <Textarea
+              rows={2}
+              value={local.position}
+              onChange={(e) => set("position", e.target.value)}
+              placeholder="本角色对议题的核心立场"
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-muted-foreground">证据 / 引用</span>
+            <Textarea
+              rows={2}
+              value={local.evidence}
+              onChange={(e) => set("evidence", e.target.value)}
+              placeholder="数据、案例、用户原话"
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-muted-foreground">自我反驳</span>
+            <Textarea
+              rows={2}
+              value={local.self_rebuttal}
+              onChange={(e) => set("self_rebuttal", e.target.value)}
+              placeholder="最强反方理由 / 自己的盲点"
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-muted-foreground">风险等级</span>
+            <select
+              className="rounded border bg-background px-2 py-1"
+              value={local.risk_level}
+              onChange={(e) => set("risk_level", e.target.value as CouncilRiskLevel)}
+            >
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="text-muted-foreground">建议动作</span>
+            <Textarea
+              rows={2}
+              value={local.suggestion}
+              onChange={(e) => set("suggestion", e.target.value)}
+              placeholder="基于以上判断，下一步应该做什么"
+            />
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
+            取消
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onSave(local)}
+            disabled={saving || !local.position.trim()}
+          >
+            {saving ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
+            保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -951,9 +1345,11 @@ function SessionDetailPanel({
   const del = useDeleteCouncilSession();
   const addParticipant = useAddCouncilParticipant();
   const removeParticipant = useRemoveCouncilParticipant();
+  const updateCouncil = useUpdateCouncilSession();
   const createMission = useCreateMission();
 
   const [conclusion, setConclusion] = useState("");
+  const [conclusionParts, setConclusionParts] = useState<CouncilConclusionStructured>({});
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!session) {
@@ -981,18 +1377,43 @@ function SessionDetailPanel({
         </div>
         {session.summary ? (
           roundtable ? (
-            <RoundtableSummaryBox summary={session.summary} />
+            <RoundtableSummaryBox session={session} agents={agents} />
           ) : (
             <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{session.summary}</p>
           )
         ) : null}
-        {session.conclusion ? (
+        {session.strategy?.conclusion_structured &&
+        Object.values(session.strategy.conclusion_structured).some((v) => (v ?? "").trim()) ? (
+          <div className="mt-3 rounded-md border bg-muted/40 p-2 text-xs">
+            <div className="mb-2 font-semibold text-muted-foreground">议事结论（6 段）</div>
+            <dl className="space-y-2">
+              {CONCLUSION_SECTIONS.map((section) => {
+                const value = (session.strategy?.conclusion_structured?.[section.key] ?? "").trim();
+                if (!value) return null;
+                return (
+                  <div key={section.key} className="grid gap-0.5">
+                    <dt className="font-medium text-muted-foreground">{section.label}</dt>
+                    <dd className="whitespace-pre-wrap">{value}</dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        ) : session.conclusion ? (
           <div className="mt-3 rounded-md border bg-muted/40 p-2 text-xs">
             <div className="mb-1 font-semibold text-muted-foreground">议事结论</div>
             <p className="whitespace-pre-wrap">{session.conclusion}</p>
           </div>
         ) : null}
       </div>
+
+      {roundtable ? (
+        <RoundtablePerspectivesPanel
+          session={session}
+          participants={participants}
+          agents={agents}
+        />
+      ) : null}
 
       {roundtable ? (
         <div className="rounded-lg border bg-muted/20 p-3">
@@ -1107,28 +1528,72 @@ function SessionDetailPanel({
       {session.status === "running" ? (
         <div className="border-t pt-3">
           <div className="mb-2 text-xs font-semibold text-muted-foreground">结束议事</div>
-          <Textarea
-            value={conclusion}
-            onChange={(e) => setConclusion(e.target.value)}
-            placeholder="可选：写一句话结论（共识 / 分歧 / 下一步）"
-            rows={2}
-          />
+          {roundtable ? (
+            <div className="space-y-2">
+              {CONCLUSION_SECTIONS.map((section) => (
+                <label key={section.key} className="grid gap-1 text-xs">
+                  <span className="text-muted-foreground">{section.label}</span>
+                  <Textarea
+                    value={conclusionParts[section.key] ?? ""}
+                    onChange={(e) =>
+                      setConclusionParts({ ...conclusionParts, [section.key]: e.target.value })
+                    }
+                    placeholder={section.placeholder}
+                    rows={2}
+                  />
+                </label>
+              ))}
+            </div>
+          ) : (
+            <Textarea
+              value={conclusion}
+              onChange={(e) => setConclusion(e.target.value)}
+              placeholder="可选：写一句话结论（共识 / 分歧 / 下一步）"
+              rows={2}
+            />
+          )}
           <Button
             size="sm"
             variant="default"
             className="mt-2 w-full"
-            disabled={adjourn.isPending}
+            disabled={adjourn.isPending || updateCouncil.isPending}
             onClick={async () => {
               try {
-                await adjourn.mutateAsync({ id: session.id, conclusion: conclusion.trim() || undefined });
-                setConclusion("");
+                if (roundtable) {
+                  const markdown = buildRoundtableConclusionMarkdown(conclusionParts);
+                  const nextStrategy: CouncilStrategy = {
+                    ...(session.strategy ?? {}),
+                    conclusion_structured: conclusionParts,
+                  };
+                  // Two-step: persist the structured conclusion + markdown
+                  // first, then flip status. If the strategy write fails the
+                  // session stays running and the user can retry — better
+                  // than ending up adjourned without the 6-section sidecar.
+                  await updateCouncil.mutateAsync({
+                    id: session.id,
+                    strategy: nextStrategy,
+                    conclusion: markdown || undefined,
+                  });
+                  await adjourn.mutateAsync({ id: session.id });
+                  setConclusionParts({});
+                } else {
+                  await adjourn.mutateAsync({
+                    id: session.id,
+                    conclusion: conclusion.trim() || undefined,
+                  });
+                  setConclusion("");
+                }
                 toast.success("议事已结束");
               } catch (err) {
                 toast.error("散会失败", { description: err instanceof Error ? err.message : String(err) });
               }
             }}
           >
-            {adjourn.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Gavel className="size-3.5" />}
+            {adjourn.isPending || updateCouncil.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Gavel className="size-3.5" />
+            )}
             结束议事
           </Button>
         </div>

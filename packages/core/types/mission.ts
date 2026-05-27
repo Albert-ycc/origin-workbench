@@ -39,6 +39,9 @@ export interface Mission {
   execution_mode: MissionExecutionMode;
   created_at: string;
   updated_at: string;
+  // AI Roundtable P0 — 反向指针。Mission 从某个 Council 散会转出时记录
+  // 来源会议室 id，详情页可直跳回原议事记录。NULL = 直接创建的 Mission。
+  source_council_id?: string | null;
 }
 
 export interface MissionPlanItem {
@@ -133,6 +136,8 @@ export interface CreateMissionRequest {
   risk_level?: MissionRiskLevel;
   execution_mode?: MissionExecutionMode;
   plan_items?: CreateMissionPlanItemRequest[];
+  // AI Roundtable P0 — 当 Mission 从某个 Council 散会转出时传入。
+  source_council_id?: string;
 }
 
 export interface UpdateMissionRequest {
