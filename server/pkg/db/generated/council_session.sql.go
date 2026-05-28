@@ -46,7 +46,7 @@ UPDATE council_session SET
     ended_at = now(),
     updated_at = now()
 WHERE id = $1 AND status = 'running'
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy
 `
 
 type AdjournCouncilSessionParams struct {
@@ -77,6 +77,7 @@ func (q *Queries) AdjournCouncilSession(ctx context.Context, arg AdjournCouncilS
 		&i.ProjectID,
 		&i.Mode,
 		&i.MaxTurns,
+		&i.Strategy,
 	)
 	return i, err
 }
@@ -84,7 +85,7 @@ func (q *Queries) AdjournCouncilSession(ctx context.Context, arg AdjournCouncilS
 const archiveCouncilSession = `-- name: ArchiveCouncilSession :one
 UPDATE council_session SET status = 'archived', updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy
 `
 
 func (q *Queries) ArchiveCouncilSession(ctx context.Context, id pgtype.UUID) (CouncilSession, error) {
@@ -110,6 +111,7 @@ func (q *Queries) ArchiveCouncilSession(ctx context.Context, id pgtype.UUID) (Co
 		&i.ProjectID,
 		&i.Mode,
 		&i.MaxTurns,
+		&i.Strategy,
 	)
 	return i, err
 }
@@ -118,7 +120,7 @@ const createCouncilSession = `-- name: CreateCouncilSession :one
 INSERT INTO council_session (
     workspace_id, convener_user_id, convener_agent_id,
     related_mission_id, related_idea_id, source_chat_session_id, project_id,
-    topic, summary, activity_level, status, mode, max_turns
+    topic, summary, activity_level, status, mode, max_turns, strategy
 ) VALUES (
     $1,
     $6::uuid,
@@ -129,9 +131,10 @@ INSERT INTO council_session (
     $11::uuid,
     $2, $3, $4, $5,
     COALESCE($12::text, 'relay'),
-    COALESCE($13::int, 8)
+    COALESCE($13::int, 8),
+    COALESCE($14::jsonb, '{}'::jsonb)
 )
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy
 `
 
 type CreateCouncilSessionParams struct {
@@ -148,6 +151,7 @@ type CreateCouncilSessionParams struct {
 	ProjectID           pgtype.UUID `json:"project_id"`
 	Mode                pgtype.Text `json:"mode"`
 	MaxTurns            pgtype.Int4 `json:"max_turns"`
+	Strategy            []byte      `json:"strategy"`
 }
 
 func (q *Queries) CreateCouncilSession(ctx context.Context, arg CreateCouncilSessionParams) (CouncilSession, error) {
@@ -165,6 +169,7 @@ func (q *Queries) CreateCouncilSession(ctx context.Context, arg CreateCouncilSes
 		arg.ProjectID,
 		arg.Mode,
 		arg.MaxTurns,
+		arg.Strategy,
 	)
 	var i CouncilSession
 	err := row.Scan(
@@ -187,6 +192,7 @@ func (q *Queries) CreateCouncilSession(ctx context.Context, arg CreateCouncilSes
 		&i.ProjectID,
 		&i.Mode,
 		&i.MaxTurns,
+		&i.Strategy,
 	)
 	return i, err
 }
@@ -201,7 +207,7 @@ func (q *Queries) DeleteCouncilSession(ctx context.Context, id pgtype.UUID) erro
 }
 
 const getCouncilSessionInWorkspace = `-- name: GetCouncilSessionInWorkspace :one
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy FROM council_session
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -233,12 +239,13 @@ func (q *Queries) GetCouncilSessionInWorkspace(ctx context.Context, arg GetCounc
 		&i.ProjectID,
 		&i.Mode,
 		&i.MaxTurns,
+		&i.Strategy,
 	)
 	return i, err
 }
 
 const getRunningCouncilSessionBySourceChat = `-- name: GetRunningCouncilSessionBySourceChat :one
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy FROM council_session
 WHERE source_chat_session_id = $1
   AND workspace_id = $2
   AND status = 'running'
@@ -277,12 +284,13 @@ func (q *Queries) GetRunningCouncilSessionBySourceChat(ctx context.Context, arg 
 		&i.ProjectID,
 		&i.Mode,
 		&i.MaxTurns,
+		&i.Strategy,
 	)
 	return i, err
 }
 
 const listArchivedCouncilSessions = `-- name: ListArchivedCouncilSessions :many
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy FROM council_session
 WHERE workspace_id = $1
   AND status = 'archived'
 ORDER BY updated_at DESC
@@ -317,6 +325,7 @@ func (q *Queries) ListArchivedCouncilSessions(ctx context.Context, workspaceID p
 			&i.ProjectID,
 			&i.Mode,
 			&i.MaxTurns,
+			&i.Strategy,
 		); err != nil {
 			return nil, err
 		}
@@ -367,7 +376,7 @@ func (q *Queries) ListCouncilSessionParticipants(ctx context.Context, sessionID 
 
 const listCouncilSessions = `-- name: ListCouncilSessions :many
 
-SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns FROM council_session
+SELECT id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy FROM council_session
 WHERE workspace_id = $1
   AND status <> 'archived'
 ORDER BY updated_at DESC
@@ -405,6 +414,7 @@ func (q *Queries) ListCouncilSessions(ctx context.Context, workspaceID pgtype.UU
 			&i.ProjectID,
 			&i.Mode,
 			&i.MaxTurns,
+			&i.Strategy,
 		); err != nil {
 			return nil, err
 		}
@@ -438,9 +448,10 @@ UPDATE council_session SET
     summary = COALESCE($3, summary),
     activity_level = COALESCE($4, activity_level),
     conclusion = COALESCE($5, conclusion),
+    strategy = COALESCE($6::jsonb, strategy),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns
+RETURNING id, workspace_id, convener_user_id, convener_agent_id, related_mission_id, related_idea_id, source_chat_session_id, topic, summary, activity_level, status, conclusion, started_at, ended_at, created_at, updated_at, project_id, mode, max_turns, strategy
 `
 
 type UpdateCouncilSessionParams struct {
@@ -449,6 +460,7 @@ type UpdateCouncilSessionParams struct {
 	Summary       pgtype.Text `json:"summary"`
 	ActivityLevel pgtype.Text `json:"activity_level"`
 	Conclusion    pgtype.Text `json:"conclusion"`
+	Strategy      []byte      `json:"strategy"`
 }
 
 func (q *Queries) UpdateCouncilSession(ctx context.Context, arg UpdateCouncilSessionParams) (CouncilSession, error) {
@@ -458,6 +470,7 @@ func (q *Queries) UpdateCouncilSession(ctx context.Context, arg UpdateCouncilSes
 		arg.Summary,
 		arg.ActivityLevel,
 		arg.Conclusion,
+		arg.Strategy,
 	)
 	var i CouncilSession
 	err := row.Scan(
@@ -480,6 +493,7 @@ func (q *Queries) UpdateCouncilSession(ctx context.Context, arg UpdateCouncilSes
 		&i.ProjectID,
 		&i.Mode,
 		&i.MaxTurns,
+		&i.Strategy,
 	)
 	return i, err
 }

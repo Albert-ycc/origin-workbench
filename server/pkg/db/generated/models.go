@@ -285,6 +285,7 @@ type CouncilSession struct {
 	ProjectID           pgtype.UUID        `json:"project_id"`
 	Mode                string             `json:"mode"`
 	MaxTurns            int32              `json:"max_turns"`
+	Strategy            []byte             `json:"strategy"`
 }
 
 type CouncilSessionParticipant struct {
@@ -633,6 +634,7 @@ type Mission struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	ProjectID       pgtype.UUID        `json:"project_id"`
+	SourceCouncilID pgtype.UUID        `json:"source_council_id"`
 }
 
 type MissionAssignment struct {

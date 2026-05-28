@@ -163,6 +163,16 @@ export type {
   AdjournCouncilSessionRequest,
   AddCouncilParticipantRequest,
   ListCouncilSessionsResponse,
+  // AI Roundtable P0
+  CouncilRoundtableType,
+  CouncilRiskLevel,
+  CouncilParticipantRoleSpec,
+  CouncilContextSource,
+  CouncilRolePerspective,
+  CouncilDisagreementStance,
+  CouncilDisagreement,
+  CouncilConclusionStructured,
+  CouncilStrategy,
 } from "./council-session";
 export type { UserProfile, Presence, UpsertUserProfileRequest } from "./user-profile";
 export type {

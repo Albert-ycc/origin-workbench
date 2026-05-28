@@ -70,6 +70,11 @@ import { teamDetailOptions } from "@multica/core/teams";
 import { useCreateCouncilSession } from "@multica/core/councils";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import type { Agent, Team } from "@multica/core/types";
+import {
+  buildRoundtableSummary,
+  councilRoundtableTemplates,
+  type CouncilRoundtableTemplateId,
+} from "../councils/councils-page";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -1526,6 +1531,8 @@ function ConveneCouncilDialog({
   captain: Agent | undefined;
 }) {
   const [topic, setTopic] = useState("");
+  const [templateId, setTemplateId] = useState<CouncilRoundtableTemplateId>("review");
+  const [expectedOutput, setExpectedOutput] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const create = useCreateCouncilSession();
 
@@ -1539,17 +1546,30 @@ function ConveneCouncilDialog({
   const submit = async () => {
     const trimmed = topic.trim();
     if (!trimmed) return;
+    const selectedIds = picked.size > 0 ? Array.from(picked) : candidates.map((a) => a.id);
+    if (selectedIds.length < 2) {
+      toast.error("AI 圆桌至少需要 2 位参会 Agent");
+      return;
+    }
+    const participantNames = selectedIds.map((id) => candidates.find((agent) => agent.id === id)?.name ?? id);
     try {
       await create.mutateAsync({
         topic: trimmed,
+        summary: buildRoundtableSummary({
+          templateId,
+          topic: trimmed,
+          expectedOutput,
+          participantNames,
+        }),
         activity_level: "concise",
         project_id: projectId,
         source_chat_session_id: chatSessionId,
-        participant_agent_ids: Array.from(picked),
+        participant_agent_ids: selectedIds,
       });
-      toast.success(`${projectCouncilCopy.success} — 结束后结论会自动写入项目记忆「关键决策」段`);
+      toast.success(`${projectCouncilCopy.success} — AI 圆桌结论会自动写入项目记忆「关键决策」段`);
       onOpenChange(false);
       setTopic("");
+      setExpectedOutput("");
       setPicked(new Set());
     } catch (err) {
       toast.error("召开失败", {
@@ -1565,14 +1585,42 @@ function ConveneCouncilDialog({
           <DialogTitle>{projectCouncilCopy.dialogTitle}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          <div className="grid gap-2">
+            <div className="text-xs text-muted-foreground">圆桌类型：</div>
+            {councilRoundtableTemplates.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => setTemplateId(template.id)}
+                className={cn(
+                  "rounded-md border bg-background p-3 text-left transition-colors hover:bg-muted/40",
+                  templateId === template.id && "border-primary bg-primary/5",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{template.label}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {template.framework}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{template.promptHint}</p>
+              </button>
+            ))}
+          </div>
           <Textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="议题：要让多个角色对齐什么？"
             rows={2}
           />
+          <Textarea
+            value={expectedOutput}
+            onChange={(e) => setExpectedOutput(e.target.value)}
+            placeholder="期望产出：风险清单 / 决策建议 / 行动项 / Mission brief"
+            rows={2}
+          />
           <div className="text-xs text-muted-foreground">
-            {projectCouncilCopy.participantLabel}（默认全选 captain + 成员）：
+            {projectCouncilCopy.participantLabel}（不手动选择时默认全选 captain + 成员）：
           </div>
           <div className="flex flex-wrap gap-1.5">
             {candidates.length === 0 ? (
@@ -1609,8 +1657,8 @@ function ConveneCouncilDialog({
           <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button size="sm" onClick={submit} disabled={!topic.trim() || create.isPending}>
-            召开
+          <Button size="sm" onClick={submit} disabled={!topic.trim() || create.isPending || candidates.length < 2}>
+            发起 AI 圆桌
           </Button>
         </DialogFooter>
         </DialogContent>

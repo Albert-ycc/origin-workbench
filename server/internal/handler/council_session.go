@@ -40,6 +40,9 @@ type CouncilSessionResponse struct {
 	// Mode="salon" 是圆桌客厅，多 agent 轮转陪伴用户，每场最多 MaxTurns 轮。
 	Mode     string `json:"mode"`
 	MaxTurns int    `json:"max_turns"`
+	// AI Roundtable P0 — 结构化议事元数据。schema 见 migration 092 注释。
+	// 默认 {}；不存在的键由消费方按缺省处理。
+	Strategy json.RawMessage `json:"strategy"`
 }
 
 type CouncilSessionParticipantResponse struct {
@@ -80,13 +83,17 @@ type CreateCouncilSessionRequest struct {
 	// Salon mode（v1.0.14）。Mode 留空走 "relay" 默认；"salon" 启用圆桌客厅。
 	Mode     *string `json:"mode,omitempty"`
 	MaxTurns *int    `json:"max_turns,omitempty"`
+	// AI Roundtable P0 — 创建时一次性带上议事策略（圆桌类型、框架、角色组、
+	// 期望产出等）。nil 表示走默认空对象。
+	Strategy json.RawMessage `json:"strategy,omitempty"`
 }
 
 type UpdateCouncilSessionRequest struct {
-	Topic         *string `json:"topic"`
-	Summary       *string `json:"summary"`
-	ActivityLevel *string `json:"activity_level"`
-	Conclusion    *string `json:"conclusion"`
+	Topic         *string         `json:"topic"`
+	Summary       *string         `json:"summary"`
+	ActivityLevel *string         `json:"activity_level"`
+	Conclusion    *string         `json:"conclusion"`
+	Strategy      json.RawMessage `json:"strategy,omitempty"`
 }
 
 type AdjournCouncilSessionRequest struct {
@@ -127,7 +134,48 @@ func councilSessionToResponse(s db.CouncilSession) CouncilSessionResponse {
 		UpdatedAt:           timestampToString(s.UpdatedAt),
 		Mode:                s.Mode,
 		MaxTurns:            int(s.MaxTurns),
+		Strategy:            normalizeStrategy(s.Strategy),
 	}
+}
+
+// normalizeStrategy guarantees the JSON sent to clients is always a valid
+// object literal, never null or empty bytes — saves every frontend
+// consumer from defensively handling three different "no strategy yet"
+// shapes (nil slice, []byte("null"), zero-length).
+func normalizeStrategy(raw []byte) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(raw)
+}
+
+// validateStrategyJSON enforces that callers can only persist an object
+// at the strategy top level. Empty / nil falls back to "{}" so creates
+// without a roundtable type still succeed. On invalid JSON or non-object
+// top level it writes the HTTP error and returns ok=false.
+//
+// The schema inside the object stays application-layer (see migration
+// 092). We deliberately don't unmarshal into a Go struct here — that
+// would couple every backend release to the JSON shape and lose forward
+// compatibility for new keys added by the frontend.
+func validateStrategyJSON(w http.ResponseWriter, raw json.RawMessage) ([]byte, bool) {
+	if len(raw) == 0 {
+		return []byte("{}"), true
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return []byte("{}"), true
+	}
+	if !strings.HasPrefix(trimmed, "{") {
+		writeError(w, http.StatusBadRequest, "strategy must be a JSON object")
+		return nil, false
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		writeError(w, http.StatusBadRequest, "strategy is not valid JSON: "+err.Error())
+		return nil, false
+	}
+	return []byte(trimmed), true
 }
 
 func councilParticipantToResponse(p db.CouncilSessionParticipant) CouncilSessionParticipantResponse {
@@ -310,6 +358,10 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 
 	normalizedMode := normalizeCouncilMode(req.Mode)
 	maxTurns := clampMaxTurns(req.MaxTurns)
+	strategyBytes, ok := validateStrategyJSON(w, req.Strategy)
+	if !ok {
+		return
+	}
 	params := db.CreateCouncilSessionParams{
 		WorkspaceID:    wsUUID,
 		ConvenerUserID: userUUID,
@@ -319,6 +371,7 @@ func (h *Handler) CreateCouncilSession(w http.ResponseWriter, r *http.Request) {
 		Status:         "running",
 		Mode:           pgtype.Text{String: normalizedMode, Valid: true},
 		MaxTurns:       pgtype.Int4{Int32: maxTurns, Valid: true},
+		Strategy:       strategyBytes,
 	}
 
 	if req.ConvenerAgentID != nil && strings.TrimSpace(*req.ConvenerAgentID) != "" {
@@ -538,6 +591,13 @@ func (h *Handler) UpdateCouncilSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Conclusion != nil {
 		params.Conclusion = pgtype.Text{String: *req.Conclusion, Valid: true}
+	}
+	if req.Strategy != nil {
+		strategyBytes, ok := validateStrategyJSON(w, req.Strategy)
+		if !ok {
+			return
+		}
+		params.Strategy = strategyBytes
 	}
 
 	updated, err := h.Queries.UpdateCouncilSession(r.Context(), params)
