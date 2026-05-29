@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildModelApiConnectionPayload,
   buildGuidedSetupDisplaySnippets,
   buildGuidedSetupSnippets,
   getPrimaryConnectionFields,
@@ -104,6 +105,32 @@ describe("buildGuidedSetupSnippets", () => {
 });
 
 describe("model API settings product helpers", () => {
+  it("does not submit the example tool root unless the user explicitly enters one", () => {
+    expect(
+      buildModelApiConnectionPayload(
+        form({
+          mode: "custom",
+          apiKey: "sk-test",
+          baseUrl: "https://models.example.test/v1",
+          modelName: "mimo-v2.5-pro",
+          toolRoots: "",
+        }),
+      ),
+    ).not.toHaveProperty("tool_roots");
+
+    expect(
+      buildModelApiConnectionPayload(
+        form({
+          mode: "custom",
+          apiKey: "sk-test",
+          baseUrl: "https://models.example.test/v1",
+          modelName: "mimo-v2.5-pro",
+          toolRoots: "/Users/albert/OriginWorkbenchMount",
+        }),
+      ),
+    ).toMatchObject({ tool_roots: "/Users/albert/OriginWorkbenchMount" });
+  });
+
   it("keeps the primary setup path focused on the required connection fields", () => {
     expect(getPrimaryConnectionFields("relay")).toEqual(["apiKey", "baseUrl", "modelName"]);
     expect(getPrimaryConnectionFields("official")).toEqual(["apiKey", "modelName"]);

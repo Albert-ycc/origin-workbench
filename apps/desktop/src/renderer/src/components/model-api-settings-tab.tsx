@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import {
   ApiError,
   api,
+  type ModelAPIConfigPayload,
   type ModelAPIConnectionTestResponse,
   type ModelAPILastTest,
 } from "@multica/core/api";
@@ -71,7 +72,8 @@ const CC_SWITCH_OPTIONAL_ENV = [
 
 const API_KEY_PLACEHOLDER = "在这里粘贴 API Key";
 const MODEL_PLACEHOLDER = "模型 ID，例如 gpt-4.1-mini";
-const DEFAULT_TOOL_ROOTS = "$HOME/OriginWorkbenchMount";
+const DEFAULT_TOOL_ROOTS = "";
+const TOOL_ROOTS_PLACEHOLDER = "$HOME/OriginWorkbenchMount";
 
 export const modelApiSettingsLayoutClasses = {
   root: "space-y-6",
@@ -273,7 +275,7 @@ export function buildGuidedSetupSnippets(form: GuidedSetupForm) {
   const info = modeInfo(form.mode);
   const modelName = form.modelName.trim() || MODEL_PLACEHOLDER;
   const modelList = form.modelList.trim() || form.modelName.trim() || MODEL_PLACEHOLDER;
-  const toolRoots = form.toolRoots.trim() || DEFAULT_TOOL_ROOTS;
+  const toolRoots = form.toolRoots.trim() || TOOL_ROOTS_PLACEHOLDER;
 
   if (form.mode === "ccSwitch") {
     const launchctl = [
@@ -350,16 +352,18 @@ function modelApiConfigKey(wsId: string) {
   return ["model-api-config", wsId] as const;
 }
 
-function connectionPayload(form: GuidedSetupForm) {
-  return {
+export function buildModelApiConnectionPayload(form: GuidedSetupForm): ModelAPIConfigPayload {
+  const toolRoots = form.toolRoots.trim();
+  const payload: ModelAPIConfigPayload = {
     provider: "openai_compatible",
     api_key: form.apiKey.trim() || undefined,
     base_url: form.baseUrl.trim() || undefined,
     model_name: form.modelName.trim() || undefined,
     model_names: form.modelList.trim() || form.modelName.trim() || undefined,
     runtime_name: form.runtimeName.trim() || modeInfo(form.mode).defaultRuntimeName,
-    tool_roots: form.toolRoots.trim() || DEFAULT_TOOL_ROOTS,
   };
+  if (toolRoots) payload.tool_roots = toolRoots;
+  return payload;
 }
 
 function FieldRow({
@@ -600,7 +604,7 @@ export function ModelApiSettingsTab() {
       modelName: cfg.model_name || current.modelName,
       modelList: cfg.model_names || current.modelList,
       runtimeName: cfg.runtime_name || current.runtimeName,
-      toolRoots: cfg.tool_roots || current.toolRoots,
+      toolRoots: cfg.tool_roots ?? current.toolRoots,
     }));
   }, [configQuery.data, formTouched]);
 
@@ -674,7 +678,7 @@ export function ModelApiSettingsTab() {
   };
 
   const saveMutation = useMutation({
-    mutationFn: () => api.saveModelAPIConfig(connectionPayload(form)),
+    mutationFn: () => api.saveModelAPIConfig(buildModelApiConnectionPayload(form)),
     onSuccess: async (data) => {
       queryClient.setQueryData(modelApiConfigKey(wsId), data);
       setConnectionResult(connectionResultFromLastTest(data.last_test, data.discovered_models));
@@ -690,7 +694,7 @@ export function ModelApiSettingsTab() {
   });
 
   const testMutation = useMutation({
-    mutationFn: () => api.testModelAPIConfig(connectionPayload(form)),
+    mutationFn: () => api.testModelAPIConfig(buildModelApiConnectionPayload(form)),
     onSuccess: (result) => {
       setConnectionResult(result);
       if (result.ok) toast.success("连接测试通过");
@@ -910,7 +914,7 @@ export function ModelApiSettingsTab() {
                       <Input
                         id="model-api-tool-roots"
                         value={form.toolRoots}
-                        placeholder={DEFAULT_TOOL_ROOTS}
+                        placeholder={TOOL_ROOTS_PLACEHOLDER}
                         onChange={(event) => updateForm({ toolRoots: event.target.value })}
                       />
                     </FormField>
