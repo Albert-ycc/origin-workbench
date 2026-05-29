@@ -223,6 +223,7 @@ export const appRoutes: RouteObject[] = [
                     value: "model-api",
                     label: "大模型 API",
                     icon: BrainCircuit,
+                    layout: "wide",
                     content: <ModelApiSettingsTab />,
                   },
                   {

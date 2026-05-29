@@ -73,6 +73,14 @@ const API_KEY_PLACEHOLDER = "在这里粘贴 API Key";
 const MODEL_PLACEHOLDER = "模型 ID，例如 gpt-4.1-mini";
 const DEFAULT_TOOL_ROOTS = "$HOME/OriginWorkbenchMount";
 
+export const modelApiSettingsLayoutClasses = {
+  root: "space-y-6",
+  header: "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
+  shellGrid: "grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]",
+  providerGrid: "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(10rem,100%),1fr))]",
+  codeBadge: "max-w-full min-w-0 whitespace-normal break-all text-left font-mono",
+} as const;
+
 export type SetupMode = "official" | "relay" | "ccSwitch" | "custom";
 type PrimaryConnectionField = "apiKey" | "baseUrl" | "modelName";
 type HelpTopic = "apiKey" | "baseUrl" | "modelName" | "advanced";
@@ -705,8 +713,8 @@ export function ModelApiSettingsTab() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className={modelApiSettingsLayoutClasses.root}>
+      <div className={modelApiSettingsLayoutClasses.header}>
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">大模型 API</h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
@@ -716,6 +724,7 @@ export function ModelApiSettingsTab() {
         <Button
           variant="outline"
           size="sm"
+          className="w-fit shrink-0"
           onClick={() => void refresh()}
           disabled={runtimesQuery.isFetching || configQuery.isFetching}
         >
@@ -740,11 +749,11 @@ export function ModelApiSettingsTab() {
         </Alert>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <Card className="border-primary/25">
+      <div className={modelApiSettingsLayoutClasses.shellGrid}>
+        <Card className="min-w-0 border-primary/25">
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <CardTitle>连接模型服务</CardTitle>
                 <CardDescription>主流程只保留会影响连接成败的字段，点击保存时会先做连通性校验。</CardDescription>
               </div>
@@ -754,7 +763,7 @@ export function ModelApiSettingsTab() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className={modelApiSettingsLayoutClasses.providerGrid}>
               {SETUP_MODES.map((mode) => {
                 const selected = mode.id === form.mode;
                 return (
@@ -763,18 +772,18 @@ export function ModelApiSettingsTab() {
                     type="button"
                     onClick={() => selectMode(mode.id)}
                     className={cn(
-                      "rounded-lg border p-4 text-left transition-colors hover:bg-muted/30",
+                      "min-w-0 rounded-lg border p-4 text-left transition-colors hover:bg-muted/30",
                       selected && "border-primary bg-primary/5 shadow-sm",
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold">{mode.title}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{mode.eyebrow}</p>
+                        <p className="break-words text-sm font-semibold leading-snug">{mode.title}</p>
+                        <p className="mt-1 break-words text-xs text-muted-foreground">{mode.eyebrow}</p>
                       </div>
                       {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />}
                     </div>
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-3 break-words text-xs leading-relaxed text-muted-foreground">
                       {mode.description}
                     </p>
                   </button>
@@ -929,7 +938,7 @@ export function ModelApiSettingsTab() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>连接状态</CardTitle>
             <CardDescription>保存后会出现在智能体的能力来源里。</CardDescription>
@@ -963,7 +972,11 @@ export function ModelApiSettingsTab() {
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {["list_directory", "read_text_file", "search_text"].map((name) => (
-                  <Badge key={name} variant="outline" className="font-mono">
+                  <Badge
+                    key={name}
+                    variant="outline"
+                    className={modelApiSettingsLayoutClasses.codeBadge}
+                  >
                     {name}
                   </Badge>
                 ))}
@@ -1025,7 +1038,11 @@ export function ModelApiSettingsTab() {
               <p className="text-xs font-medium">必填变量</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {activeModeInfo.requiredEnv.map((name) => (
-                  <Badge key={name} variant="outline" className="font-mono">
+                  <Badge
+                    key={name}
+                    variant="outline"
+                    className={modelApiSettingsLayoutClasses.codeBadge}
+                  >
                     {name}
                   </Badge>
                 ))}
@@ -1035,7 +1052,11 @@ export function ModelApiSettingsTab() {
               <p className="text-xs font-medium">常用可选</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {activeModeInfo.optionalEnv.map((name) => (
-                  <Badge key={name} variant="outline" className="font-mono">
+                  <Badge
+                    key={name}
+                    variant="outline"
+                    className={modelApiSettingsLayoutClasses.codeBadge}
+                  >
                     {name}
                   </Badge>
                 ))}

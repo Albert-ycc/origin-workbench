@@ -3,6 +3,7 @@
 import React from "react";
 import { User, Palette, Key, Bell, SlidersHorizontal } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@multica/ui/components/ui/tabs";
+import { cn } from "@multica/ui/lib/utils";
 import { AccountTab } from "./account-tab";
 import { AppearanceTab } from "./appearance-tab";
 import { TokensTab } from "./tokens-tab";
@@ -27,11 +28,16 @@ export interface ExtraSettingsTab {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   content: React.ReactNode;
+  layout?: "narrow" | "wide";
 }
 
 interface SettingsPageProps {
   /** Additional tabs injected by platform (e.g. desktop daemon settings) */
   extraAccountTabs?: ExtraSettingsTab[];
+}
+
+function settingsPanelClass(layout: ExtraSettingsTab["layout"] = "narrow") {
+  return cn("mx-auto w-full", layout === "wide" ? "max-w-6xl" : "max-w-3xl");
 }
 
 export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
@@ -58,14 +64,26 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
 
       {/* Right content */}
       <div className="flex-1 min-w-0 overflow-y-auto">
-        <div className="w-full max-w-3xl mx-auto p-6">
-          <TabsContent value="profile"><AccountTab /></TabsContent>
-          <TabsContent value="preferences"><PreferencesTab /></TabsContent>
-          <TabsContent value="appearance"><AppearanceTab /></TabsContent>
-          <TabsContent value="notifications"><NotificationsTab /></TabsContent>
-          <TabsContent value="tokens"><TokensTab /></TabsContent>
+        <div className="w-full p-6">
+          <TabsContent value="profile" className={settingsPanelClass()}>
+            <AccountTab />
+          </TabsContent>
+          <TabsContent value="preferences" className={settingsPanelClass()}>
+            <PreferencesTab />
+          </TabsContent>
+          <TabsContent value="appearance" className={settingsPanelClass()}>
+            <AppearanceTab />
+          </TabsContent>
+          <TabsContent value="notifications" className={settingsPanelClass()}>
+            <NotificationsTab />
+          </TabsContent>
+          <TabsContent value="tokens" className={settingsPanelClass()}>
+            <TokensTab />
+          </TabsContent>
           {extraAccountTabs?.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
+            <TabsContent key={tab.value} value={tab.value} className={settingsPanelClass(tab.layout)}>
+              {tab.content}
+            </TabsContent>
           ))}
         </div>
       </div>

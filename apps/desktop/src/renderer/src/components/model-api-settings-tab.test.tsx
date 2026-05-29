@@ -3,6 +3,7 @@ import {
   buildGuidedSetupDisplaySnippets,
   buildGuidedSetupSnippets,
   getPrimaryConnectionFields,
+  modelApiSettingsLayoutClasses,
   modelApiProviderDefaults,
   type GuidedSetupForm,
 } from "./model-api-settings-tab";
@@ -117,5 +118,18 @@ describe("model API settings product helpers", () => {
       baseUrl: "https://your-cc-switch.example/v1",
       runtimeName: "cc-switch",
     });
+  });
+
+  it("uses container-safe layout classes for the dense desktop settings surface", () => {
+    const shellGrid = modelApiSettingsLayoutClasses.shellGrid.split(/\s+/);
+    const providerGrid = modelApiSettingsLayoutClasses.providerGrid.split(/\s+/);
+
+    expect(shellGrid).toContain("2xl:grid-cols-[minmax(0,1fr)_340px]");
+    expect(shellGrid).not.toContain("xl:grid-cols-[minmax(0,1fr)_340px]");
+    expect(providerGrid).toContain(
+      "[grid-template-columns:repeat(auto-fit,minmax(min(10rem,100%),1fr))]",
+    );
+    expect(providerGrid).not.toContain("xl:grid-cols-4");
+    expect(modelApiSettingsLayoutClasses.codeBadge).toContain("break-all");
   });
 });
