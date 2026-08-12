@@ -98,6 +98,11 @@ const (
 const (
 	CouncilBroadcastSourceCouncil = "council"
 	CouncilBroadcastSourceTeam    = "team"
+	// CouncilBroadcastSourceRoom 标识 room 客厅场景的接力链。room 路径复用
+	// council salon 基建但独立注册 relay 句柄（broadcastRelayKey("room", roomID)），
+	// 与 council/team 不撞 key，也保证 handleCouncilBroadcastRelay 能读到句柄
+	// 而不会把「未注册」误判为「已中止」。
+	CouncilBroadcastSourceRoom = "room"
 )
 
 // CouncilBroadcastResult is what the handler returns after the lead enqueue
@@ -597,6 +602,11 @@ func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.A
 		} else if !ok {
 			s.finishCouncilRelay(ctx, task, bc)
 			return
+		}
+		// 下一棒已 enqueue：room 场景维持 relay round active，让前端接力状态
+		// 在回合之间不空窗（maybeWriteRoomMessage 清 round，这里立即重建）。
+		if bc.SourceKind == CouncilBroadcastSourceRoom {
+			UpsertRoomRelayRound(bc.CouncilSessionID)
 		}
 	}
 }

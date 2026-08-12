@@ -1489,12 +1489,16 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 					slog.Warn("failed to set unread_since", "chat_session_id", util.UUIDToString(task.ChatSessionID), "error", err)
 				}
 				s.handleTeamAssistantMessage(ctx, task, message)
+				// 客厅内部 session：先把本棒回复落 room_message + 清 relay round，
+				// 再让 council relay 推进下一棒并重建 round（若有下一棒）。顺序不能
+				// 反——若先 handleCouncilBroadcastRelay 会先 Upsert 再被
+				// maybeWriteRoomMessage 的 Clear 覆盖，导致下一棒 running 期间
+				// relay-status 误报 inactive。
+				s.maybeWriteRoomMessage(ctx, task, message)
 				// Council @全体 relay: when the just-finished task is a LEAD
 				// broadcast, enqueue the follower. When it's a FOLLOWER
 				// broadcast, the relay stops. Anything else → no-op.
 				s.handleCouncilBroadcastRelay(ctx, task)
-				// 客厅内部 session：agent 回复完成后同步写 room_message + 推 room:message 事件
-				s.maybeWriteRoomMessage(ctx, task, message)
 			}
 		}
 		s.broadcastChatDone(ctx, task)

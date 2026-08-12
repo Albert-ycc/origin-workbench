@@ -208,6 +208,18 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		return fmt.Errorf("room relay: opener session create failed: %w", err)
 	}
 
+	// 4.1 注册 relay 链句柄。room 复用 council salon 基建，而
+	// handleCouncilBroadcastRelay 用「句柄不存在即视为中止」兜底；若不注册，
+	// 第一棒完成后的下一轮会被误判为已取消而永远不 enqueue。用户再次发言时
+	// 新链覆盖旧句柄（RegisterCouncilSession 语义），旧链在下一轮推进前停止。
+	roomIDStr := util.UUIDToString(room.ID)
+	ctx = s.RegisterCouncilSession(
+		CouncilBroadcastSourceRoom,
+		roomIDStr,
+		util.UUIDToString(chatSession.ID),
+		util.UUIDToString(room.WorkspaceID),
+	)
+
 	// 5. Ensure the trigger message reaches the model even when the internal
 	// chat_session has no prior messages. Without this the daemon would
 	// reject the prompt with "chat history has no user message".
@@ -226,7 +238,7 @@ func (s *TaskService) EnqueueRoomChatTasks(
 	// 6. 构建 CouncilBroadcastContext，把 room 当 salon 对待。
 	broadcastCtx := CouncilBroadcastContext{
 		Type:             CouncilBroadcastContextType,
-		CouncilSessionID: util.UUIDToString(room.ID), // room.ID 充当 council session id
+		CouncilSessionID: roomIDStr, // room.ID 充当 council session id
 		CouncilTopic:     room.Name,
 		ChatSessionID:    util.UUIDToString(chatSession.ID),
 		BroadcasterKind:  "user",
@@ -236,9 +248,13 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		SelfAgentID:      openerID,
 		SelfAgentName:    agent.Name,
 		Role:             CouncilBroadcastRoleSalon,
+		SourceKind:       CouncilBroadcastSourceRoom,
 		TurnIndex:        1,
 		MaxTurns:         len(rosterInfo),
-		PersonaOverride:  roomPersonaOverride(ctx, q, util.UUIDToString(room.ID), openerID),
+		PersonaOverride:  roomPersonaOverride(ctx, q, roomIDStr, openerID),
+	}
+	if h := relayHandleFromCtx(ctx); h != nil {
+		broadcastCtx.RelayGeneration = h.generation
 	}
 	contextJSON, err := json.Marshal(broadcastCtx)
 	if err != nil {
