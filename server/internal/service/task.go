@@ -23,6 +23,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/modelapi"
 	"github.com/multica-ai/multica/server/internal/realtime"
 	"github.com/multica-ai/multica/server/internal/runtimeconfig"
+	"github.com/multica-ai/multica/server/internal/tracing"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -546,6 +547,11 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 		return fail("API runtime only supports chat tasks")
 	}
 
+	// 会话级 trace：同一 task 的所有 LLM 调用共享 trace_id，caller 标签从
+	// 任务上下文解析（council_lead / chat / quick_create 等），日志里按
+	// trace_id 即可串起一次完整的 agent 交互。
+	ctx = tracing.WithTrace(ctx, tracing.NewTrace(taskCallerLabel(task), util.UUIDToString(task.ID)))
+
 	rt, err := s.Queries.GetAgentRuntime(ctx, task.RuntimeID)
 	if err != nil {
 		return fail("failed to load API runtime")
@@ -609,6 +615,41 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 		return err
 	}
 	return nil
+}
+
+// taskCallerLabel 从任务上下文解析 LLM 调用方标签，供会话级 trace 打点。
+// council broadcast 按角色细分为 lead/follower/salon；其余任务类型映射到
+// quick_create / project_compaction / team_delegation；没有可识别的上下文
+// 一律归为 chat。
+func taskCallerLabel(task db.AgentTaskQueue) string {
+	if len(task.Context) == 0 {
+		return tracing.CallerChat
+	}
+	var bc CouncilBroadcastContext
+	if json.Unmarshal(task.Context, &bc) == nil && bc.Type == CouncilBroadcastContextType {
+		switch bc.Role {
+		case CouncilBroadcastRoleLead:
+			return tracing.CallerCouncilLead
+		case CouncilBroadcastRoleFollower:
+			return tracing.CallerCouncilFollower
+		case CouncilBroadcastRoleSalon:
+			return tracing.CallerCouncilSalon
+		}
+		return tracing.CallerChat
+	}
+	var qc QuickCreateContext
+	if json.Unmarshal(task.Context, &qc) == nil && qc.Type == QuickCreateContextType {
+		return tracing.CallerQuickCreate
+	}
+	var pc ProjectCompactionContext
+	if json.Unmarshal(task.Context, &pc) == nil && pc.Type == ProjectCompactionContextType {
+		return tracing.CallerProjectCompaction
+	}
+	var td TeamDelegationContext
+	if json.Unmarshal(task.Context, &td) == nil && td.Type == TeamDelegationContextType {
+		return tracing.CallerTeamDelegation
+	}
+	return tracing.CallerChat
 }
 
 // apiRuntimeStreamEnabled 读取环境变量 ORIGIN_MODELAPI_STREAM_ENABLED。

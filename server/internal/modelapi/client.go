@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/multica-ai/multica/server/internal/tracing"
 )
 
 const (
@@ -211,7 +213,7 @@ func (c *Client) connectionTestError(err error) ConnectionTestResult {
 	}
 }
 
-func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) {
+func (c *Client) Chat(ctx context.Context, req ChatRequest) (res ChatResult, err error) {
 	if c == nil {
 		return ChatResult{}, fmt.Errorf("model API client is not configured")
 	}
@@ -223,6 +225,11 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResult, error) 
 	}
 	if len(req.Messages) == 0 {
 		return ChatResult{}, fmt.Errorf("messages are required")
+	}
+
+	// 会话级 trace：ctx 里有 trace 时记录本次调用的 span（token/时长/错误）。
+	if span := tracing.StartSpan(ctx, req.Model); span != nil {
+		defer func() { span.Finish(res.InputTokens, res.OutputTokens, err) }()
 	}
 
 	body, err := json.Marshal(req)
@@ -287,7 +294,7 @@ func (c *Client) ChatStream(
 	ctx context.Context,
 	req ChatRequest,
 	onChunk func(chunk string) error,
-) (ChatResult, error) {
+) (res ChatResult, err error) {
 	if c == nil {
 		return ChatResult{}, fmt.Errorf("model API client is not configured")
 	}
@@ -299,6 +306,11 @@ func (c *Client) ChatStream(
 	}
 	if len(req.Messages) == 0 {
 		return ChatResult{}, fmt.Errorf("messages are required")
+	}
+
+	// 会话级 trace：ctx 里有 trace 时记录本次调用的 span（token/时长/错误）。
+	if span := tracing.StartSpan(ctx, req.Model); span != nil {
+		defer func() { span.Finish(res.InputTokens, res.OutputTokens, err) }()
 	}
 
 	// 构造请求体，开启 stream 模式
@@ -419,7 +431,8 @@ func (c *Client) ChatStream(
 	if len(toolCalls) > 0 {
 		result.ToolCalls = toolCalls
 	}
-	return result, nil
+	res = result
+	return
 }
 
 // streamChunk 是 OpenAI 兼容流式响应的单个 SSE data 行结构
