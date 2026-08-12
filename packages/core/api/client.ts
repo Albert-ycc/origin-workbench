@@ -1756,6 +1756,7 @@ export class ApiClient {
     if (filter.agent_id) params.set("agent_id", filter.agent_id);
     if (filter.idea_id) params.set("idea_id", filter.idea_id);
     if (filter.council_session_id) params.set("council_session_id", filter.council_session_id);
+    if (filter.project_id) params.set("project_id", filter.project_id);
     const qs = params.toString();
     return this.fetch(`/api/tool-bindings${qs ? `?${qs}` : ""}`);
   }

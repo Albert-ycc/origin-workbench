@@ -37,6 +37,7 @@ export interface ToolBinding {
   agent_id: string | null;
   idea_id: string | null;
   council_session_id: string | null;
+  project_id: string | null;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -51,6 +52,7 @@ export interface CreateToolBindingRequest {
   agent_id?: string;
   idea_id?: string;
   council_session_id?: string;
+  project_id?: string;
 }
 
 export interface UpdateToolBindingRequest {
@@ -69,4 +71,5 @@ export interface ToolBindingFilter {
   agent_id?: string;
   idea_id?: string;
   council_session_id?: string;
+  project_id?: string;
 }

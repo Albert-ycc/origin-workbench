@@ -15,14 +15,15 @@ const createToolBinding = `-- name: CreateToolBinding :one
 INSERT INTO tool_binding (
     workspace_id, created_by_user_id,
     tool_type, resource_ref, label, write_enabled,
-    mission_id, agent_id, idea_id, council_session_id
+    mission_id, agent_id, idea_id, council_session_id, project_id
 ) VALUES (
     $1, $2,
     $3, $4, $5, $6,
     $7::uuid,
     $8::uuid,
     $9::uuid,
-    $10::uuid
+    $10::uuid,
+    $11::uuid
 )
 RETURNING id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id
 `
@@ -38,6 +39,7 @@ type CreateToolBindingParams struct {
 	AgentID          pgtype.UUID `json:"agent_id"`
 	IdeaID           pgtype.UUID `json:"idea_id"`
 	CouncilSessionID pgtype.UUID `json:"council_session_id"`
+	ProjectID        pgtype.UUID `json:"project_id"`
 }
 
 func (q *Queries) CreateToolBinding(ctx context.Context, arg CreateToolBindingParams) (ToolBinding, error) {
@@ -52,6 +54,7 @@ func (q *Queries) CreateToolBinding(ctx context.Context, arg CreateToolBindingPa
 		arg.AgentID,
 		arg.IdeaID,
 		arg.CouncilSessionID,
+		arg.ProjectID,
 	)
 	var i ToolBinding
 	err := row.Scan(
@@ -250,6 +253,48 @@ ORDER BY updated_at DESC
 
 func (q *Queries) ListToolBindingsForMission(ctx context.Context, missionID pgtype.UUID) ([]ToolBinding, error) {
 	rows, err := q.db.Query(ctx, listToolBindingsForMission, missionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ToolBinding{}
+	for rows.Next() {
+		var i ToolBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.CreatedByUserID,
+			&i.ToolType,
+			&i.ResourceRef,
+			&i.Label,
+			&i.WriteEnabled,
+			&i.MissionID,
+			&i.AgentID,
+			&i.IdeaID,
+			&i.CouncilSessionID,
+			&i.LastSyncedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listToolBindingsForProject = `-- name: ListToolBindingsForProject :many
+SELECT id, workspace_id, created_by_user_id, tool_type, resource_ref, label, write_enabled, mission_id, agent_id, idea_id, council_session_id, last_synced_at, created_at, updated_at, project_id FROM tool_binding
+WHERE project_id = $1
+ORDER BY updated_at DESC
+`
+
+func (q *Queries) ListToolBindingsForProject(ctx context.Context, projectID pgtype.UUID) ([]ToolBinding, error) {
+	rows, err := q.db.Query(ctx, listToolBindingsForProject, projectID)
 	if err != nil {
 		return nil, err
 	}

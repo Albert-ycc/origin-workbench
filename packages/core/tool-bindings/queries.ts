@@ -14,6 +14,7 @@ function canonicalKey(filter: ToolBindingFilter): string {
   if (filter.agent_id) parts.push(`a:${filter.agent_id}`);
   if (filter.idea_id) parts.push(`i:${filter.idea_id}`);
   if (filter.council_session_id) parts.push(`c:${filter.council_session_id}`);
+  if (filter.project_id) parts.push(`p:${filter.project_id}`);
   return parts.length === 0 ? "all" : parts.join("|");
 }
 

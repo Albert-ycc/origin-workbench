@@ -91,7 +91,8 @@ export interface ToolBindingsPanelProps {
     | { kind: "mission"; id: string }
     | { kind: "agent"; id: string }
     | { kind: "idea"; id: string }
-    | { kind: "council"; id: string };
+    | { kind: "council"; id: string }
+    | { kind: "project"; id: string };
   className?: string;
 }
 
@@ -341,6 +342,8 @@ function subjectFilter(subject: ToolBindingsPanelProps["subject"]): ToolBindingF
       return { idea_id: subject.id };
     case "council":
       return { council_session_id: subject.id };
+    case "project":
+      return { project_id: subject.id };
   }
 }
 
@@ -354,5 +357,7 @@ function subjectField(subject: ToolBindingsPanelProps["subject"]) {
       return { idea_id: subject.id };
     case "council":
       return { council_session_id: subject.id };
+    case "project":
+      return { project_id: subject.id };
   }
 }

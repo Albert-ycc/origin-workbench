@@ -27,6 +27,7 @@ type ToolBindingResponse struct {
 	AgentID          *string         `json:"agent_id"`
 	IdeaID           *string         `json:"idea_id"`
 	CouncilSessionID *string         `json:"council_session_id"`
+	ProjectID        *string         `json:"project_id"`
 	LastSyncedAt     *string         `json:"last_synced_at"`
 	CreatedAt        string          `json:"created_at"`
 	UpdatedAt        string          `json:"updated_at"`
@@ -50,6 +51,7 @@ type CreateToolBindingRequest struct {
 	AgentID          *string         `json:"agent_id"`
 	IdeaID           *string         `json:"idea_id"`
 	CouncilSessionID *string         `json:"council_session_id"`
+	ProjectID        *string         `json:"project_id"`
 }
 
 type UpdateToolBindingRequest struct {
@@ -84,6 +86,7 @@ func toolBindingToResponse(b db.ToolBinding) ToolBindingResponse {
 		AgentID:          uuidToPtr(b.AgentID),
 		IdeaID:           uuidToPtr(b.IdeaID),
 		CouncilSessionID: uuidToPtr(b.CouncilSessionID),
+		ProjectID:        uuidToPtr(b.ProjectID),
 		LastSyncedAt:     lastSynced,
 		CreatedAt:        timestampToString(b.CreatedAt),
 		UpdatedAt:        timestampToString(b.UpdatedAt),
@@ -115,6 +118,7 @@ func (h *Handler) ListToolBindings(w http.ResponseWriter, r *http.Request) {
 	agentFilter := strings.TrimSpace(q.Get("agent_id"))
 	ideaFilter := strings.TrimSpace(q.Get("idea_id"))
 	councilFilter := strings.TrimSpace(q.Get("council_session_id"))
+	projectFilter := strings.TrimSpace(q.Get("project_id"))
 
 	// Subject filters are workspace-scoped: we verify the referenced object
 	// belongs to the caller's workspace BEFORE running the list query, so a
@@ -147,6 +151,12 @@ func (h *Handler) ListToolBindings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rows, err = h.Queries.ListToolBindingsForCouncil(r.Context(), uuid)
+	case projectFilter != "":
+		uuid, ok := h.requireProjectInWorkspace(w, r, projectFilter, wsUUID)
+		if !ok {
+			return
+		}
+		rows, err = h.Queries.ListToolBindingsForProject(r.Context(), uuid)
 	default:
 		rows, err = h.Queries.ListToolBindingsForWorkspace(r.Context(), wsUUID)
 	}
@@ -210,6 +220,21 @@ func (h *Handler) requireCouncilSessionInWorkspace(w http.ResponseWriter, r *htt
 	return uuid, true
 }
 
+func (h *Handler) requireProjectInWorkspace(w http.ResponseWriter, r *http.Request, raw string, wsUUID pgtype.UUID) (pgtype.UUID, bool) {
+	uuid, ok := parseUUIDOrBadRequest(w, raw, "project_id")
+	if !ok {
+		return pgtype.UUID{}, false
+	}
+	if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+		ID:          uuid,
+		WorkspaceID: wsUUID,
+	}); err != nil {
+		writeError(w, http.StatusNotFound, "project not found in this workspace")
+		return pgtype.UUID{}, false
+	}
+	return uuid, true
+}
+
 func (h *Handler) GetToolBinding(w http.ResponseWriter, r *http.Request) {
 	binding, ok := h.loadToolBinding(w, r, chi.URLParam(r, "id"))
 	if !ok {
@@ -262,8 +287,11 @@ func (h *Handler) CreateToolBinding(w http.ResponseWriter, r *http.Request) {
 	if req.CouncilSessionID != nil && strings.TrimSpace(*req.CouncilSessionID) != "" {
 		subjectsSet++
 	}
+	if req.ProjectID != nil && strings.TrimSpace(*req.ProjectID) != "" {
+		subjectsSet++
+	}
 	if subjectsSet != 1 {
-		writeError(w, http.StatusBadRequest, "binding must reference exactly one of mission_id / agent_id / idea_id / council_session_id")
+		writeError(w, http.StatusBadRequest, "binding must reference exactly one of mission_id / agent_id / idea_id / council_session_id / project_id")
 		return
 	}
 
@@ -326,6 +354,13 @@ func (h *Handler) CreateToolBinding(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		params.CouncilSessionID = uuid
+	}
+	if req.ProjectID != nil && strings.TrimSpace(*req.ProjectID) != "" {
+		uuid, ok := h.requireProjectInWorkspace(w, r, strings.TrimSpace(*req.ProjectID), wsUUID)
+		if !ok {
+			return
+		}
+		params.ProjectID = uuid
 	}
 
 	binding, err := h.Queries.CreateToolBinding(r.Context(), params)

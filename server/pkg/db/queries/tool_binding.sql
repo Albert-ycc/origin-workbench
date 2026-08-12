@@ -35,14 +35,15 @@ WHERE id = $1 AND workspace_id = $2;
 INSERT INTO tool_binding (
     workspace_id, created_by_user_id,
     tool_type, resource_ref, label, write_enabled,
-    mission_id, agent_id, idea_id, council_session_id
+    mission_id, agent_id, idea_id, council_session_id, project_id
 ) VALUES (
     $1, $2,
     $3, $4, $5, $6,
     sqlc.narg('mission_id')::uuid,
     sqlc.narg('agent_id')::uuid,
     sqlc.narg('idea_id')::uuid,
-    sqlc.narg('council_session_id')::uuid
+    sqlc.narg('council_session_id')::uuid,
+    sqlc.narg('project_id')::uuid
 )
 RETURNING *;
 
@@ -55,6 +56,11 @@ UPDATE tool_binding SET
     updated_at = now()
 WHERE id = $1
 RETURNING *;
+
+-- name: ListToolBindingsForProject :many
+SELECT * FROM tool_binding
+WHERE project_id = $1
+ORDER BY updated_at DESC;
 
 -- name: DeleteToolBinding :exec
 DELETE FROM tool_binding WHERE id = $1;
