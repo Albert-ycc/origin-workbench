@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -951,6 +953,140 @@ func (s *TaskService) CancelTasksByTriggerComment(ctx context.Context, commentID
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// Council relay lifecycle — 串行 relay 链的中止信号穿透
+// ---------------------------------------------------------------------------
+
+// councilRelayHandle 是一次 council @全体 relay 链的中止句柄。串行 relay 由
+// CompleteTask 路径的 handleCouncilBroadcastRelay 逐轮推进，跨越多次异步
+// 回调，所以中止信号不能挂在单次请求的 ctx 上，必须存进进程级 map，由
+// Adjourn / 单任务取消路径显式触发。
+type councilRelayHandle struct {
+	cancel        context.CancelFunc
+	canceled      atomic.Bool
+	generation    int64  // 链代数：同一 sessionKey 每次注册递增，旧链靠它感知被取代
+	sessionID     string // 原始 council / team UUID，事件 payload 用它
+	workspaceID   string
+	chatSessionID string
+}
+
+// councilCancels 持有所有 running relay 链的句柄，key 是
+// broadcastRelayKey(sourceKind, sessionID)。同一 key 只保留最新注册的链。
+var councilCancels sync.Map
+
+// relayGenerationCounter 给每条 relay 链分配递增代数。重复 @全体 时新链
+// 会覆盖 map 里的旧句柄，旧链在下一轮推进前比较代数发现自己已被取代，
+// 从而停止 enqueue——否则两条链会并发轮转、发言互相交错。
+var relayGenerationCounter atomic.Int64
+
+// ctxRelayHandleKey 是 ctx 里携带当前链句柄的 key，enqueue 时把代数写进
+// task payload 供 handleCouncilBroadcastRelay 比对。
+type ctxRelayHandleKey struct{}
+
+func relayHandleFromCtx(ctx context.Context) *councilRelayHandle {
+	if h, ok := ctx.Value(ctxRelayHandleKey{}).(*councilRelayHandle); ok {
+		return h
+	}
+	return nil
+}
+
+// RegisterCouncilSession 注册一个 council / team 会话的 relay 链并返回带
+// 取消的 ctx，ctx 里同时携带链句柄。同一 sessionKey 重复注册时先取消旧句柄
+// 并用新句柄覆盖——例如用户在 relay 进行中又发了一条 @全体，旧链立即视为
+// 已中止。
+func (s *TaskService) RegisterCouncilSession(sourceKind, sessionID, chatSessionID, workspaceID string) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	sessionKey := broadcastRelayKey(sourceKind, sessionID)
+	handle := &councilRelayHandle{
+		cancel:        cancel,
+		sessionID:     sessionID,
+		workspaceID:   workspaceID,
+		chatSessionID: chatSessionID,
+		generation:    relayGenerationCounter.Add(1),
+	}
+	if old, loaded := councilCancels.Load(sessionKey); loaded {
+		oldH := old.(*councilRelayHandle)
+		oldH.canceled.Store(true)
+		oldH.cancel()
+	}
+	councilCancels.Store(sessionKey, handle)
+	return context.WithValue(ctx, ctxRelayHandleKey{}, handle)
+}
+
+// CancelCouncilSession 中止一个 relay 链：标记 canceled 并触发 cancel，同时
+// 推送 council:relay_cancelled 事件，最后移除句柄。已中止的链在
+// handleCouncilBroadcastRelay 里通过「句柄不存在即视为中止」的语义不再
+// enqueue 下一轮。对不存在的 sessionKey 是幂等 no-op。
+func (s *TaskService) CancelCouncilSession(sessionKey string) {
+	v, ok := councilCancels.Load(sessionKey)
+	if !ok {
+		return
+	}
+	h := v.(*councilRelayHandle)
+	h.canceled.Store(true)
+	h.cancel()
+	slog.Info("council relay cancelled",
+		"session_key", sessionKey,
+		"chat_session_id", h.chatSessionID)
+	if h.workspaceID != "" {
+		s.Bus.Publish(events.Event{
+			Type:          protocol.EventCouncilRelayCancelled,
+			WorkspaceID:   h.workspaceID,
+			ActorType:     "system",
+			ActorID:       "",
+			ChatSessionID: h.chatSessionID,
+			Payload: protocol.CouncilRelayPayload{
+				CouncilSessionID: h.sessionID,
+				ChatSessionID:    h.chatSessionID,
+			},
+		})
+	}
+	councilCancels.Delete(sessionKey)
+}
+
+// CancelCouncilRelay 中止指定 sourceKind + sessionID 的 relay 链。handler 层
+// 中止 council 会话时用它穿透到进行中的链上。
+func (s *TaskService) CancelCouncilRelay(sourceKind, sessionID string) {
+	s.CancelCouncilSession(broadcastRelayKey(sourceKind, sessionID))
+}
+
+// deregisterCouncilSession 移除 relay 链句柄。链自然结束（follower 收尾 /
+// salon 到 MaxTurns / 无 follower 可接）时调用，避免 sync.Map 泄漏。
+func (s *TaskService) deregisterCouncilSession(sessionKey string) {
+	councilCancels.Delete(sessionKey)
+}
+
+// councilRelayCanceled 返回 relay 链是否应该停止推进。句柄不存在（从未
+// 注册 / 已自然结束 deregister / 已被取消后删除）一律视为中止；generation
+// 与当前句柄不一致说明本链已被后续注册取代。取消路径和自然结束路径都会
+// 移除句柄，handleCouncilBroadcastRelay 在下一轮 enqueue 前用这个语义兜底，
+// 避免取消后仍有多余轮次。
+func (s *TaskService) councilRelayCanceled(sessionKey string, generation int64) bool {
+	v, ok := councilCancels.Load(sessionKey)
+	if !ok {
+		return true
+	}
+	h := v.(*councilRelayHandle)
+	if generation != 0 && h.generation != generation {
+		return true
+	}
+	return h.canceled.Load()
+}
+
+// CancelCouncilRelayForTask 若 task 是 council broadcast 链上的一环，穿透
+// 取消整条 relay 链。供单任务取消路径（CancelTask / CancelTaskByUser）调用：
+// 用户取消某个 agent 的发言任务时，后续轮不再 enqueue。
+func (s *TaskService) CancelCouncilRelayForTask(task db.AgentTaskQueue) {
+	if len(task.Context) == 0 {
+		return
+	}
+	var bc CouncilBroadcastContext
+	if json.Unmarshal(task.Context, &bc) != nil || bc.Type != CouncilBroadcastContextType {
+		return
+	}
+	s.CancelCouncilSession(broadcastRelayKey(bc.SourceKind, bc.CouncilSessionID))
+}
+
 // CancelTask cancels a single task by ID. It broadcasts a task:cancelled event
 // so frontends can update immediately.
 func (s *TaskService) CancelTask(ctx context.Context, taskID pgtype.UUID) (*db.AgentTaskQueue, error) {
@@ -973,6 +1109,10 @@ func (s *TaskService) CancelTask(ctx context.Context, taskID pgtype.UUID) (*db.A
 
 	// Broadcast cancellation as a task:failed event so frontends clear the live card
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, task)
+
+	// 若被取消的 task 是 council @全体 relay 链上的一环，穿透中止整条链——
+	// 用户取消某个 agent 的发言时，后续轮不再 enqueue。
+	s.CancelCouncilRelayForTask(task)
 
 	return &task, nil
 }

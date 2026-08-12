@@ -170,3 +170,18 @@ type RoomMessagePayload struct {
 	IsAutonomous     bool     `json:"is_autonomous"`
 	CreatedAt        string   `json:"created_at"`
 }
+
+// CouncilRelayPayload 是 council @全体 relay 链生命周期事件
+// （council:relay_started / relay_turn_completed / relay_cancelled /
+// relay_finished）的 WS 广播 payload。扁平结构，前端按 council_session_id
+// 路由到对应 council / team 房间渲染接力状态。
+type CouncilRelayPayload struct {
+	CouncilSessionID string `json:"council_session_id"`
+	ChatSessionID    string `json:"chat_session_id"`
+	Role             string `json:"role"`                       // lead / follower / salon_speaker
+	SpeakerAgentID   string `json:"speaker_agent_id,omitempty"` // 本轮发言人
+	SpeakerName      string `json:"speaker_name,omitempty"`
+	TurnIndex        int    `json:"turn_index,omitempty"` // salon 当前轮（1-based）
+	MaxTurns         int    `json:"max_turns,omitempty"`  // salon 总轮数
+	PriorSpeakerName string `json:"prior_speaker_name,omitempty"`
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -641,6 +642,10 @@ func (h *Handler) AdjournCouncilSession(w http.ResponseWriter, r *http.Request) 
 	}
 	resp := councilSessionToResponse(adjourned)
 	h.publish(protocol.EventCouncilAdjourned, uuidToString(adjourned.WorkspaceID), "member", userID, map[string]any{"session": resp})
+
+	// 休会即中止该 council 可能进行中的 @全体 relay 链——后续轮不再 enqueue，
+	// 链上尚未发言的 agent 任务保持 cancelled 语义。
+	h.TaskService.CancelCouncilRelay(service.CouncilBroadcastSourceCouncil, uuidToString(adjourned.ID))
 
 	// Origin §14.5 — relay the conclusion back to whichever Direct Chat
 	// originally convened the council so the user sees it in the original

@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // CouncilBroadcastContext is attached to chat tasks produced by the @全体
@@ -35,6 +37,10 @@ type CouncilBroadcastContext struct {
 	Role             string                       `json:"role"`                  // "lead" / "follower" / "salon_speaker"
 	SourceKind       string                       `json:"source_kind,omitempty"` // "council" or "team" — drives the chain handler
 	PriorSpeakerName string                       `json:"prior_speaker_name,omitempty"`
+	// RelayGeneration 是链代数，由 RegisterCouncilSession 分配。daemon 端忽略；
+	// handleCouncilBroadcastRelay 用它比对当前句柄，旧链（被重复 @全体 取代）
+	// 在下一轮推进前据此停止。
+	RelayGeneration int64 `json:"relay_generation,omitempty"`
 	// Salon 模式专用：当前是第几轮发言（1-based）+ 总轮数上限。
 	// 调度器无状态，靠 payload 流转保留循环计数。
 	TurnIndex int `json:"turn_index,omitempty"`
@@ -109,6 +115,46 @@ type CouncilBroadcastSource struct {
 	Topic string // council.topic or team.name
 }
 
+// broadcastRelayKey 构造 relay 链在 councilCancels 里的唯一 key。
+// SourceKind + sessionID 组合保证 council 与 team 会话（都是 UUID）不撞 key。
+func broadcastRelayKey(sourceKind, sessionID string) string {
+	return sourceKind + ":" + sessionID
+}
+
+// broadcastRelayEvent 发布 council relay 生命周期事件（relay_started /
+// relay_turn_completed / relay_finished）。workspace 从 task 解析，payload
+// 带当轮发言人信息；前端按 council_session_id 路由渲染接力状态。
+func (s *TaskService) broadcastRelayEvent(ctx context.Context, eventType string, task db.AgentTaskQueue, bc CouncilBroadcastContext) {
+	workspaceID := s.ResolveTaskWorkspaceID(ctx, task)
+	if workspaceID == "" {
+		return
+	}
+	s.Bus.Publish(events.Event{
+		Type:          eventType,
+		WorkspaceID:   workspaceID,
+		ActorType:     "agent",
+		ActorID:       bc.SelfAgentID,
+		ChatSessionID: bc.ChatSessionID,
+		Payload: protocol.CouncilRelayPayload{
+			CouncilSessionID: bc.CouncilSessionID,
+			ChatSessionID:    bc.ChatSessionID,
+			Role:             bc.Role,
+			SpeakerAgentID:   bc.SelfAgentID,
+			SpeakerName:      bc.SelfAgentName,
+			TurnIndex:        bc.TurnIndex,
+			MaxTurns:         bc.MaxTurns,
+			PriorSpeakerName: bc.PriorSpeakerName,
+		},
+	})
+}
+
+// finishCouncilRelay 链自然结束：移除句柄并推送 relay_finished。链结束的
+// 四种形态——follower 收尾、salon 到 MaxTurns、无下一棒可接、enqueue 出错。
+func (s *TaskService) finishCouncilRelay(ctx context.Context, task db.AgentTaskQueue, bc CouncilBroadcastContext) {
+	s.deregisterCouncilSession(broadcastRelayKey(bc.SourceKind, bc.CouncilSessionID))
+	s.broadcastRelayEvent(ctx, protocol.EventCouncilRelayFinished, task, bc)
+}
+
 // EnqueueCouncilBroadcastTasks kicks off a Council relay: it loads the
 // council roster, picks the lead (convener if any, else first participant),
 // and enqueues exactly ONE chat task for the lead. The follower is NOT
@@ -128,9 +174,21 @@ func (s *TaskService) EnqueueCouncilBroadcastTasks(
 		ID:    council.ID,
 		Topic: council.Topic,
 	}
+	// 注册 relay 链句柄并拿带取消的 ctx：同一 council 在 relay 进行中再次
+	// @全体 时新链会覆盖旧句柄（RegisterCouncilSession 语义），旧链靠链代数
+	// 感知被取代而停止，后续链由 handleCouncilBroadcastRelay 检查句柄状态
+	// 决定是否推进。
+	sessionID := util.UUIDToString(council.ID)
+	ctx = s.RegisterCouncilSession(
+		CouncilBroadcastSourceCouncil,
+		sessionID,
+		util.UUIDToString(chatSession.ID),
+		util.UUIDToString(chatSession.WorkspaceID),
+	)
+
 	rosterInfo, rosterAgents, skipped, err := s.loadCouncilRoster(ctx, council.ID)
 	if err != nil {
-		return CouncilBroadcastResult{CouncilSessionID: util.UUIDToString(council.ID)}, err
+		return CouncilBroadcastResult{CouncilSessionID: sessionID}, err
 	}
 	// Salon 模式（圆桌客厅）：开场任意一人发言，由 handleCouncilBroadcastRelay
 	// 串行轮转直到 MaxTurns；区别于 relay 的 lead/follower 二段固定结构。
@@ -184,9 +242,19 @@ func (s *TaskService) EnqueueTeamBroadcastTasks(
 		ID:    team.ID,
 		Topic: team.Name,
 	}
+	// 与 council 同一条 relay 链机制：注册句柄并拿带取消的 ctx，保证
+	// team 会话的链也能被 Adjourn / 单任务取消穿透。
+	sessionID := util.UUIDToString(team.ID)
+	ctx = s.RegisterCouncilSession(
+		CouncilBroadcastSourceTeam,
+		sessionID,
+		util.UUIDToString(chatSession.ID),
+		util.UUIDToString(chatSession.WorkspaceID),
+	)
+
 	rosterInfo, rosterAgents, skipped, err := s.loadTeamRoster(ctx, team.ID)
 	if err != nil {
-		return CouncilBroadcastResult{}, err
+		return CouncilBroadcastResult{CouncilSessionID: sessionID}, err
 	}
 	return s.enqueueBroadcastLead(
 		ctx,
@@ -363,6 +431,9 @@ func (s *TaskService) enqueueBroadcastLead(
 		Role:             CouncilBroadcastRoleLead,
 		SourceKind:       source.Kind,
 	}
+	if h := relayHandleFromCtx(ctx); h != nil {
+		payload.RelayGeneration = h.generation
+	}
 	contextJSON, err := json.Marshal(payload)
 	if err != nil {
 		return result, fmt.Errorf("marshal lead broadcast context: %w", err)
@@ -378,6 +449,7 @@ func (s *TaskService) enqueueBroadcastLead(
 		return result, fmt.Errorf("enqueue lead broadcast task: %w", err)
 	}
 	result.Tasks = append(result.Tasks, task)
+	s.broadcastRelayEvent(ctx, protocol.EventCouncilRelayStarted, task, payload)
 
 	slog.Info("broadcast relay: lead enqueued",
 		"source_kind", source.Kind,
@@ -428,6 +500,7 @@ func (s *TaskService) enqueueBroadcastFollower(
 		Role:             CouncilBroadcastRoleFollower,
 		SourceKind:       leadContext.SourceKind,
 		PriorSpeakerName: leadContext.SelfAgentName,
+		RelayGeneration:  leadContext.RelayGeneration,
 	}
 	contextJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -466,6 +539,17 @@ func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.A
 	if bc.Type != CouncilBroadcastContextType {
 		return
 	}
+
+	// 每轮发言落库后推送 turn_completed（含末轮），前端据此渲染接力进度。
+	s.broadcastRelayEvent(ctx, protocol.EventCouncilRelayTurnCompleted, task, bc)
+
+	sessionKey := broadcastRelayKey(bc.SourceKind, bc.CouncilSessionID)
+	// 链已被中止（用户取消任务 / council 休会 / 被重复 @全体 取代）：
+	// 不再 enqueue 下一轮，cancelled 事件由取消路径推送过，这里直接停。
+	if s.councilRelayCanceled(sessionKey, bc.RelayGeneration) {
+		return
+	}
+
 	chatSession, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
 	if err != nil {
 		slog.Warn("broadcast relay: load chat session failed",
@@ -475,12 +559,21 @@ func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.A
 	}
 	switch bc.Role {
 	case CouncilBroadcastRoleLead:
-		if _, _, err := s.enqueueBroadcastFollower(ctx, chatSession, bc); err != nil {
+		if _, ok, err := s.enqueueBroadcastFollower(ctx, chatSession, bc); err != nil {
 			slog.Warn("broadcast relay: follower enqueue failed",
 				"chat_session_id", util.UUIDToString(task.ChatSessionID),
 				"lead_agent_id", bc.SelfAgentID,
 				"error", err)
+			s.finishCouncilRelay(ctx, task, bc)
+			return
+		} else if !ok {
+			// 无 follower 可接，lead 独白即链结束
+			s.finishCouncilRelay(ctx, task, bc)
+			return
 		}
+	case CouncilBroadcastRoleFollower:
+		// follower 收尾即链自然结束
+		s.finishCouncilRelay(ctx, task, bc)
 	case CouncilBroadcastRoleSalon:
 		if bc.TurnIndex >= bc.MaxTurns {
 			slog.Info("salon relay: reached max_turns, room idle",
@@ -488,14 +581,20 @@ func (s *TaskService) handleCouncilBroadcastRelay(ctx context.Context, task db.A
 				"turn_index", bc.TurnIndex,
 				"max_turns", bc.MaxTurns,
 			)
+			s.finishCouncilRelay(ctx, task, bc)
 			return
 		}
-		if _, _, err := s.enqueueSalonNextTurn(ctx, chatSession, bc); err != nil {
+		if _, ok, err := s.enqueueSalonNextTurn(ctx, chatSession, bc); err != nil {
 			slog.Warn("salon relay: next turn enqueue failed",
 				"chat_session_id", util.UUIDToString(task.ChatSessionID),
 				"prior_speaker_id", bc.SelfAgentID,
 				"turn_index", bc.TurnIndex,
 				"error", err)
+			s.finishCouncilRelay(ctx, task, bc)
+			return
+		} else if !ok {
+			s.finishCouncilRelay(ctx, task, bc)
+			return
 		}
 	}
 }
@@ -637,6 +736,9 @@ func (s *TaskService) enqueueSalonOpening(
 		TurnIndex:        1,
 		MaxTurns:         maxTurns,
 	}
+	if h := relayHandleFromCtx(ctx); h != nil {
+		payload.RelayGeneration = h.generation
+	}
 	contextJSON, err := json.Marshal(payload)
 	if err != nil {
 		return result, fmt.Errorf("marshal salon opening context: %w", err)
@@ -651,6 +753,7 @@ func (s *TaskService) enqueueSalonOpening(
 		return result, fmt.Errorf("enqueue salon opening task: %w", err)
 	}
 	result.Tasks = append(result.Tasks, task)
+	s.broadcastRelayEvent(ctx, protocol.EventCouncilRelayStarted, task, payload)
 
 	slog.Info("salon relay: opening enqueued",
 		"source_kind", source.Kind,
@@ -697,6 +800,7 @@ func (s *TaskService) enqueueSalonNextTurn(
 		PriorSpeakerName: prior.SelfAgentName,
 		TurnIndex:        prior.TurnIndex + 1,
 		MaxTurns:         prior.MaxTurns,
+		RelayGeneration:  prior.RelayGeneration,
 		Transcript:       transcript,
 	}
 	contextJSON, err := json.Marshal(payload)

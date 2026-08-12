@@ -130,6 +130,22 @@ const (
 	EventCouncilParticipantJoined = "council:participant_joined"
 	EventCouncilParticipantLeft   = "council:participant_left"
 
+	// Council relay lifecycle events (Origin @全体 serial relay chain).
+	// Each event carries a CouncilRelayPayload. Frontends subscribe on the
+	// `council:relay_` prefix to render "lead opening / 第 N/M 轮 / 已中止"
+	// without polling the DB.
+	EventCouncilRelayStarted       = "council:relay_started"        // relay 链建立，lead / salon opener enqueue
+	EventCouncilRelayTurnCompleted = "council:relay_turn_completed" // 每轮发言落库后推送（含末轮）
+	EventCouncilRelayCancelled     = "council:relay_cancelled"      // relay 被用户中止，后续轮不再 enqueue
+	EventCouncilRelayFinished      = "council:relay_finished"       // 链自然结束（follower 收尾 / salon 到 MaxTurns）
+
+	// Council role values, shared by relay events and the daemon prompt
+	// builder. Keeping them in the protocol package lets the frontend filter
+	// relay events by role without string literals.
+	CouncilRoleLead         = "lead"
+	CouncilRoleFollower     = "follower"
+	CouncilRoleSalonSpeaker = "salon_speaker"
+
 	// Exploration events (Origin §14.7 Branching Exploration)
 	EventExplorationCreated       = "exploration:created"
 	EventExplorationUpdated       = "exploration:updated"
