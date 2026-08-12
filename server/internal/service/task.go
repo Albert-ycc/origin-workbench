@@ -461,9 +461,9 @@ func (s *TaskService) enqueueChatTaskForAgent(ctx context.Context, chatSession d
 		}
 	}
 	if apiRuntime {
-		cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
+		cfg, ok := runtimeconfig.ProviderConfigForRuntime(rt.Metadata, os.Getenv)
 		if !ok || cfg.Status() != "online" {
-			err := fmt.Errorf("API runtime is not online; configure Model API settings or set %s and %s", runtimeconfig.EnvAPIKey, runtimeconfig.EnvModelName)
+			err := fmt.Errorf("API runtime is not online; %s", apiRuntimeConfigError(rt.Metadata))
 			slog.Error("chat task enqueue failed", "chat_session_id", util.UUIDToString(chatSession.ID), "agent_id", util.UUIDToString(agentID), "error", err)
 			return db.AgentTaskQueue{}, err
 		}
@@ -560,9 +560,9 @@ func (s *TaskService) runClaimedAPIRuntimeChatTask(ctx context.Context, task db.
 		return fail("claimed task does not belong to an API runtime")
 	}
 
-	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
+	cfg, ok := runtimeconfig.ProviderConfigForRuntime(rt.Metadata, os.Getenv)
 	if !ok || cfg.Status() != "online" {
-		return fail("API runtime is not configured; configure Model API settings or set ORIGIN_MODEL_API_KEY and ORIGIN_MODEL_NAME")
+		return fail("API runtime is not configured; " + apiRuntimeConfigError(rt.Metadata))
 	}
 
 	agent, err := s.Queries.GetAgent(ctx, task.AgentID)
@@ -867,6 +867,16 @@ func apiRuntimeModelForAgent(agent db.Agent, cfg runtimeconfig.APIRuntimeConfig)
 		}
 	}
 	return cfg.DefaultModel
+}
+
+// apiRuntimeConfigError tailors the "not configured" message to the provider
+// recorded on the runtime, falling back to the legacy env-var hint for
+// pre-migration runtimes that carry no provider_id.
+func apiRuntimeConfigError(metadata []byte) string {
+	if id := runtimeconfig.ProviderIDFromMetadata(metadata); id != "" {
+		return fmt.Sprintf("Provider %s 未启用或未配置", id)
+	}
+	return fmt.Sprintf("configure Model API settings or set %s and %s", runtimeconfig.EnvAPIKey, runtimeconfig.EnvModelName)
 }
 
 func (s *TaskService) buildAPIRuntimeChatMessages(ctx context.Context, task db.AgentTaskQueue, agent db.Agent) ([]modelapi.Message, error) {

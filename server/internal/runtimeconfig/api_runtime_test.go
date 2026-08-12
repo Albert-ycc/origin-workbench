@@ -230,16 +230,19 @@ func TestLoadAPIRuntimeConfigFromSourcesPrefersEnvOverSavedConfig(t *testing.T) 
 	}
 }
 
-func TestSaveAPIRuntimeConfigFilePersistsLastTestAndDiscoveredModelsWithoutLeakingSecretInLastTest(t *testing.T) {
+func TestSaveProvidersFileRoundtripPreservesProviderWithoutLeakingSecret(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/model_api_config.json"
 
-	err := SaveAPIRuntimeConfigFile(path, SavedAPIRuntimeConfig{
-		Provider:   "openai_compatible",
-		APIKey:     "sk-file-secret",
-		BaseURL:    "https://saved.example.test/v1",
-		ModelName:  "model-a",
-		ModelNames: "model-a",
+	err := SaveProvidersFile(path, []SavedProvider{{
+		ID:        "p_abc123",
+		Name:      "DeepSeek",
+		Preset:    PresetDeepseek,
+		Enabled:   true,
+		Provider:  "deepseek",
+		APIKey:    "sk-file-secret",
+		BaseURL:   "https://api.deepseek.com/v1",
+		ModelName: "deepseek-chat",
 		LastTest: &APIRuntimeConnectionTest{
 			TestedAt:  "2026-05-24T10:20:30Z",
 			OK:        false,
@@ -248,27 +251,172 @@ func TestSaveAPIRuntimeConfigFilePersistsLastTestAndDiscoveredModelsWithoutLeaki
 			Detail:    "request failed with sk-file-secret",
 			LatencyMS: 123,
 		},
-		DiscoveredModels: []string{"model-a", "model-b"},
-	})
+		DiscoveredModels: []string{"deepseek-chat", "deepseek-reasoner"},
+	}})
 	if err != nil {
-		t.Fatalf("save config: %v", err)
+		t.Fatalf("save providers: %v", err)
 	}
 
-	saved, ok, err := LoadSavedAPIRuntimeConfig(path)
-	if err != nil || !ok {
-		t.Fatalf("load saved config ok=%v err=%v", ok, err)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
 	}
-	if saved.LastTest == nil {
-		t.Fatal("expected last_test to be persisted")
+	var file SavedProvidersFile
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("unmarshal v2 file: %v", err)
 	}
-	if saved.LastTest.Code != "auth_failed" || saved.LastTest.LatencyMS != 123 {
-		t.Fatalf("last_test mismatch: %+v", saved.LastTest)
+	if file.Version != ProvidersFileVersion {
+		t.Fatalf("version = %d, want %d", file.Version, ProvidersFileVersion)
 	}
-	if strings.Contains(saved.LastTest.Detail, "sk-file-secret") {
-		t.Fatalf("last_test detail must not leak API key: %+v", saved.LastTest)
+	if len(file.Providers) != 1 {
+		t.Fatalf("providers = %d, want 1", len(file.Providers))
 	}
-	if len(saved.DiscoveredModels) != 2 || saved.DiscoveredModels[1] != "model-b" {
-		t.Fatalf("discovered_models mismatch: %+v", saved.DiscoveredModels)
+	got := file.Providers[0]
+	if got.ID != "p_abc123" || got.APIKey != "sk-file-secret" {
+		t.Fatalf("provider mismatch: %+v", got)
+	}
+	if got.LastTest == nil || got.LastTest.Code != "auth_failed" || got.LastTest.LatencyMS != 123 {
+		t.Fatalf("last_test mismatch: %+v", got.LastTest)
+	}
+	if strings.Contains(got.LastTest.Detail, "sk-file-secret") {
+		t.Fatalf("last_test detail must not leak API key: %+v", got.LastTest)
+	}
+	if len(got.DiscoveredModels) != 2 || got.DiscoveredModels[1] != "deepseek-reasoner" {
+		t.Fatalf("discovered models mismatch: %+v", got.DiscoveredModels)
+	}
+}
+
+func TestLoadProvidersFileMigratesLegacyFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{
+		"provider":"openai_compatible",
+		"api_key":"sk-legacy-secret",
+		"base_url":"https://legacy.example.test/v1",
+		"model_name":"legacy-model",
+		"runtime_name":"Legacy API"
+	}`)
+
+	providers, err := LoadProvidersFile(path)
+	if err != nil {
+		t.Fatalf("load providers: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers = %d, want 1", len(providers))
+	}
+	p := providers[0]
+	if p.ID != LegacyProviderID || p.Preset != PresetCustom || !p.Enabled {
+		t.Fatalf("legacy provider mismatch: %+v", p)
+	}
+	if p.APIKey != "sk-legacy-secret" || p.ModelName != "legacy-model" {
+		t.Fatalf("legacy provider fields mismatch: %+v", p)
+	}
+}
+
+func TestSavedProviderToConfigAndDaemonID(t *testing.T) {
+	p := SavedProvider{
+		ID:               "p_abc",
+		Name:             "DeepSeek",
+		Preset:           PresetDeepseek,
+		Enabled:          true,
+		Provider:         "deepseek",
+		APIKey:           "sk-x",
+		BaseURL:          "https://api.deepseek.com/v1",
+		ModelName:        "deepseek-chat",
+		ModelNames:       "deepseek-chat",
+		RuntimeName:      "DeepSeek API",
+		DiscoveredModels: []string{"deepseek-chat", "deepseek-reasoner"},
+	}
+	cfg := p.ToConfig()
+	if cfg.Provider != "deepseek" || cfg.ProviderID != "p_abc" {
+		t.Fatalf("ToConfig provider mismatch: %+v", cfg)
+	}
+	if cfg.DefaultModel != "deepseek-chat" {
+		t.Fatalf("default model = %q", cfg.DefaultModel)
+	}
+	if len(cfg.ModelIDs) != 2 || cfg.ModelIDs[1] != "deepseek-reasoner" {
+		t.Fatalf("model ids = %+v", cfg.ModelIDs)
+	}
+	if cfg.ConfigSource != "file" {
+		t.Fatalf("config source = %q", cfg.ConfigSource)
+	}
+
+	if got := (SavedProvider{ID: LegacyProviderID}).DaemonID("u1"); got != "origin-api:u1" {
+		t.Fatalf("legacy daemon id = %q", got)
+	}
+	if got := (SavedProvider{ID: "p_abc"}).DaemonID("u1"); got != "origin-api:u1:p_abc" {
+		t.Fatalf("named daemon id = %q", got)
+	}
+	if got := (SavedProvider{ID: EnvProviderID}).DaemonID("u1"); got != "origin-api:u1:env" {
+		t.Fatalf("env daemon id = %q", got)
+	}
+}
+
+func TestApplyProviderPreset(t *testing.T) {
+	deepseek := ApplyProviderPreset(SavedProvider{Preset: PresetDeepseek})
+	if deepseek.Provider != "deepseek" || deepseek.BaseURL != "https://api.deepseek.com/v1" ||
+		deepseek.RuntimeName != "DeepSeek API" || deepseek.ModelName != "deepseek-chat" {
+		t.Fatalf("deepseek preset = %+v", deepseek)
+	}
+	custom := ApplyProviderPreset(SavedProvider{Preset: PresetCustom})
+	if custom.Provider != "custom" || custom.RuntimeName != "外接模型 API" {
+		t.Fatalf("custom preset = %+v", custom)
+	}
+}
+
+func TestProviderConfigForRuntime(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{"version":2,"providers":[
+		{"id":"p_a","name":"A","preset":"custom","enabled":true,"provider":"custom","api_key":"sk-a","base_url":"https://a.example.test/v1","model_name":"a-model"},
+		{"id":"p_b","name":"B","preset":"custom","enabled":true,"provider":"custom","api_key":"sk-b","base_url":"https://b.example.test/v1","model_name":"b-model"}
+	]}`)
+	getenv := func(key string) string {
+		if key == EnvConfigFile {
+			return path
+		}
+		return ""
+	}
+
+	mdA, err := MetadataFromConfig(SavedProvider{ID: "p_a", Provider: "custom", APIKey: "sk-a", BaseURL: "https://a.example.test/v1", ModelName: "a-model"}.ToConfig())
+	if err != nil {
+		t.Fatalf("metadata A: %v", err)
+	}
+	cfg, ok := ProviderConfigForRuntime(mdA, getenv)
+	if !ok || cfg.ProviderID != "p_a" || cfg.APIKey != "sk-a" || cfg.DefaultModel != "a-model" {
+		t.Fatalf("provider config for p_a = %+v (ok=%v)", cfg, ok)
+	}
+
+	// Without provider_id: legacy env-first fallback.
+	legacy := APIRuntimeMetadata{APIRuntime: true, ManagedBy: ManagedByOriginAPI}
+	rawLegacy, _ := json.Marshal(legacy)
+	env := map[string]string{
+		EnvConfigFile: path,
+		EnvAPIKey:     "sk-env",
+		EnvBaseURL:    "https://env.example.test/v1",
+		EnvModelName:  "env-model",
+	}
+	cfgLegacy, ok := ProviderConfigForRuntime(rawLegacy, func(key string) string { return env[key] })
+	if !ok || cfgLegacy.APIKey != "sk-env" {
+		t.Fatalf("legacy provider config = %+v (ok=%v)", cfgLegacy, ok)
+	}
+}
+
+func TestListProvidersAppendsReadOnlyEnvProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{"version":2,"providers":[{"id":"p_a","enabled":true,"provider":"custom","api_key":"sk-a","model_name":"a-model"}]}`)
+	env := map[string]string{
+		EnvConfigFile: path,
+		EnvAPIKey:     "sk-env",
+		EnvModelName:  "env-model",
+	}
+	providers := ListProviders(func(key string) string { return env[key] })
+	if len(providers) != 2 {
+		t.Fatalf("providers = %d, want 2", len(providers))
+	}
+	if providers[1].ID != EnvProviderID || providers[1].Name != "环境变量" {
+		t.Fatalf("env provider = %+v", providers[1])
 	}
 }
 

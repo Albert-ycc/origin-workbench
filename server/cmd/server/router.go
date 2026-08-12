@@ -330,11 +330,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
 
-			// Model API configuration
+			// Model API configuration (multi-provider)
 			r.Route("/api/model-api-config", func(r chi.Router) {
-				r.Get("/", h.GetModelAPIConfig)
-				r.Put("/", h.SaveModelAPIConfig)
-				r.Post("/test", h.TestModelAPIConfig)
+				r.Route("/providers", func(r chi.Router) {
+					r.Get("/", h.ListModelAPIProviders)
+					r.Post("/", h.CreateModelAPIProvider)
+					r.Route("/{id}", func(r chi.Router) {
+						r.Get("/", h.GetModelAPIProvider)
+						r.Put("/", h.UpdateModelAPIProvider)
+						r.Patch("/", h.PatchModelAPIProvider)
+						r.Delete("/", h.DeleteModelAPIProvider)
+						r.Post("/test", h.TestModelAPIProvider)
+					})
+				})
 			})
 
 			// Issues

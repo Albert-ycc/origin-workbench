@@ -31,6 +31,12 @@ const (
 	ManagedByOriginAPI = "origin_api"
 	RuntimeModeCloud   = "cloud"
 	DaemonIDPrefix     = "origin-api"
+
+	EnvProviderID        = "env"
+	LegacyProviderID     = "legacy"
+	PresetDeepseek       = "deepseek"
+	PresetCustom         = "custom"
+	ProvidersFileVersion = 2
 )
 
 type APIRuntimeConfig struct {
@@ -44,6 +50,8 @@ type APIRuntimeConfig struct {
 	ToolRoots         []string
 	APIKeyConfigured  bool
 	BaseURLConfigured bool
+	ProviderID        string
+	ReadOnly          bool
 }
 
 type SavedAPIRuntimeConfig struct {
@@ -56,6 +64,31 @@ type SavedAPIRuntimeConfig struct {
 	ToolRoots        string                    `json:"tool_roots,omitempty"`
 	LastTest         *APIRuntimeConnectionTest `json:"last_test,omitempty"`
 	DiscoveredModels []string                  `json:"discovered_models,omitempty"`
+}
+
+// SavedProvider is a single model API provider entry in the v2 config file.
+// It is the persisted, provider-granular form that replaced the legacy
+// single SavedAPIRuntimeConfig document.
+type SavedProvider struct {
+	ID               string                    `json:"id,omitempty"`
+	Name             string                    `json:"name,omitempty"`
+	Preset           string                    `json:"preset,omitempty"`
+	Enabled          bool                      `json:"enabled"`
+	Provider         string                    `json:"provider,omitempty"`
+	APIKey           string                    `json:"api_key,omitempty"`
+	BaseURL          string                    `json:"base_url,omitempty"`
+	ModelName        string                    `json:"model_name,omitempty"`
+	ModelNames       string                    `json:"model_names,omitempty"`
+	RuntimeName      string                    `json:"runtime_name,omitempty"`
+	ToolRoots        string                    `json:"tool_roots,omitempty"`
+	LastTest         *APIRuntimeConnectionTest `json:"last_test,omitempty"`
+	DiscoveredModels []string                  `json:"discovered_models,omitempty"`
+}
+
+// SavedProvidersFile is the v2 on-disk document shape.
+type SavedProvidersFile struct {
+	Version   int             `json:"version"`
+	Providers []SavedProvider `json:"providers"`
 }
 
 type APIRuntimeConnectionTest struct {
@@ -79,6 +112,8 @@ type APIRuntimeMetadata struct {
 	Models            []APIRuntimeModel `json:"models,omitempty"`
 	RequiredEnv       []string          `json:"required_env,omitempty"`
 	OptionalEnv       []string          `json:"optional_env,omitempty"`
+	ProviderID        string            `json:"provider_id,omitempty"`
+	ReadOnly          bool              `json:"readonly,omitempty"`
 }
 
 type APIRuntimeModel struct {
@@ -194,54 +229,246 @@ func (c SavedAPIRuntimeConfig) HasConfiguredValue() bool {
 }
 
 func LoadAPIRuntimeConfigFromFile(path string) (APIRuntimeConfig, bool, error) {
-	saved, ok, err := LoadSavedAPIRuntimeConfig(path)
-	if err != nil || !ok {
+	providers, err := LoadProvidersFile(path)
+	if err != nil || len(providers) == 0 {
 		return APIRuntimeConfig{}, false, err
 	}
-	modelNames := saved.ModelNames
-	if len(saved.DiscoveredModels) > 0 {
-		modelNames = strings.Join(normalizeModelIDs(append(splitComma(modelNames), saved.DiscoveredModels...)), ",")
+	for _, p := range providers {
+		if !p.Enabled || !p.HasConfiguredValue() {
+			continue
+		}
+		return p.ToConfig(), true, nil
 	}
-	env := map[string]string{
-		EnvProvider:    saved.Provider,
-		EnvAPIKey:      saved.APIKey,
-		EnvBaseURL:     saved.BaseURL,
-		EnvModelName:   saved.ModelName,
-		EnvModelNames:  modelNames,
-		EnvRuntimeName: saved.RuntimeName,
-		EnvToolRoots:   saved.ToolRoots,
-	}
-	cfg, configured := LoadAPIRuntimeConfig(func(key string) string { return env[key] })
-	if !configured {
-		return APIRuntimeConfig{}, false, nil
-	}
-	cfg.ConfigSource = "file"
-	return cfg, true, nil
+	return APIRuntimeConfig{}, false, nil
 }
 
-func SaveAPIRuntimeConfigFile(path string, cfg SavedAPIRuntimeConfig) error {
+// LoadProvidersFile reads the v2 providers document. When the file is in the
+// legacy single-config format (no top-level "providers" key), it is migrated
+// in memory to a single legacy provider entry.
+func LoadProvidersFile(path string) ([]SavedProvider, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(raw, &probe) == nil {
+		if _, ok := probe["providers"]; ok {
+			var file SavedProvidersFile
+			if err := json.Unmarshal(raw, &file); err != nil {
+				return nil, err
+			}
+			return file.Providers, nil
+		}
+	}
+
+	// Legacy single-config format: wrap as one "legacy" provider.
+	saved, ok, err := LoadSavedAPIRuntimeConfig(path)
+	if err != nil || !ok {
+		return nil, err
+	}
+	name := strings.TrimSpace(saved.RuntimeName)
+	if name == "" {
+		name = DefaultRuntimeName
+	}
+	return []SavedProvider{{
+		ID:               LegacyProviderID,
+		Name:             name,
+		Preset:           PresetCustom,
+		Enabled:          true,
+		Provider:         saved.Provider,
+		APIKey:           saved.APIKey,
+		BaseURL:          saved.BaseURL,
+		ModelName:        saved.ModelName,
+		ModelNames:       saved.ModelNames,
+		RuntimeName:      saved.RuntimeName,
+		ToolRoots:        saved.ToolRoots,
+		LastTest:         saved.LastTest,
+		DiscoveredModels: saved.DiscoveredModels,
+	}}, nil
+}
+
+func SaveProvidersFile(path string, providers []SavedProvider) error {
 	if strings.TrimSpace(path) == "" {
 		return os.ErrInvalid
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	cfg = sanitizeSavedAPIRuntimeConfig(cfg)
-	raw, err := json.MarshalIndent(cfg, "", "  ")
+	sanitized := make([]SavedProvider, 0, len(providers))
+	for _, p := range providers {
+		sanitized = append(sanitized, sanitizeSavedProvider(p))
+	}
+	raw, err := json.MarshalIndent(SavedProvidersFile{Version: ProvidersFileVersion, Providers: sanitized}, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, raw, 0o600)
 }
 
-func sanitizeSavedAPIRuntimeConfig(cfg SavedAPIRuntimeConfig) SavedAPIRuntimeConfig {
-	if cfg.LastTest != nil {
-		lastTest := *cfg.LastTest
-		lastTest.Detail = redactSecret(lastTest.Detail, cfg.APIKey)
-		cfg.LastTest = &lastTest
+func sanitizeSavedProvider(p SavedProvider) SavedProvider {
+	if p.LastTest != nil {
+		lastTest := *p.LastTest
+		lastTest.Detail = redactSecret(lastTest.Detail, p.APIKey)
+		p.LastTest = &lastTest
 	}
-	cfg.DiscoveredModels = normalizeModelIDs(cfg.DiscoveredModels)
+	p.DiscoveredModels = normalizeModelIDs(p.DiscoveredModels)
+	return p
+}
+
+// HasConfiguredValue reports whether the provider carries any configuration,
+// mirroring the legacy SavedAPIRuntimeConfig detection used for migration.
+func (p SavedProvider) HasConfiguredValue() bool {
+	return strings.TrimSpace(p.Provider) != "" ||
+		strings.TrimSpace(p.APIKey) != "" ||
+		strings.TrimSpace(p.BaseURL) != "" ||
+		strings.TrimSpace(p.ModelName) != "" ||
+		strings.TrimSpace(p.ModelNames) != "" ||
+		strings.TrimSpace(p.RuntimeName) != "" ||
+		strings.TrimSpace(p.ToolRoots) != "" ||
+		p.LastTest != nil ||
+		len(p.DiscoveredModels) > 0
+}
+
+// ToConfig resolves a saved provider into a runtime config, merging configured
+// model names with any discovered models (deduplicated).
+func (p SavedProvider) ToConfig() APIRuntimeConfig {
+	modelNames := p.ModelNames
+	if len(p.DiscoveredModels) > 0 {
+		modelNames = strings.Join(normalizeModelIDs(append(splitComma(modelNames), p.DiscoveredModels...)), ",")
+	}
+	env := map[string]string{
+		EnvProvider:    p.Provider,
+		EnvAPIKey:      p.APIKey,
+		EnvBaseURL:     p.BaseURL,
+		EnvModelName:   p.ModelName,
+		EnvModelNames:  modelNames,
+		EnvRuntimeName: p.RuntimeName,
+		EnvToolRoots:   p.ToolRoots,
+	}
+	cfg, _ := LoadAPIRuntimeConfig(func(key string) string { return env[key] })
+	cfg.ConfigSource = "file"
+	cfg.ProviderID = p.ID
 	return cfg
+}
+
+// DaemonID derives the runtime daemon_id for a provider. The legacy provider
+// keeps the pre-migration value (origin-api:{ownerID}) so already-bound agents
+// keep referencing the same runtime row; named providers get a provider-scoped
+// suffix and the env provider a fixed "env" suffix.
+func (p SavedProvider) DaemonID(ownerID string) string {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return DaemonIDPrefix
+	}
+	switch p.ID {
+	case EnvProviderID:
+		return DaemonIDPrefix + ":" + ownerID + ":env"
+	case LegacyProviderID:
+		return DaemonIDPrefix + ":" + ownerID
+	default:
+		return DaemonIDPrefix + ":" + ownerID + ":" + p.ID
+	}
+}
+
+// ApplyProviderPreset fills preset defaults in place and returns the provider.
+func ApplyProviderPreset(p SavedProvider) SavedProvider {
+	switch p.Preset {
+	case PresetDeepseek:
+		p.Provider = "deepseek"
+		if strings.TrimSpace(p.BaseURL) == "" {
+			p.BaseURL = "https://api.deepseek.com/v1"
+		}
+		if strings.TrimSpace(p.RuntimeName) == "" {
+			p.RuntimeName = "DeepSeek API"
+		}
+		if strings.TrimSpace(p.ModelName) == "" {
+			p.ModelName = "deepseek-chat"
+		}
+	case PresetCustom:
+		p.Provider = "custom"
+		if strings.TrimSpace(p.RuntimeName) == "" {
+			p.RuntimeName = "外接模型 API"
+		}
+	}
+	return p
+}
+
+// ListProviders returns the persisted providers plus a read-only env provider
+// entry when environment configuration is present.
+func ListProviders(getenv func(string) string) []SavedProvider {
+	providers, _ := LoadProvidersFile(ConfigFilePath(getenv))
+	if cfg, ok := LoadAPIRuntimeConfig(getenv); ok {
+		providers = append(providers, SavedProvider{
+			ID:          EnvProviderID,
+			Name:        "环境变量",
+			Preset:      PresetCustom,
+			Enabled:     true,
+			Provider:    cfg.Provider,
+			BaseURL:     cfg.BaseURL,
+			ModelName:   cfg.DefaultModel,
+			ModelNames:  strings.Join(cfg.ModelIDs, ","),
+			RuntimeName: cfg.RuntimeName,
+			ToolRoots:   strings.Join(cfg.ToolRoots, ","),
+		})
+	}
+	return providers
+}
+
+func FindProvider(id string, getenv func(string) string) (SavedProvider, bool) {
+	for _, p := range ListProviders(getenv) {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return SavedProvider{}, false
+}
+
+// LoadProviderConfigByID resolves a single provider to a runtime config.
+// id == EnvProviderID reads directly from the environment.
+func LoadProviderConfigByID(id string, getenv func(string) string) (APIRuntimeConfig, bool, error) {
+	if id == EnvProviderID {
+		cfg, ok := LoadAPIRuntimeConfig(getenv)
+		if !ok {
+			return APIRuntimeConfig{}, false, nil
+		}
+		cfg.ProviderID = EnvProviderID
+		cfg.ReadOnly = true
+		return cfg, true, nil
+	}
+	p, ok := FindProvider(id, getenv)
+	if !ok || !p.Enabled {
+		return APIRuntimeConfig{}, false, nil
+	}
+	return p.ToConfig(), true, nil
+}
+
+func ProviderIDFromMetadata(raw []byte) string {
+	var md APIRuntimeMetadata
+	if err := json.Unmarshal(raw, &md); err != nil {
+		return ""
+	}
+	return md.ProviderID
+}
+
+// ProviderConfigForRuntime resolves the config for a runtime's metadata. When
+// the metadata carries a provider_id it loads that provider; otherwise it falls
+// back to the legacy env-first-file behavior for pre-migration runtimes.
+func ProviderConfigForRuntime(rawMetadata []byte, getenv func(string) string) (APIRuntimeConfig, bool) {
+	if id := ProviderIDFromMetadata(rawMetadata); id != "" {
+		cfg, ok, err := LoadProviderConfigByID(id, getenv)
+		if err != nil || !ok {
+			return APIRuntimeConfig{}, false
+		}
+		return cfg, true
+	}
+	return LoadAPIRuntimeConfigFromSources(getenv)
 }
 
 func normalizeModelIDs(ids []string) []string {
@@ -330,6 +557,8 @@ func MetadataFromConfig(c APIRuntimeConfig) ([]byte, error) {
 		TaskExecution:     "tool_loop",
 		DefaultModel:      c.DefaultModel,
 		Models:            c.Models(),
+		ProviderID:        c.ProviderID,
+		ReadOnly:          c.ReadOnly,
 		RequiredEnv:       []string{EnvAPIKey, EnvModelName},
 		OptionalEnv: []string{
 			EnvProvider,

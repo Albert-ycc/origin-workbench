@@ -2,19 +2,27 @@ package handler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/modelapi"
 	"github.com/multica-ai/multica/server/internal/runtimeconfig"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-type modelAPIConfigRequest struct {
-	Provider    string `json:"provider"`
+type modelAPIProviderRequest struct {
+	Preset      string `json:"preset"`
+	Name        string `json:"name"`
+	Enabled     *bool  `json:"enabled"`
 	APIKey      string `json:"api_key"`
 	BaseURL     string `json:"base_url"`
 	ModelName   string `json:"model_name"`
@@ -23,7 +31,12 @@ type modelAPIConfigRequest struct {
 	ToolRoots   string `json:"tool_roots"`
 }
 
-type modelAPIConfigResponse struct {
+type modelAPIProviderResponse struct {
+	ID                string                                  `json:"id"`
+	Name              string                                  `json:"name"`
+	Preset            string                                  `json:"preset"`
+	Enabled           bool                                    `json:"enabled"`
+	ReadOnly          bool                                    `json:"readonly"`
 	Provider          string                                  `json:"provider"`
 	APIKeyConfigured  bool                                    `json:"api_key_configured"`
 	BaseURL           string                                  `json:"base_url,omitempty"`
@@ -35,7 +48,6 @@ type modelAPIConfigResponse struct {
 	ConfigSource      string                                  `json:"config_source"`
 	Status            string                                  `json:"status"`
 	Ready             bool                                    `json:"ready"`
-	EnvOverride       bool                                    `json:"env_override"`
 	Models            []runtimeconfig.APIRuntimeModel         `json:"models,omitempty"`
 	LastTest          *runtimeconfig.APIRuntimeConnectionTest `json:"last_test,omitempty"`
 	DiscoveredModels  []string                                `json:"discovered_models,omitempty"`
@@ -48,72 +60,281 @@ type modelAPIConnectionTestResponse struct {
 	DiscoveredModels []string `json:"discovered_models,omitempty"`
 }
 
-func (h *Handler) GetModelAPIConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.modelAPIConfigResponse())
+func newProviderID() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return "p_" + hex.EncodeToString(b)
 }
 
-func (h *Handler) SaveModelAPIConfig(w http.ResponseWriter, r *http.Request) {
+// ---------------------------------------------------------------------------
+// Provider CRUD
+// ---------------------------------------------------------------------------
+
+func (h *Handler) ListModelAPIProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.listModelAPIProvidersResponse())
+}
+
+func (h *Handler) GetModelAPIProvider(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	p, ok := runtimeconfig.FindProvider(id, os.Getenv)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, modelAPIProviderResponseFrom(p, h.providerConfig(p)))
+}
+
+func (h *Handler) CreateModelAPIProvider(w http.ResponseWriter, r *http.Request) {
 	if !h.requireModelAPIConfigAdmin(w, r) {
 		return
 	}
-
-	var req modelAPIConfigRequest
+	var req modelAPIProviderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	cfg, ok := h.savedModelAPIConfigFromRequest(w, req, true, false)
-	if !ok {
+
+	p := h.providerFromRequest(req)
+	p = runtimeconfig.ApplyProviderPreset(p)
+	if p.Name == "" {
+		p.Name = p.RuntimeName
+	}
+	if !h.validateProviderFields(w, &p) {
 		return
 	}
-	if !h.validateModelAPIConfigToolRoots(w, &cfg) {
+	if !h.validateProviderToolRoots(w, &p) {
 		return
 	}
-	testResult, lastTest, discoveredModels := h.testSavedModelAPIConfig(r.Context(), cfg, true)
-	cfg.LastTest = lastTest
-	cfg.DiscoveredModels = discoveredModels
+
+	testResult, lastTest, discovered := h.testSavedProvider(r.Context(), p, true)
+	p.LastTest = lastTest
+	p.DiscoveredModels = discovered
 	if !testResult.OK {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":  testResult.Message,
-			"result": modelAPIConnectionTestResponseFrom(testResult, lastTest, discoveredModels),
+			"result": modelAPIConnectionTestResponseFrom(testResult, lastTest, discovered),
 		})
 		return
 	}
-	if err := runtimeconfig.SaveAPIRuntimeConfigFile(runtimeconfig.ConfigFilePath(os.Getenv), cfg); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save model API config")
-		return
-	}
 
-	if err := h.syncConfiguredAPIRuntime(r, h.resolveWorkspaceID(r), requestUserID(r)); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to refresh model API runtime")
+	p.ID = newProviderID()
+	if err := h.persistProvider(r, p); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save model API provider")
 		return
 	}
-	writeJSON(w, http.StatusOK, h.modelAPIConfigResponse())
+	writeJSON(w, http.StatusOK, h.listModelAPIProvidersResponse())
 }
 
-func (h *Handler) TestModelAPIConfig(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdateModelAPIProvider(w http.ResponseWriter, r *http.Request) {
 	if !h.requireModelAPIConfigAdmin(w, r) {
 		return
 	}
+	id := chi.URLParam(r, "id")
+	if id == runtimeconfig.EnvProviderID {
+		writeError(w, http.StatusBadRequest, "environment provider is read-only")
+		return
+	}
+	existing, ok := runtimeconfig.FindProvider(id, os.Getenv)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider not found")
+		return
+	}
 
-	var req modelAPIConfigRequest
+	var req modelAPIProviderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	cfg, ok := h.savedModelAPIConfigFromRequest(w, req, true, true)
-	if !ok {
+
+	p := h.providerFromRequest(req)
+	p.ID = existing.ID
+	p = runtimeconfig.ApplyProviderPreset(p)
+	if strings.TrimSpace(p.APIKey) == "" {
+		p.APIKey = existing.APIKey
+	}
+	if p.Name == "" {
+		p.Name = existing.Name
+	}
+	if !h.validateProviderFields(w, &p) {
 		return
 	}
-	if !h.validateModelAPIConfigToolRoots(w, &cfg) {
+	if !h.validateProviderToolRoots(w, &p) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	result, lastTest, discoveredModels := h.testSavedModelAPIConfig(ctx, cfg, true)
-	writeJSON(w, http.StatusOK, modelAPIConnectionTestResponseFrom(result, lastTest, discoveredModels))
+	testResult, lastTest, discovered := h.testSavedProvider(r.Context(), p, true)
+	p.LastTest = lastTest
+	p.DiscoveredModels = discovered
+	if !testResult.OK {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":  testResult.Message,
+			"result": modelAPIConnectionTestResponseFrom(testResult, lastTest, discovered),
+		})
+		return
+	}
+
+	if err := h.persistProvider(r, p); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save model API provider")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.listModelAPIProvidersResponse())
 }
+
+func (h *Handler) PatchModelAPIProvider(w http.ResponseWriter, r *http.Request) {
+	if !h.requireModelAPIConfigAdmin(w, r) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == runtimeconfig.EnvProviderID {
+		writeError(w, http.StatusBadRequest, "environment provider is read-only")
+		return
+	}
+	existing, ok := runtimeconfig.FindProvider(id, os.Getenv)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider not found")
+		return
+	}
+
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "enabled is required")
+		return
+	}
+
+	existing.Enabled = *req.Enabled
+	if err := h.persistProvider(r, existing); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save model API provider")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.listModelAPIProvidersResponse())
+}
+
+func (h *Handler) DeleteModelAPIProvider(w http.ResponseWriter, r *http.Request) {
+	if !h.requireModelAPIConfigAdmin(w, r) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == runtimeconfig.EnvProviderID {
+		writeError(w, http.StatusBadRequest, "environment provider is read-only")
+		return
+	}
+	if _, ok := runtimeconfig.FindProvider(id, os.Getenv); !ok {
+		writeError(w, http.StatusNotFound, "provider not found")
+		return
+	}
+
+	workspaceID := h.resolveWorkspaceID(r)
+	userID := requestUserID(r)
+	daemonID := runtimeconfig.SavedProvider{ID: id}.DaemonID(userID)
+
+	runtimes, err := h.Queries.ListAgentRuntimes(r.Context(), parseUUID(workspaceID))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list runtimes")
+		return
+	}
+	var target *db.AgentRuntime
+	for i := range runtimes {
+		if runtimes[i].DaemonID.Valid && runtimes[i].DaemonID.String == daemonID {
+			target = &runtimes[i]
+			break
+		}
+	}
+	if target != nil {
+		activeCount, err := h.Queries.CountActiveAgentsByRuntime(r.Context(), target.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to check runtime dependencies")
+			return
+		}
+		if activeCount > 0 {
+			writeError(w, http.StatusConflict, fmt.Sprintf("该 Provider 正被 %d 个 agent 使用，请先解绑或归档", activeCount))
+			return
+		}
+		if err := h.Queries.DeleteArchivedAgentsByRuntime(r.Context(), target.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to clean up archived agents")
+			return
+		}
+		if err := h.Queries.DeleteAgentRuntime(r.Context(), target.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to delete runtime")
+			return
+		}
+	}
+
+	providers, err := runtimeconfig.LoadProvidersFile(runtimeconfig.ConfigFilePath(os.Getenv))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load providers")
+		return
+	}
+	kept := providers[:0]
+	for _, p := range providers {
+		if p.ID != id {
+			kept = append(kept, p)
+		}
+	}
+	if err := runtimeconfig.SaveProvidersFile(runtimeconfig.ConfigFilePath(os.Getenv), kept); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save model API providers")
+		return
+	}
+	if err := h.syncConfiguredAPIRuntimes(r, workspaceID, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to refresh model API runtime")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.listModelAPIProvidersResponse())
+}
+
+func (h *Handler) TestModelAPIProvider(w http.ResponseWriter, r *http.Request) {
+	if !h.requireModelAPIConfigAdmin(w, r) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+
+	var req modelAPIProviderRequest
+	hasPayload := false
+	if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+		hasPayload = true
+	} else if !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	p, ok := runtimeconfig.FindProvider(id, os.Getenv)
+	if !ok {
+		writeError(w, http.StatusNotFound, "provider not found")
+		return
+	}
+
+	// Merge optional payload overrides onto the stored provider for a temp test.
+	if hasPayload {
+		override := h.providerFromRequest(req)
+		if override.APIKey != "" {
+			p.APIKey = override.APIKey
+		}
+		if override.BaseURL != "" {
+			p.BaseURL = override.BaseURL
+		}
+		if override.ModelName != "" {
+			p.ModelName = override.ModelName
+		}
+	}
+	if !h.validateProviderFields(w, &p) {
+		return
+	}
+	if !h.validateProviderToolRoots(w, &p) {
+		return
+	}
+
+	result, lastTest, discovered := h.testSavedProvider(r.Context(), p, true)
+	writeJSON(w, http.StatusOK, modelAPIConnectionTestResponseFrom(result, lastTest, discovered))
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 func (h *Handler) requireModelAPIConfigAdmin(w http.ResponseWriter, r *http.Request) bool {
 	member, ok := h.workspaceMember(w, r, h.resolveWorkspaceID(r))
@@ -127,26 +348,56 @@ func (h *Handler) requireModelAPIConfigAdmin(w http.ResponseWriter, r *http.Requ
 	return true
 }
 
-func (h *Handler) validateModelAPIConfigToolRoots(w http.ResponseWriter, cfg *runtimeconfig.SavedAPIRuntimeConfig) bool {
-	roots := runtimeconfig.ParseToolRoots(cfg.ToolRoots, os.Getenv)
+func (h *Handler) providerFromRequest(req modelAPIProviderRequest) runtimeconfig.SavedProvider {
+	p := runtimeconfig.SavedProvider{
+		Name:        strings.TrimSpace(req.Name),
+		Preset:      strings.TrimSpace(req.Preset),
+		Enabled:     req.Enabled == nil || *req.Enabled,
+		APIKey:      strings.TrimSpace(req.APIKey),
+		BaseURL:     strings.TrimSpace(req.BaseURL),
+		ModelName:   strings.TrimSpace(req.ModelName),
+		ModelNames:  strings.TrimSpace(req.ModelNames),
+		RuntimeName: strings.TrimSpace(req.RuntimeName),
+		ToolRoots:   strings.TrimSpace(req.ToolRoots),
+	}
+	if p.ModelName == "" && p.ModelNames != "" {
+		p.ModelName = strings.TrimSpace(strings.Split(p.ModelNames, ",")[0])
+	}
+	return p
+}
+
+func (h *Handler) validateProviderFields(w http.ResponseWriter, p *runtimeconfig.SavedProvider) bool {
+	if strings.TrimSpace(p.APIKey) == "" {
+		writeError(w, http.StatusBadRequest, "api_key is required")
+		return false
+	}
+	if strings.TrimSpace(p.ModelName) == "" {
+		writeError(w, http.StatusBadRequest, "model_name is required")
+		return false
+	}
+	return true
+}
+
+func (h *Handler) validateProviderToolRoots(w http.ResponseWriter, p *runtimeconfig.SavedProvider) bool {
+	roots := runtimeconfig.ParseToolRoots(p.ToolRoots, os.Getenv)
 	if len(roots) == 0 {
-		cfg.ToolRoots = ""
+		p.ToolRoots = ""
 		return true
 	}
 	if err := runtimeconfig.ValidateToolRoots(roots); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid tool_roots: "+err.Error())
 		return false
 	}
-	cfg.ToolRoots = strings.Join(roots, ",")
+	p.ToolRoots = strings.Join(roots, ",")
 	return true
 }
 
-func (h *Handler) testSavedModelAPIConfig(ctx context.Context, cfg runtimeconfig.SavedAPIRuntimeConfig, discoverModels bool) (modelapi.ConnectionTestResult, *runtimeconfig.APIRuntimeConnectionTest, []string) {
+func (h *Handler) testSavedProvider(ctx context.Context, p runtimeconfig.SavedProvider, discoverModels bool) (modelapi.ConnectionTestResult, *runtimeconfig.APIRuntimeConnectionTest, []string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	client := modelapi.NewClient(cfg.APIKey, cfg.BaseURL, nil)
+	client := modelapi.NewClient(p.APIKey, p.BaseURL, nil)
 	started := time.Now()
-	result := client.TestConnection(ctx, cfg.ModelName)
+	result := client.TestConnection(ctx, p.ModelName)
 	lastTest := &runtimeconfig.APIRuntimeConnectionTest{
 		TestedAt:  time.Now().UTC().Format(time.RFC3339),
 		OK:        result.OK,
@@ -184,100 +435,71 @@ func modelAPIConnectionTestResponseFrom(
 	return response
 }
 
-func (h *Handler) savedModelAPIConfigFromRequest(w http.ResponseWriter, req modelAPIConfigRequest, keepExistingSecret bool, useCurrentSourceSecret bool) (runtimeconfig.SavedAPIRuntimeConfig, bool) {
-	existing, _, _ := runtimeconfig.LoadSavedAPIRuntimeConfig(runtimeconfig.ConfigFilePath(os.Getenv))
-	cfg := runtimeconfig.SavedAPIRuntimeConfig{
-		Provider:         strings.TrimSpace(req.Provider),
-		APIKey:           strings.TrimSpace(req.APIKey),
-		BaseURL:          strings.TrimSpace(req.BaseURL),
-		ModelName:        strings.TrimSpace(req.ModelName),
-		ModelNames:       strings.TrimSpace(req.ModelNames),
-		RuntimeName:      strings.TrimSpace(req.RuntimeName),
-		ToolRoots:        strings.TrimSpace(req.ToolRoots),
-		LastTest:         existing.LastTest,
-		DiscoveredModels: existing.DiscoveredModels,
+// persistProvider upserts the provider into the v2 file, then re-syncs the
+// API runtimes so the runtime table reflects the new configuration.
+func (h *Handler) persistProvider(r *http.Request, p runtimeconfig.SavedProvider) error {
+	providers, err := runtimeconfig.LoadProvidersFile(runtimeconfig.ConfigFilePath(os.Getenv))
+	if err != nil {
+		return err
 	}
-	if cfg.Provider == "" {
-		cfg.Provider = runtimeconfig.DefaultProvider
-	}
-	if cfg.APIKey == "" && keepExistingSecret {
-		cfg.APIKey = existing.APIKey
-	}
-	if useCurrentSourceSecret && cfg.APIKey == "" {
-		if current, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv); ok {
-			cfg.APIKey = current.APIKey
-			if cfg.BaseURL == "" {
-				cfg.BaseURL = current.BaseURL
-			}
-			if cfg.ModelName == "" {
-				cfg.ModelName = current.DefaultModel
-			}
-			if cfg.ModelNames == "" {
-				cfg.ModelNames = strings.Join(current.ModelIDs, ",")
-			}
-			if cfg.RuntimeName == "" || cfg.RuntimeName == runtimeconfig.DefaultRuntimeName {
-				cfg.RuntimeName = current.RuntimeName
-			}
-			if cfg.ToolRoots == "" {
-				cfg.ToolRoots = strings.Join(current.ToolRoots, ",")
-			}
+	replaced := false
+	for i := range providers {
+		if providers[i].ID == p.ID {
+			providers[i] = p
+			replaced = true
+			break
 		}
 	}
-	if cfg.RuntimeName == "" {
-		cfg.RuntimeName = runtimeconfig.DefaultRuntimeName
+	if !replaced {
+		providers = append(providers, p)
 	}
-	if cfg.ModelNames == "" {
-		cfg.ModelNames = cfg.ModelName
+	if err := runtimeconfig.SaveProvidersFile(runtimeconfig.ConfigFilePath(os.Getenv), providers); err != nil {
+		return err
 	}
-
-	if cfg.APIKey == "" {
-		writeError(w, http.StatusBadRequest, "api_key is required")
-		return runtimeconfig.SavedAPIRuntimeConfig{}, false
-	}
-	if cfg.ModelName == "" {
-		writeError(w, http.StatusBadRequest, "model_name is required")
-		return runtimeconfig.SavedAPIRuntimeConfig{}, false
-	}
-	return cfg, true
+	return h.syncConfiguredAPIRuntimes(r, h.resolveWorkspaceID(r), requestUserID(r))
 }
 
-func (h *Handler) modelAPIConfigResponse() modelAPIConfigResponse {
-	saved, savedOK, _ := runtimeconfig.LoadSavedAPIRuntimeConfig(runtimeconfig.ConfigFilePath(os.Getenv))
-	cfg, cfgOK := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
-	if !cfgOK {
-		return modelAPIConfigResponse{
-			Provider:          runtimeconfig.DefaultProvider,
-			APIKeyConfigured:  savedOK && strings.TrimSpace(saved.APIKey) != "",
-			BaseURL:           saved.BaseURL,
-			BaseURLConfigured: savedOK && strings.TrimSpace(saved.BaseURL) != "",
-			ModelName:         saved.ModelName,
-			ModelNames:        saved.ModelNames,
-			RuntimeName:       saved.RuntimeName,
-			ToolRoots:         saved.ToolRoots,
-			ConfigSource:      "none",
-			Status:            "offline",
-			LastTest:          saved.LastTest,
-			DiscoveredModels:  saved.DiscoveredModels,
-		}
+// providerConfig resolves a provider's runtime config, honoring the env
+// provider's read-only environment source.
+func (h *Handler) providerConfig(p runtimeconfig.SavedProvider) runtimeconfig.APIRuntimeConfig {
+	if p.ID == runtimeconfig.EnvProviderID {
+		cfg, _ := runtimeconfig.LoadAPIRuntimeConfig(os.Getenv)
+		cfg.ProviderID = runtimeconfig.EnvProviderID
+		cfg.ReadOnly = true
+		return cfg
 	}
+	return p.ToConfig()
+}
 
-	source := strings.TrimSpace(cfg.ConfigSource)
-	envOverride := strings.HasPrefix(source, "environment")
-	return modelAPIConfigResponse{
+func modelAPIProviderResponseFrom(p runtimeconfig.SavedProvider, cfg runtimeconfig.APIRuntimeConfig) modelAPIProviderResponse {
+	return modelAPIProviderResponse{
+		ID:                p.ID,
+		Name:              p.Name,
+		Preset:            p.Preset,
+		Enabled:           p.Enabled,
+		ReadOnly:          cfg.ReadOnly || p.ID == runtimeconfig.EnvProviderID,
 		Provider:          cfg.Provider,
 		APIKeyConfigured:  cfg.APIKeyConfigured,
 		BaseURL:           cfg.BaseURL,
 		BaseURLConfigured: cfg.BaseURLConfigured,
 		ModelName:         cfg.DefaultModel,
-		ModelNames:        strings.Join(cfg.ModelIDs, ","),
+		ModelNames:        p.ModelNames,
 		RuntimeName:       cfg.RuntimeName,
 		ToolRoots:         strings.Join(cfg.ToolRoots, ","),
-		ConfigSource:      source,
+		ConfigSource:      cfg.ConfigSource,
 		Status:            cfg.Status(),
 		Ready:             cfg.Status() == "online",
-		EnvOverride:       envOverride && savedOK,
 		Models:            cfg.Models(),
-		LastTest:          saved.LastTest,
-		DiscoveredModels:  saved.DiscoveredModels,
+		LastTest:          p.LastTest,
+		DiscoveredModels:  p.DiscoveredModels,
 	}
+}
+
+func (h *Handler) listModelAPIProvidersResponse() []modelAPIProviderResponse {
+	providers := runtimeconfig.ListProviders(os.Getenv)
+	out := make([]modelAPIProviderResponse, 0, len(providers))
+	for _, p := range providers {
+		out = append(out, modelAPIProviderResponseFrom(p, h.providerConfig(p)))
+	}
+	return out
 }

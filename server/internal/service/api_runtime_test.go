@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -95,6 +96,47 @@ func TestAPIRuntimeModelForAgentFallsBackToDefaultModel(t *testing.T) {
 
 	if model != "default-model" {
 		t.Fatalf("expected default model, got %q", model)
+	}
+}
+
+func TestAPIRuntimeChatClientUsesFactoryWithProviderConfig(t *testing.T) {
+	var got runtimeconfig.APIRuntimeConfig
+	svc := &TaskService{
+		APIChatClientFactory: func(cfg runtimeconfig.APIRuntimeConfig) apiRuntimeChatClient {
+			got = cfg
+			return &fakeAPIRuntimeChatClient{}
+		},
+	}
+
+	cfg := runtimeconfig.APIRuntimeConfig{Provider: "deepseek", ProviderID: "p_abc", APIKey: "sk-x", BaseURL: "https://api.deepseek.com/v1"}
+	client := svc.apiRuntimeChatClient(cfg)
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if got.Provider != "deepseek" || got.ProviderID != "p_abc" {
+		t.Fatalf("factory received cfg = %+v", got)
+	}
+}
+
+func TestAPIRuntimeConfigErrorNamesProvider(t *testing.T) {
+	md, err := runtimeconfig.MetadataFromConfig(runtimeconfig.APIRuntimeConfig{
+		Provider:         "deepseek",
+		ProviderID:       "p_abc",
+		APIKeyConfigured: true,
+		ModelIDs:         []string{"deepseek-chat"},
+		DefaultModel:     "deepseek-chat",
+	})
+	if err != nil {
+		t.Fatalf("metadata: %v", err)
+	}
+	msg := apiRuntimeConfigError(md)
+	if !strings.Contains(msg, "p_abc") {
+		t.Fatalf("expected provider id in error, got %q", msg)
+	}
+
+	legacy := apiRuntimeConfigError([]byte(`{"api_runtime":true,"managed_by":"origin_api"}`))
+	if !strings.Contains(legacy, runtimeconfig.EnvAPIKey) {
+		t.Fatalf("expected legacy env hint, got %q", legacy)
 	}
 }
 

@@ -379,7 +379,7 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.syncConfiguredAPIRuntime(r, workspaceID, userID); err != nil {
+	if err := h.syncConfiguredAPIRuntimes(r, workspaceID, userID); err != nil {
 		slog.Warn("sync API runtime failed", "workspace_id", workspaceID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to sync API runtime")
 		return
@@ -407,32 +407,86 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *Handler) syncConfiguredAPIRuntime(r *http.Request, workspaceID, userID string) error {
-	cfg, ok := runtimeconfig.LoadAPIRuntimeConfigFromSources(os.Getenv)
-	if !ok {
-		return nil
-	}
-	metadata, err := runtimeconfig.MetadataFromConfig(cfg)
-	if err != nil {
-		return err
-	}
-
+// syncConfiguredAPIRuntimes reconciles the agent_runtime table with the
+// enabled providers. Every enabled provider upserts its own runtime row keyed
+// on a provider-scoped daemon_id; API runtime rows whose daemon_id is no
+// longer present are deleted (when unbound) or marked offline (when agents
+// still reference them).
+func (h *Handler) syncConfiguredAPIRuntimes(r *http.Request, workspaceID, userID string) error {
 	var ownerID pgtype.UUID
 	if userID != "" {
 		ownerID = parseUUID(userID)
 	}
-	_, err = h.Queries.UpsertAgentRuntime(r.Context(), db.UpsertAgentRuntimeParams{
-		WorkspaceID: parseUUID(workspaceID),
-		DaemonID:    strToText(cfg.DaemonID(userID)),
-		Name:        cfg.RuntimeName,
-		RuntimeMode: runtimeconfig.RuntimeModeCloud,
-		Provider:    cfg.Provider,
-		Status:      cfg.Status(),
-		DeviceInfo:  cfg.DeviceInfo(),
-		Metadata:    metadata,
-		OwnerID:     ownerID,
-	})
-	return err
+
+	synced := make(map[string]struct{})
+	for _, p := range runtimeconfig.ListProviders(os.Getenv) {
+		if !p.Enabled {
+			continue
+		}
+
+		var cfg runtimeconfig.APIRuntimeConfig
+		if p.ID == runtimeconfig.EnvProviderID {
+			envCfg, ok := runtimeconfig.LoadAPIRuntimeConfig(os.Getenv)
+			if !ok {
+				continue
+			}
+			cfg = envCfg
+			cfg.ProviderID = runtimeconfig.EnvProviderID
+			cfg.ReadOnly = true
+		} else {
+			cfg = p.ToConfig()
+			if !cfg.APIKeyConfigured || len(cfg.ModelIDs) == 0 {
+				continue
+			}
+		}
+
+		metadata, err := runtimeconfig.MetadataFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		daemonID := p.DaemonID(userID)
+		synced[daemonID] = struct{}{}
+		_, err = h.Queries.UpsertAgentRuntime(r.Context(), db.UpsertAgentRuntimeParams{
+			WorkspaceID: parseUUID(workspaceID),
+			DaemonID:    strToText(daemonID),
+			Name:        cfg.RuntimeName,
+			RuntimeMode: runtimeconfig.RuntimeModeCloud,
+			Provider:    cfg.Provider,
+			Status:      cfg.Status(),
+			DeviceInfo:  cfg.DeviceInfo(),
+			Metadata:    metadata,
+			OwnerID:     ownerID,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	runtimes, err := h.Queries.ListAgentRuntimes(r.Context(), parseUUID(workspaceID))
+	if err != nil {
+		return err
+	}
+	for _, rt := range runtimes {
+		if !runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata) || !rt.DaemonID.Valid {
+			continue
+		}
+		if _, ok := synced[rt.DaemonID.String]; ok {
+			continue
+		}
+		count, err := h.Queries.CountActiveAgentsByRuntime(r.Context(), rt.ID)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			if err := h.Queries.DeleteAgentRuntime(r.Context(), rt.ID); err != nil {
+				return err
+			}
+		} else if err := h.Queries.SetAgentRuntimeOffline(r.Context(), rt.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeleteAgentRuntime deletes a runtime after permission and dependency checks.
