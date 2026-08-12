@@ -226,6 +226,7 @@ export type {
   ListRoomsResponse,
   ListRoomMembersResponse,
   ListRoomMessagesResponse,
+  RoomRelayStatus,
 } from "./room";
 export type {
   MeetingASRProvider,

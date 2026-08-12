@@ -57,5 +57,14 @@ export function roomAgentPersonaOptions(roomId: string, agentId: string) {
   });
 }
 
+export function roomRelayStatusOptions(roomId: string) {
+  return queryOptions({
+    queryKey: [...roomKeys.detail("", roomId), "relay-status"] as const,
+    queryFn: () => api.getRoomRelayStatus(roomId),
+    enabled: !!roomId,
+    refetchInterval: 3000, // poll every 3s while active
+  });
+}
+
 // React hook wrappers
 export { roomsOptions as useRoomsQueryOptions };

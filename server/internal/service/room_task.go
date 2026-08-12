@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
@@ -13,6 +16,58 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+// ---------------------------------------------------------------------------
+// Room relay round state — in-memory tracking so the frontend can show
+// "relaying in progress" without a DB migration. Rounds are auto-cleared
+// when the last agent message is written (via maybeWriteRoomMessage).
+// ---------------------------------------------------------------------------
+
+// RelayRound tracks a single room-to-agent relay round.
+type RelayRound struct {
+	RoundID   string    `json:"round_id"`
+	RoomID    string    `json:"room_id"`
+	StartedAt time.Time `json:"started_at"`
+	Status    string    `json:"status"` // "active" | "completed"
+}
+
+var (
+	relayMu     sync.Mutex
+	relayRounds = map[string]*RelayRound{} // key = room_id
+)
+
+// UpsertRoomRelayRound creates or replaces the active relay round for a room.
+// Called from EnqueueRoomChatTasks when a user message triggers agent fan-out.
+func UpsertRoomRelayRound(roomID string) *RelayRound {
+	r := &RelayRound{
+		RoundID:   uuid.NewString(),
+		RoomID:    roomID,
+		StartedAt: time.Now(),
+		Status:    "active",
+	}
+	relayMu.Lock()
+	relayRounds[roomID] = r
+	relayMu.Unlock()
+	return r
+}
+
+// GetRoomRelayRound returns the active relay round for a room, or nil.
+func GetRoomRelayRound(roomID string) *RelayRound {
+	relayMu.Lock()
+	defer relayMu.Unlock()
+	r, ok := relayRounds[roomID]
+	if !ok {
+		return nil
+	}
+	return r
+}
+
+// ClearRoomRelayRound removes the relay round for a room.
+func ClearRoomRelayRound(roomID string) {
+	relayMu.Lock()
+	delete(relayRounds, roomID)
+	relayMu.Unlock()
+}
 
 // RoomEventPublisher 让 EnqueueRoomChatTasks 在 task 完成后推送 room:message 事件。
 // handler.Handler 实现此接口，service 层不依赖 handler 包。
@@ -61,7 +116,10 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		return fmt.Errorf("list active room agents: %w", err)
 	}
 	if len(agentMembers) == 0 {
-		slog.Debug("room has no active agents, skip fan-out",
+		// Write a system message so the user isn't left wondering why no one
+		// replied. Before this fix the function returned nil silently.
+		writeSystemRoomMessage(ctx, q, room, "茶水间还没有 Agent 成员，邀请几位加入后再聊天吧。")
+		slog.Debug("room has no active agents, wrote system hint",
 			"room_id", util.UUIDToString(room.ID))
 		return nil
 	}
@@ -87,6 +145,7 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		}
 	}
 	if len(targetMembers) == 0 {
+		writeSystemRoomMessage(ctx, q, room, "没有匹配到可接话的 Agent。试试 @ 一个具体的成员吧。")
 		slog.Debug("no agents matched mentions in room fan-out",
 			"room_id", util.UUIDToString(room.ID),
 			"mentions", triggerMsg.Mentions)
@@ -115,6 +174,7 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		agentByID[util.UUIDToString(am.MemberID)] = agent
 	}
 	if len(rosterInfo) == 0 {
+		writeSystemRoomMessage(ctx, q, room, "茶水间成员的 Agent 均已离线或归档，暂时无法接话。")
 		slog.Debug("room relay: no target agents could be loaded",
 			"room_id", util.UUIDToString(room.ID))
 		return nil
@@ -138,13 +198,32 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		}
 	}
 
-	// 3. find-or-create ephemeral room internal chat_session for the opener.
+	// 3. create relay round so the frontend can show "relaying in progress".
+	_ = UpsertRoomRelayRound(util.UUIDToString(room.ID))
+
+	// 4. find-or-create ephemeral room internal chat_session for the opener.
 	chatSession, err := s.findOrCreateRoomInternalSession(ctx, q, room, opener.MemberID, userUUID)
 	if err != nil {
+		ClearRoomRelayRound(util.UUIDToString(room.ID))
 		return fmt.Errorf("room relay: opener session create failed: %w", err)
 	}
 
-	// 4. 构建 CouncilBroadcastContext，把 room 当 salon 对待。
+	// 5. Ensure the trigger message reaches the model even when the internal
+	// chat_session has no prior messages. Without this the daemon would
+	// reject the prompt with "chat history has no user message".
+	if _, err := q.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		ChatSessionID: chatSession.ID,
+		Role:          "user",
+		Content:       triggerMsg.Content,
+	}); err != nil {
+		slog.Warn("room relay: failed to write trigger message to chat_session",
+			"chat_session_id", util.UUIDToString(chatSession.ID),
+			"error", err)
+		// Non-fatal: the context JSON still carries UserMessage; the daemon
+		// may still be able to build a prompt without the chat_message row.
+	}
+
+	// 6. 构建 CouncilBroadcastContext，把 room 当 salon 对待。
 	broadcastCtx := CouncilBroadcastContext{
 		Type:             CouncilBroadcastContextType,
 		CouncilSessionID: util.UUIDToString(room.ID), // room.ID 充当 council session id
@@ -251,6 +330,11 @@ func (s *TaskService) maybeWriteRoomMessage(ctx context.Context, task db.AgentTa
 			"room_id", util.UUIDToString(session.RoomID), "error", err)
 	}
 
+	// Clear the relay round — the agent has replied, so the room is no
+	// longer in an active relay state. Future salon rounds triggered by the
+	// same relay chain will re-create the round via UpsertRoomRelayRound.
+	ClearRoomRelayRound(util.UUIDToString(session.RoomID))
+
 	// 推 room:message ws 事件
 	workspaceID := s.ResolveTaskWorkspaceID(ctx, task)
 	agentIDStr := util.UUIDToString(task.AgentID)
@@ -283,4 +367,26 @@ func (s *TaskService) maybeWriteRoomMessage(ctx context.Context, task db.AgentTa
 		"agent_id", agentIDStr,
 		"room_message_id", util.UUIDToString(roomMsg.ID),
 	)
+}
+
+// writeSystemRoomMessage writes a system-prefixed room_message so the user
+// sees corrective guidance (e.g. "no agents available") instead of silence.
+func writeSystemRoomMessage(ctx context.Context, q *db.Queries, room db.Room, content string) {
+	senderID := room.WorkspaceID // system messages borrow workspace ID as sender
+	if _, err := q.CreateRoomMessage(ctx, db.CreateRoomMessageParams{
+		RoomID:       room.ID,
+		SenderType:   "system",
+		SenderID:     senderID,
+		Content:      content,
+		Mentions:     []string{},
+		IsAutonomous: true,
+	}); err != nil {
+		slog.Warn("writeSystemRoomMessage: failed",
+			"room_id", util.UUIDToString(room.ID), "error", err)
+	}
+	// Touch room so the frontend picks up the new message on next poll.
+	if err := q.TouchRoomActiveAt(ctx, room.ID); err != nil {
+		slog.Warn("writeSystemRoomMessage: touch failed",
+			"room_id", util.UUIDToString(room.ID), "error", err)
+	}
 }

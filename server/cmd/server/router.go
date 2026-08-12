@@ -464,6 +464,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/", h.DeleteRoom)
 					r.Get("/messages", h.ListRoomMessages)
 					r.Post("/messages", h.SendRoomMessage)
+					r.Get("/relay-status", h.GetRoomRelayStatus)
 					r.Get("/members", h.ListRoomMembers)
 					r.Post("/members", h.AddRoomMember)
 					r.Delete("/members/{memberId}", h.RemoveRoomMember)

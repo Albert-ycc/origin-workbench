@@ -77,6 +77,12 @@ export interface UpsertRoomAgentPersonaRequest {
   persona_override?: string;
 }
 
+export interface RoomRelayStatus {
+  active: boolean;
+  round_id?: string;
+  started_at?: string;
+}
+
 export interface ListRoomsResponse {
   rooms: Room[];
   total: number;

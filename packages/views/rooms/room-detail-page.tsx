@@ -7,6 +7,7 @@ import { agentListOptions } from "@multica/core/workspace/queries";
 import {
   roomMembersOptions,
   roomOptions,
+  roomRelayStatusOptions,
   useAddRoomMember,
   useDeleteRoom,
   useRoomsStore,
@@ -74,6 +75,7 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
 
   const id = roomId;
   const { data: room, isPending } = useQuery(roomOptions(wsId, id ?? ""));
+  const { data: relayStatus } = useQuery(roomRelayStatusOptions(id ?? ""));
 
   if (!id) return null;
 
@@ -92,8 +94,14 @@ export function RoomDetailPage({ roomId }: RoomDetailPageProps) {
           <ChevronLeft className="size-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div className="truncate text-sm font-semibold">
+          <div className="flex items-center gap-2 truncate text-sm font-semibold">
             {isPending ? "加载中…" : (room?.name ?? "未知茶水间")}
+            {relayStatus?.active && (
+              <span className="inline-flex items-center gap-1 shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                接力中
+              </span>
+            )}
           </div>
           {room?.description && (
             <div className="truncate text-xs text-muted-foreground">

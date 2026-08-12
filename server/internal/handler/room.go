@@ -631,6 +631,32 @@ func (h *Handler) SendRoomMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, roomMessageToResponse(msg))
 }
 
+// GetRoomRelayStatus returns the in-progress relay round for a room, if any.
+// The frontend polls this after sending a message to show "relaying in progress".
+func (h *Handler) GetRoomRelayStatus(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := h.resolveWorkspaceID(r)
+	room, ok := h.loadRoomForWorkspace(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	round := service.GetRoomRelayRound(uuidToString(room.ID))
+	if round == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"active": false,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"active":     true,
+		"round_id":   round.RoundID,
+		"started_at": round.StartedAt.Format(time.RFC3339),
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Room Members
 // ---------------------------------------------------------------------------

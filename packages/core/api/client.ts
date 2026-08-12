@@ -181,6 +181,7 @@ import type {
   ListRoomsResponse,
   ListRoomMembersResponse,
   ListRoomMessagesResponse,
+  RoomRelayStatus,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import { type Logger, noopLogger } from "../logger";
@@ -2187,5 +2188,9 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async getRoomRelayStatus(roomId: string): Promise<RoomRelayStatus> {
+    return this.fetch(`/api/rooms/${roomId}/relay-status`);
   }
 }
