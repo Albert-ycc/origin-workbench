@@ -423,8 +423,13 @@ export function CreateAgentDialog({
                 uploading={uploading}
                 onUploadClick={() => fileInputRef.current?.click()}
                 model={model}
-                setModel={setModel}
+                runtimes={runtimes}
+                runtimesLoading={runtimesLoading}
                 selectedRuntime={selectedRuntime}
+                onModelChange={(m, rtId) => {
+                  setModel(m);
+                  setSelectedRuntimeId(rtId);
+                }}
               />
             )}
 
@@ -537,8 +542,10 @@ function IdentityStep({
   uploading,
   onUploadClick,
   model,
-  setModel,
+  runtimes,
+  runtimesLoading,
   selectedRuntime,
+  onModelChange,
 }: {
   name: string;
   setName: (v: string) => void;
@@ -549,8 +556,10 @@ function IdentityStep({
   uploading: boolean;
   onUploadClick: () => void;
   model: string;
-  setModel: (v: string) => void;
+  runtimes: RuntimeDevice[];
+  runtimesLoading?: boolean;
   selectedRuntime: RuntimeDevice | null;
+  onModelChange: (model: string, runtimeId: string) => void;
 }) {
   return (
     <div className="space-y-8">
@@ -616,11 +625,11 @@ function IdentityStep({
           以兼容上游 schema —— 单 user 看不到差异。 */}
 
       <ModelDropdown
+        runtimes={runtimes}
         runtimeId={selectedRuntime?.id ?? null}
-        runtimeOnline={selectedRuntime?.status === "online"}
         value={model}
-        onChange={setModel}
-        disabled={!selectedRuntime}
+        onChange={onModelChange}
+        disabled={runtimes.length === 0 && !runtimesLoading}
       />
       <p className="text-xs text-muted-foreground">
         留空时继承运行环境默认模型；选择或输入模型后，只会保存到当前智能体，不会影响其他智能体。

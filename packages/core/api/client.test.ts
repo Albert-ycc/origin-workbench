@@ -107,9 +107,9 @@ describe("ApiClient", () => {
     ]);
   });
 
-  it("uses the expected HTTP contract for model API config endpoints", async () => {
+  it("uses the expected HTTP contract for model API provider endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
-      new Response(JSON.stringify({ ready: false }), {
+      new Response(JSON.stringify([]), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -118,17 +118,21 @@ describe("ApiClient", () => {
 
     const client = new ApiClient("https://api.example.test");
 
-    await client.getModelAPIConfig();
-    await client.saveModelAPIConfig({
+    await client.listModelAPIProviders();
+    await client.createModelAPIProvider({
+      preset: "deepseek",
       api_key: "sk-test",
-      base_url: "https://openrouter.ai/api/v1",
-      model_name: "openrouter/auto",
+      base_url: "https://api.deepseek.com/v1",
+      model_name: "deepseek-chat",
     });
-    await client.testModelAPIConfig({
+    await client.updateModelAPIProvider("p_1", {
       api_key: "sk-test",
-      base_url: "https://openrouter.ai/api/v1",
-      model_name: "openrouter/auto",
+      base_url: "https://api.deepseek.com/v1",
+      model_name: "deepseek-chat",
     });
+    await client.patchModelAPIProvider("p_1", { enabled: false });
+    await client.deleteModelAPIProvider("p_1");
+    await client.testModelAPIProvider("p_1");
 
     const calls = fetchMock.mock.calls.map(([url, init]) => ({
       url,
@@ -137,24 +141,35 @@ describe("ApiClient", () => {
     }));
 
     expect(calls).toMatchObject([
-      { url: "https://api.example.test/api/model-api-config/", method: "GET" },
+      { url: "https://api.example.test/api/model-api-config/providers", method: "GET" },
       {
-        url: "https://api.example.test/api/model-api-config/",
-        method: "PUT",
+        url: "https://api.example.test/api/model-api-config/providers",
+        method: "POST",
         body: JSON.stringify({
+          preset: "deepseek",
           api_key: "sk-test",
-          base_url: "https://openrouter.ai/api/v1",
-          model_name: "openrouter/auto",
+          base_url: "https://api.deepseek.com/v1",
+          model_name: "deepseek-chat",
         }),
       },
       {
-        url: "https://api.example.test/api/model-api-config/test",
-        method: "POST",
+        url: "https://api.example.test/api/model-api-config/providers/p_1",
+        method: "PUT",
         body: JSON.stringify({
           api_key: "sk-test",
-          base_url: "https://openrouter.ai/api/v1",
-          model_name: "openrouter/auto",
+          base_url: "https://api.deepseek.com/v1",
+          model_name: "deepseek-chat",
         }),
+      },
+      {
+        url: "https://api.example.test/api/model-api-config/providers/p_1",
+        method: "PATCH",
+        body: JSON.stringify({ enabled: false }),
+      },
+      { url: "https://api.example.test/api/model-api-config/providers/p_1", method: "DELETE" },
+      {
+        url: "https://api.example.test/api/model-api-config/providers/p_1/test",
+        method: "POST",
       },
     ]);
   });

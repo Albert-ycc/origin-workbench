@@ -23,7 +23,6 @@ import { AgentDetailInspector } from "./agent-detail-inspector";
  */
 export function EditAgentDialog({
   agent,
-  runtime,
   owner,
   presence,
   runtimes,
@@ -34,7 +33,6 @@ export function EditAgentDialog({
   onClose,
 }: {
   agent: Agent;
-  runtime: AgentRuntime | null;
   owner: MemberWithUser | null;
   presence: AgentPresenceDetail | null | undefined;
   runtimes: AgentRuntime[];
@@ -56,7 +54,6 @@ export function EditAgentDialog({
         <div className="px-5 py-4">
           <AgentDetailInspector
             agent={agent}
-            runtime={runtime}
             owner={owner}
             presence={presence}
             runtimes={runtimes}

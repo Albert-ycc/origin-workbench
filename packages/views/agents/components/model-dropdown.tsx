@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "lucide-react";
-import { runtimeModelsOptions } from "@multica/core/runtimes";
-import type { RuntimeModel } from "@multica/core/types";
+import { ChevronDown, Cpu, Loader2, Plus, Check } from "lucide-react";
+import {
+  aggregateRuntimeModelsOptions,
+  type AggregatedRuntimeModel,
+} from "@multica/core/runtimes";
+import type { AgentRuntime } from "@multica/core/types";
 import {
   Popover,
   PopoverTrigger,
@@ -13,69 +16,63 @@ import {
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 
-// ModelDropdown renders a searchable, creatable model picker for an agent.
-// It fetches the supported-model catalog from the selected runtime — the
-// daemon enumerates models on demand via heartbeat piggyback. Providers
-// that don't honour per-agent model selection at runtime (currently
-// hermes) return supported=false, and the dropdown renders disabled
-// with an explanation instead of silently accepting a value the
-// backend would ignore.
+// ModelDropdown renders a searchable, creatable model picker that spans
+// every runnable provider. It aggregates the model catalogs of all online
+// API runtimes (read from metadata, zero network) and online cloud runtimes
+// (enumerated via the daemon), grouping them by runtime. Selecting a model
+// reports both the model id and its runtime id so the caller can persist a
+// `runtime_id` + `model` update in one shot.
 export function ModelDropdown({
+  runtimes,
   runtimeId,
-  runtimeOnline,
   value,
   onChange,
   disabled,
 }: {
+  runtimes: AgentRuntime[];
+  /** Currently bound runtime — used only for the trigger / custom-input label. */
   runtimeId: string | null;
-  runtimeOnline: boolean;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (model: string, runtimeId: string) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const modelsQuery = useQuery(
-    runtimeModelsOptions(runtimeOnline ? runtimeId : null),
+  const modelsQuery = useQuery(aggregateRuntimeModelsOptions(runtimes));
+  const models = useMemo(
+    () => modelsQuery.data ?? [],
+    [modelsQuery.data],
   );
-
-  const supported = modelsQuery.data?.supported ?? true;
-  const models = modelsQuery.data?.models ?? [];
-  const grouped = useMemo(() => groupByProvider(models), [models]);
-
-  // When the selected runtime reports it doesn't support per-agent
-  // model selection, clear any previously-saved value so we don't
-  // persist a ghost configuration that never takes effect.
-  useEffect(() => {
-    if (!supported && value !== "") {
-      onChange("");
-    }
-  }, [supported, value, onChange]);
+  const grouped = useMemo(() => groupByRuntime(models), [models]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return grouped;
     const needle = search.toLowerCase();
-    const out: Record<string, RuntimeModel[]> = {};
-    for (const [provider, list] of Object.entries(grouped)) {
-      const matches = list.filter(
-        (m) =>
-          m.id.toLowerCase().includes(needle) ||
-          m.label.toLowerCase().includes(needle),
-      );
-      if (matches.length > 0) out[provider] = matches;
-    }
-    return out;
+    return grouped
+      .map((group) => ({
+        ...group,
+        models: group.models.filter(
+          (m) =>
+            m.id.toLowerCase().includes(needle) ||
+            m.label.toLowerCase().includes(needle),
+        ),
+      }))
+      .filter((group) => group.models.length > 0);
   }, [grouped, search]);
 
   const trimmedSearch = search.trim();
   const exactMatch = models.some(
     (m) => m.id === trimmedSearch || m.label === trimmedSearch,
   );
-  const canCreate = trimmedSearch.length > 0 && !exactMatch;
+  // Custom model creation requires a bound runtime: without one, "use X"
+  // would report an empty runtime_id and clear the required capability
+  // source in the create-agent form.
+  const hasRuntime = Boolean(runtimeId);
+  const canCreate = hasRuntime && trimmedSearch.length > 0 && !exactMatch;
 
-  const select = (id: string) => {
-    onChange(id);
+  const select = (id: string, nextRuntimeId: string) => {
+    onChange(id, nextRuntimeId);
     setOpen(false);
     setSearch("");
   };
@@ -83,30 +80,10 @@ export function ModelDropdown({
   const triggerLabel =
     value ||
     (disabled
-      ? "Select a runtime first"
-      : runtimeOnline
-        ? "Default (provider)"
-        : "Runtime offline — enter manually");
-
-  if (!supported && !modelsQuery.isLoading) {
-    // Provider doesn't honour per-agent model selection — show a
-    // clearly-disabled state so the user knows why the control is
-    // inert. (Hermes reads its model from ~/.hermes/.env.)
-    return (
-      <div className="min-w-0">
-        <Label className="text-xs text-muted-foreground">模型</Label>
-        <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="min-w-0">
-            <div>模型选择由这个运行环境管理。</div>
-            <div className="mt-0.5 text-xs">
-              请在运行环境宿主机上配置模型（例如 Hermes 会从自己的配置文件读取）。
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+      ? "选择运行环境后可选模型"
+      : runtimeId
+        ? "默认（provider）"
+        : "默认（随运行环境）");
 
   return (
     <div className="min-w-0">
@@ -123,12 +100,10 @@ export function ModelDropdown({
         >
           <Cpu className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="truncate font-medium">
-              {triggerLabel}
-            </div>
+            <div className="truncate font-medium">{triggerLabel}</div>
             {value && (
               <div className="truncate text-xs text-muted-foreground">
-                {modelLabel(models, value)}
+                {modelMeta(models, value)}
               </div>
             )}
           </div>
@@ -158,17 +133,15 @@ export function ModelDropdown({
             )}
 
             {!modelsQuery.isLoading &&
-              Object.entries(filtered).map(([provider, list]) => (
-                <div key={provider} className="mb-1">
-                  {provider && (
-                    <div className="px-2 pt-1.5 pb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {provider}
-                    </div>
-                  )}
-                  {list.map((m) => (
+              filtered.map((group) => (
+                <div key={group.runtime_id} className="mb-1">
+                  <div className="px-2 pt-1.5 pb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {group.runtime_name}
+                  </div>
+                  {group.models.map((m) => (
                     <button
-                      key={m.id}
-                      onClick={() => select(m.id)}
+                      key={`${group.runtime_id}-${m.id}`}
+                      onClick={() => select(m.id, m.runtime_id)}
                       className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${
                         m.id === value ? "bg-accent" : "hover:bg-accent/50"
                       }`}
@@ -182,9 +155,9 @@ export function ModelDropdown({
                             </span>
                           )}
                         </div>
-                        {m.label !== m.id && (
+                        {(m.provider || m.label !== m.id) && (
                           <div className="truncate text-xs text-muted-foreground">
-                            {m.id}
+                            {m.provider ?? m.id}
                           </div>
                         )}
                       </div>
@@ -196,9 +169,17 @@ export function ModelDropdown({
                 </div>
               ))}
 
+            {/* No bound runtime yet — a custom model value can't be created
+                without one, so point the user at the capability source. */}
+            {!hasRuntime && trimmedSearch.length > 0 && (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                请先在能力来源选择运行环境
+              </div>
+            )}
+
             {!modelsQuery.isLoading &&
-              Object.keys(filtered).length === 0 &&
-              !canCreate && (
+              filtered.length === 0 &&
+              trimmedSearch.length === 0 && (
                 <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                   没有可用模型。
                 </div>
@@ -206,7 +187,7 @@ export function ModelDropdown({
 
             {canCreate && (
               <button
-                onClick={() => select(trimmedSearch)}
+                onClick={() => select(trimmedSearch, runtimeId ?? "")}
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-primary transition-colors hover:bg-accent/50"
               >
                 <Plus className="h-4 w-4 shrink-0" />
@@ -218,7 +199,7 @@ export function ModelDropdown({
 
             {value && (
               <button
-                onClick={() => select("")}
+                onClick={() => select("", runtimeId ?? "")}
                 className="mt-1 flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50"
               >
                 清空选择（使用提供商默认值）
@@ -231,18 +212,30 @@ export function ModelDropdown({
   );
 }
 
-function groupByProvider(models: RuntimeModel[]): Record<string, RuntimeModel[]> {
-  const out: Record<string, RuntimeModel[]> = {};
+export function groupByRuntime(models: AggregatedRuntimeModel[]): Array<{
+  runtime_id: string;
+  runtime_name: string;
+  models: AggregatedRuntimeModel[];
+}> {
+  const order: string[] = [];
+  const map = new Map<string, { runtime_name: string; models: AggregatedRuntimeModel[] }>();
   for (const m of models) {
-    const key = m.provider ?? "";
-    if (!out[key]) out[key] = [];
-    out[key].push(m);
+    let entry = map.get(m.runtime_id);
+    if (!entry) {
+      entry = { runtime_name: m.runtime_name, models: [] };
+      map.set(m.runtime_id, entry);
+      order.push(m.runtime_id);
+    }
+    entry.models.push(m);
   }
-  return out;
+  return order.map((id) => {
+    const entry = map.get(id)!;
+    return { runtime_id: id, runtime_name: entry.runtime_name, models: entry.models };
+  });
 }
 
-function modelLabel(models: RuntimeModel[], id: string): string {
+function modelMeta(models: AggregatedRuntimeModel[], id: string): string {
   const found = models.find((m) => m.id === id);
   if (!found) return "custom";
-  return found.provider ? found.provider : "model";
+  return found.runtime_name || found.provider || "model";
 }

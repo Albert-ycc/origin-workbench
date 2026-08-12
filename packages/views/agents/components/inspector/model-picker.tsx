@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Plus } from "lucide-react";
-import { runtimeModelsOptions } from "@multica/core/runtimes";
+import {
+  aggregateRuntimeModelsOptions,
+  type AggregatedRuntimeModel,
+} from "@multica/core/runtimes";
+import type { AgentRuntime } from "@multica/core/types";
 import { Input } from "@multica/ui/components/ui/input";
 import {
   PickerItem,
@@ -13,41 +17,35 @@ import { CHIP_CLASS } from "./chip";
 
 /**
  * Inline model picker for the agent inspector. Lighter cousin of
- * `ModelDropdown` (which is used in the create-agent dialog) — same data
- * source via `runtimeModelsOptions`, but renders inside a PropertyPicker so
- * it fits a single PropRow. Drops the "select a runtime first" state because
- * the inspector only renders this picker after a runtime is bound.
- *
- * Unsupported providers (e.g. hermes, which reads its own config) render an
- * inert italic "Managed by runtime" label instead of a clickable picker —
- * the back-end ignores agent.model for those runtimes anyway.
+ * `ModelDropdown` (which is used in the create-agent dialog) — same
+ * aggregated data source, but renders inside a PropertyPicker so it fits a
+ * single PropRow. Selecting a model reports both the model id and the
+ * runtime id so the inspector can persist `runtime_id` + `model` together.
  */
 export function ModelPicker({
+  runtimes,
   runtimeId,
-  runtimeOnline,
   value,
   canEdit = true,
   onChange,
 }: {
+  runtimes: AgentRuntime[];
+  /** Currently bound runtime — used for the custom-input / clear label. */
   runtimeId: string | null;
-  runtimeOnline: boolean;
   value: string;
   /** When false, render a static read-only display and skip the popover. */
   canEdit?: boolean;
-  onChange: (next: string) => Promise<void> | void;
+  onChange: (model: string, runtimeId: string) => Promise<void> | void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const modelsQuery = useQuery(
-    runtimeModelsOptions(runtimeOnline ? runtimeId : null),
-  );
-  const supported = modelsQuery.data?.supported ?? true;
+  const modelsQuery = useQuery(aggregateRuntimeModelsOptions(runtimes));
   // Memoise the model list so every downstream useMemo gets a stable
   // reference; `?? []` would mint a fresh array on every render and
   // invalidate filters needlessly.
   const models = useMemo(
-    () => modelsQuery.data?.models ?? [],
+    () => modelsQuery.data ?? [],
     [modelsQuery.data],
   );
 
@@ -66,19 +64,17 @@ export function ModelPicker({
   );
   const canCreate = trimmedSearch.length > 0 && !exactMatch;
 
-  const select = async (id: string) => {
+  const select = async (model: AggregatedRuntimeModel) => {
     setOpen(false);
     setSearch("");
-    if (id !== value) await onChange(id);
+    if (model.id !== value) await onChange(model.id, model.runtime_id);
   };
 
-  if (!supported && !modelsQuery.isLoading) {
-    return (
-      <span className="truncate italic text-muted-foreground">
-        由运行环境管理
-      </span>
-    );
-  }
+  const selectCustom = async (id: string) => {
+    setOpen(false);
+    setSearch("");
+    if (id !== value) await onChange(id, runtimeId ?? "");
+  };
 
   const triggerLabel = value || "默认";
   const triggerTitle = `模型 · ${triggerLabel}`;
@@ -135,13 +131,13 @@ export function ModelPicker({
       {!modelsQuery.isLoading &&
         filtered.map((m) => (
           <PickerItem
-            key={m.id}
+            key={`${m.runtime_id}-${m.id}`}
             selected={m.id === value}
-            onClick={() => void select(m.id)}
-            // Tooltip carries the canonical model id even when the chip
-            // shows the friendlier label, so users can always see what
-            // string actually ships to the agent.
-            tooltip={m.label !== m.id ? `${m.label} · ${m.id}` : m.id}
+            onClick={() => void select(m)}
+            // Tooltip carries the runtime + canonical model id even when the
+            // chip shows the friendlier label, so users can always see what
+            // string actually ships to the agent and where it runs.
+            tooltip={`${m.runtime_name} · ${m.label !== m.id ? `${m.label} · ${m.id}` : m.id}`}
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -152,11 +148,9 @@ export function ModelPicker({
                   </span>
                 )}
               </div>
-              {m.label !== m.id && (
-                <div className="truncate font-mono text-[10px] text-muted-foreground">
-                  {m.id}
-                </div>
-              )}
+              <div className="truncate font-mono text-[10px] text-muted-foreground">
+                {m.runtime_name}
+              </div>
             </div>
           </PickerItem>
         ))}
@@ -170,7 +164,7 @@ export function ModelPicker({
       {canCreate && (
         <PickerItem
           selected={false}
-          onClick={() => void select(trimmedSearch)}
+          onClick={() => void selectCustom(trimmedSearch)}
           tooltip={`使用“${trimmedSearch}”作为自定义模型 ID`}
         >
           <Plus className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -183,7 +177,7 @@ export function ModelPicker({
       {value && (
         <button
           type="button"
-          onClick={() => void select("")}
+          onClick={() => void selectCustom("")}
           className="mt-1 flex w-full items-center border-t px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50"
           title="清空并回退到运行环境的提供商默认值"
         >

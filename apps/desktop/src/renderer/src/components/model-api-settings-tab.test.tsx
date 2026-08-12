@@ -1,153 +1,95 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildModelApiConnectionPayload,
-  buildGuidedSetupDisplaySnippets,
-  buildGuidedSetupSnippets,
-  getPrimaryConnectionFields,
+  buildProviderPayload,
+  maskApiKeyForDisplay,
   modelApiSettingsLayoutClasses,
-  modelApiProviderDefaults,
-  type GuidedSetupForm,
+  PROVIDER_PRESETS,
+  type ProviderForm,
 } from "./model-api-settings-tab";
 
-function form(overrides: Partial<GuidedSetupForm> = {}): GuidedSetupForm {
+function form(overrides: Partial<ProviderForm> = {}): ProviderForm {
   return {
-    mode: "ccSwitch",
+    preset: "deepseek",
+    name: "",
     apiKey: "",
     baseUrl: "",
     modelName: "",
-    modelList: "",
+    modelNames: "",
     runtimeName: "",
     toolRoots: "",
     ...overrides,
   };
 }
 
-describe("buildGuidedSetupSnippets", () => {
-  it("generates cc-switch commands with OpenAI-compatible environment variables", () => {
-    const snippets = buildGuidedSetupSnippets(
-      form({
-        mode: "ccSwitch",
-        apiKey: "sk-test",
-        baseUrl: "http://127.0.0.1:3456/v1",
-        modelName: "gpt-4.1-mini",
-      }),
-    );
-
-    expect(snippets.launchctl).toContain('launchctl setenv OPENAI_API_KEY "sk-test"');
-    expect(snippets.launchctl).toContain(
-      'launchctl setenv OPENAI_BASE_URL "http://127.0.0.1:3456/v1"',
-    );
-    expect(snippets.launchctl).toContain('launchctl setenv OPENAI_MODEL "gpt-4.1-mini"');
-    expect(snippets.launchctl).toContain('open -a "Origin"');
-    expect(snippets.launchctl).not.toContain("ORIGIN_MODEL_API_KEY");
-  });
-
-  it("uses readable placeholders when the user has not entered values yet", () => {
-    const snippets = buildGuidedSetupSnippets(form());
-
-    expect(snippets.launchctl).toContain('launchctl setenv OPENAI_API_KEY "在这里粘贴 API Key"');
-    expect(snippets.launchctl).toContain(
-      'launchctl setenv OPENAI_BASE_URL "https://your-cc-switch.example/v1"',
-    );
-    expect(snippets.launchctl).toContain('launchctl setenv OPENAI_MODEL "模型 ID，例如 gpt-4.1-mini"');
-    expect(snippets.launchctl).toContain(
-      'launchctl setenv ORIGIN_MODEL_TOOL_ROOTS "$HOME/OriginWorkbenchMount"',
-    );
-  });
-
-  it("generates dedicated Origin variables for relay mode", () => {
-    const snippets = buildGuidedSetupSnippets(
-      form({
-        mode: "relay",
-        apiKey: "relay-key",
-        baseUrl: "https://relay.example/v1",
-        modelName: "openrouter/auto",
-        runtimeName: "OpenRouter",
-      }),
-    );
-
-    expect(snippets.launchctl).toContain('launchctl setenv ORIGIN_MODEL_API_KEY "relay-key"');
-    expect(snippets.launchctl).toContain(
-      'launchctl setenv ORIGIN_MODEL_BASE_URL "https://relay.example/v1"',
-    );
-    expect(snippets.launchctl).toContain('launchctl setenv ORIGIN_MODEL_NAME "openrouter/auto"');
-    expect(snippets.launchctl).toContain('launchctl setenv ORIGIN_MODEL_RUNTIME_NAME "OpenRouter"');
-    expect(snippets.launchctl).not.toContain("OPENAI_API_KEY");
-  });
-
-  it("keeps generated commands shell-safe for common special characters", () => {
-    const snippets = buildGuidedSetupSnippets(
-      form({
-        apiKey: 'sk-"$test`',
-        baseUrl: "https://relay.example/v1",
-        modelName: "gpt-4.1-mini",
-      }),
-    );
-
-    expect(snippets.launchctl).toContain('launchctl setenv OPENAI_API_KEY "sk-\\"\\$test\\`"');
-  });
-
-  it("masks API keys in display snippets without changing copyable commands", () => {
-    const input = form({
-      apiKey: "sk-super-secret-key",
-      baseUrl: "http://127.0.0.1:3456/v1",
-      modelName: "gpt-4.1-mini",
+describe("buildProviderPayload", () => {
+  it("builds a DeepSeek preset payload and falls back model_names to model_name", () => {
+    expect(
+      buildProviderPayload(
+        form({
+          preset: "deepseek",
+          name: "本地模型",
+          apiKey: "sk-test",
+          baseUrl: "https://api.deepseek.com/v1",
+          modelName: "deepseek-chat",
+        }),
+      ),
+    ).toMatchObject({
+      preset: "deepseek",
+      name: "本地模型",
+      enabled: true,
+      api_key: "sk-test",
+      base_url: "https://api.deepseek.com/v1",
+      model_name: "deepseek-chat",
+      model_names: "deepseek-chat",
     });
+  });
 
-    const copyable = buildGuidedSetupSnippets(input);
-    const display = buildGuidedSetupDisplaySnippets(input);
+  it("omits empty optional fields and only adds tool_roots when provided", () => {
+    const withoutTools = buildProviderPayload(
+      form({ apiKey: "sk-test", modelName: "gpt-4.1-mini", toolRoots: "" }),
+    );
+    expect(withoutTools.tool_roots).toBeUndefined();
+    expect(withoutTools.name).toBeUndefined();
 
-    expect(copyable.launchctl).toContain("sk-super-secret-key");
-    expect(display.launchctl).not.toContain("sk-super-secret-key");
-    expect(display.shell).not.toContain("sk-super-secret-key");
-    expect(display.launchctl).toContain("sk-s********-key");
+    expect(
+      buildProviderPayload(
+        form({ apiKey: "sk-test", modelName: "gpt-4.1-mini", toolRoots: "/a,/b" }),
+      ),
+    ).toMatchObject({ tool_roots: "/a,/b" });
+  });
+
+  it("preserves the enabled flag when editing a disabled provider", () => {
+    expect(
+      buildProviderPayload(form({ apiKey: "sk-test", modelName: "deepseek-chat" }), false),
+    ).toMatchObject({ enabled: false });
   });
 });
 
-describe("model API settings product helpers", () => {
-  it("does not submit the example tool root unless the user explicitly enters one", () => {
-    expect(
-      buildModelApiConnectionPayload(
-        form({
-          mode: "custom",
-          apiKey: "sk-test",
-          baseUrl: "https://models.example.test/v1",
-          modelName: "mimo-v2.5-pro",
-          toolRoots: "",
-        }),
-      ),
-    ).not.toHaveProperty("tool_roots");
-
-    expect(
-      buildModelApiConnectionPayload(
-        form({
-          mode: "custom",
-          apiKey: "sk-test",
-          baseUrl: "https://models.example.test/v1",
-          modelName: "mimo-v2.5-pro",
-          toolRoots: "/Users/albert/OriginWorkbenchMount",
-        }),
-      ),
-    ).toMatchObject({ tool_roots: "/Users/albert/OriginWorkbenchMount" });
+describe("maskApiKeyForDisplay", () => {
+  it("masks long keys while keeping first 4 and last 4 characters", () => {
+    expect(maskApiKeyForDisplay("sk-super-secret-key")).toBe("sk-s********-key");
   });
 
-  it("keeps the primary setup path focused on the required connection fields", () => {
-    expect(getPrimaryConnectionFields("relay")).toEqual(["apiKey", "baseUrl", "modelName"]);
-    expect(getPrimaryConnectionFields("official")).toEqual(["apiKey", "modelName"]);
+  it("fully masks short keys and returns empty for empty input", () => {
+    expect(maskApiKeyForDisplay("short")).toBe("********");
+    expect(maskApiKeyForDisplay("")).toBe("");
+    expect(maskApiKeyForDisplay("   ")).toBe("");
   });
+});
 
-  it("uses real provider defaults without exposing environment variable details in the primary path", () => {
-    expect(modelApiProviderDefaults("relay")).toMatchObject({
-      baseUrl: "https://openrouter.ai/api/v1",
-      runtimeName: "OpenRouter / 中转站",
-    });
-    expect(modelApiProviderDefaults("ccSwitch")).toMatchObject({
-      baseUrl: "https://your-cc-switch.example/v1",
-      runtimeName: "cc-switch",
+describe("PROVIDER_PRESETS", () => {
+  it("ships DeepSeek defaults for one-click setup", () => {
+    const deepseek = PROVIDER_PRESETS.find((p) => p.id === "deepseek");
+    expect(deepseek).toMatchObject({
+      defaultBaseUrl: "https://api.deepseek.com/v1",
+      defaultModel: "deepseek-chat",
+      defaultRuntimeName: "DeepSeek API",
     });
   });
+});
 
-  it("uses container-safe layout classes for the dense desktop settings surface", () => {
+describe("modelApiSettingsLayoutClasses", () => {
+  it("keeps container-safe layout classes for the dense desktop surface", () => {
     const shellGrid = modelApiSettingsLayoutClasses.shellGrid.split(/\s+/);
     const providerGrid = modelApiSettingsLayoutClasses.providerGrid.split(/\s+/);
 
@@ -156,7 +98,6 @@ describe("model API settings product helpers", () => {
     expect(providerGrid).toContain(
       "[grid-template-columns:repeat(auto-fit,minmax(min(10rem,100%),1fr))]",
     );
-    expect(providerGrid).not.toContain("xl:grid-cols-4");
     expect(modelApiSettingsLayoutClasses.codeBadge).toContain("break-all");
   });
 });

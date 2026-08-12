@@ -5,8 +5,9 @@ export type {
   ImportStarterContentResponse,
   ImportStarterIssuePayload,
   ImportStarterWelcomeIssueTemplate,
-  ModelAPIConfigPayload,
-  ModelAPIConfigResponse,
+  ModelAPIProvider,
+  ModelAPIProviderModel,
+  ModelAPIProviderPayload,
   ModelAPIConnectionTestResponse,
   ModelAPILastTest,
 } from "./client";

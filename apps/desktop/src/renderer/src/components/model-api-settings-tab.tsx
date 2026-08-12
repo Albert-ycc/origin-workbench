@@ -1,38 +1,27 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  ArrowRight,
   CheckCircle2,
-  Clipboard,
   HelpCircle,
-  KeyRound,
   Loader2,
+  Pencil,
   Plug,
+  Plus,
   RefreshCw,
-  Settings2,
-  Terminal,
-  Wrench,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
   api,
-  type ModelAPIConfigPayload,
+  type ModelAPIProvider,
+  type ModelAPIProviderPayload,
   type ModelAPIConnectionTestResponse,
   type ModelAPILastTest,
 } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
 import { runtimeKeys, runtimeListOptions } from "@multica/core/runtimes/queries";
-import type { AgentRuntime } from "@multica/core/types";
-import { AppLink } from "@multica/views/navigation";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@multica/ui/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@multica/ui/components/ui/alert";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Button } from "@multica/ui/components/ui/button";
@@ -52,27 +41,10 @@ import {
 } from "@multica/ui/components/ui/dialog";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
+import { Switch } from "@multica/ui/components/ui/switch";
 import { cn } from "@multica/ui/lib/utils";
 
-const API_RUNTIME_MARKER = "origin_api";
-const REQUIRED_ENV = ["ORIGIN_MODEL_API_KEY", "ORIGIN_MODEL_NAME"];
-const OPTIONAL_ENV = [
-  "ORIGIN_MODEL_PROVIDER",
-  "ORIGIN_MODEL_BASE_URL",
-  "ORIGIN_MODEL_NAMES",
-  "ORIGIN_MODEL_RUNTIME_NAME",
-  "ORIGIN_MODEL_TOOL_ROOTS",
-];
-const CC_SWITCH_REQUIRED_ENV = ["OPENAI_API_KEY", "OPENAI_MODEL"];
-const CC_SWITCH_OPTIONAL_ENV = [
-  "OPENAI_BASE_URL",
-  "OPENAI_MODELS",
-  "ORIGIN_MODEL_TOOL_ROOTS",
-];
-
-const API_KEY_PLACEHOLDER = "在这里粘贴 API Key";
 const MODEL_PLACEHOLDER = "模型 ID，例如 gpt-4.1-mini";
-const DEFAULT_TOOL_ROOTS = "";
 const TOOL_ROOTS_PLACEHOLDER = "$HOME/OriginWorkbenchMount";
 
 export const modelApiSettingsLayoutClasses = {
@@ -83,383 +55,82 @@ export const modelApiSettingsLayoutClasses = {
   codeBadge: "max-w-full min-w-0 whitespace-normal break-all text-left font-mono",
 } as const;
 
-export type SetupMode = "official" | "relay" | "ccSwitch" | "custom";
-type PrimaryConnectionField = "apiKey" | "baseUrl" | "modelName";
-type HelpTopic = "apiKey" | "baseUrl" | "modelName" | "advanced";
+export type ProviderPresetId = "deepseek" | "custom";
 
-export interface GuidedSetupForm {
-  mode: SetupMode;
+export interface ProviderPreset {
+  id: ProviderPresetId;
+  title: string;
+  description: string;
+  defaultBaseUrl: string;
+  defaultModel: string;
+  defaultRuntimeName: string;
+}
+
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: "deepseek",
+    title: "DeepSeek",
+    description: "一键填入官方 OpenAI 兼容地址与模型。",
+    defaultBaseUrl: "https://api.deepseek.com/v1",
+    defaultModel: "deepseek-chat",
+    defaultRuntimeName: "DeepSeek API",
+  },
+  {
+    id: "custom",
+    title: "自定义",
+    description: "OpenAI 兼容的自定义网关或企业模型代理。",
+    defaultBaseUrl: "https://your-provider.example/v1",
+    defaultModel: "",
+    defaultRuntimeName: "外接模型 API",
+  },
+];
+
+function presetInfo(preset: ProviderPresetId): ProviderPreset {
+  return PROVIDER_PRESETS.find((p) => p.id === preset) ?? PROVIDER_PRESETS[0]!;
+}
+
+export interface ProviderForm {
+  preset: ProviderPresetId;
+  name: string;
   apiKey: string;
   baseUrl: string;
   modelName: string;
-  modelList: string;
+  modelNames: string;
   runtimeName: string;
   toolRoots: string;
 }
 
-const SETUP_MODES: Array<{
-  id: SetupMode;
-  title: string;
-  eyebrow: string;
-  description: string;
-  envFamily: string;
-  defaultBaseUrl: string;
-  defaultRuntimeName: string;
-  requiredEnv: string[];
-  optionalEnv: string[];
-}> = [
-  {
-    id: "ccSwitch",
-    title: "cc-switch / Codex 兼容环境",
-    eyebrow: "已有本机网关",
-    description: "已经用 cc-switch 管理模型时选这个。",
-    envFamily: "OPENAI_*",
-    defaultBaseUrl: "https://your-cc-switch.example/v1",
-    defaultRuntimeName: "cc-switch",
-    requiredEnv: CC_SWITCH_REQUIRED_ENV,
-    optionalEnv: CC_SWITCH_OPTIONAL_ENV,
-  },
-  {
-    id: "relay",
-    title: "OpenRouter / 中转站",
-    eyebrow: "第三方网关",
-    description: "适合 OpenRouter、CodeAPI、TokenGo 等 OpenAI 兼容入口。",
-    envFamily: "ORIGIN_MODEL_*",
-    defaultBaseUrl: "https://openrouter.ai/api/v1",
-    defaultRuntimeName: "OpenRouter / 中转站",
-    requiredEnv: REQUIRED_ENV,
-    optionalEnv: OPTIONAL_ENV,
-  },
-  {
-    id: "official",
-    title: "OpenAI 官方 API",
-    eyebrow: "官方直连",
-    description: "直接使用 OpenAI 官方 Chat Completions 兼容入口。",
-    envFamily: "ORIGIN_MODEL_*",
-    defaultBaseUrl: "https://api.openai.com/v1",
-    defaultRuntimeName: "OpenAI API",
-    requiredEnv: REQUIRED_ENV,
-    optionalEnv: OPTIONAL_ENV,
-  },
-  {
-    id: "custom",
-    title: "自定义兼容服务",
-    eyebrow: "OpenAI Compatible",
-    description: "适合私有网关或企业模型代理。",
-    envFamily: "ORIGIN_MODEL_*",
-    defaultBaseUrl: "https://your-provider.example/v1",
-    defaultRuntimeName: "外接模型 API",
-    requiredEnv: REQUIRED_ENV,
-    optionalEnv: OPTIONAL_ENV,
-  },
-];
-
-interface ModelApiMetadata {
-  api_runtime?: boolean;
-  managed_by?: string;
-  config_source?: string;
-  api_key_configured?: boolean;
-  base_url_configured?: boolean;
-  supports_tools?: boolean;
-  task_execution?: string;
-  default_model?: string;
-  models?: unknown;
-}
-
-interface RuntimeModel {
-  id: string;
-  label?: string;
-  provider?: string;
-  default?: boolean;
-}
-
-function asMetadata(runtime?: AgentRuntime | null): ModelApiMetadata {
-  if (!runtime?.metadata || typeof runtime.metadata !== "object") return {};
-  return runtime.metadata as ModelApiMetadata;
-}
-
-function isModelApiRuntime(runtime: AgentRuntime) {
-  const metadata = asMetadata(runtime);
-  return metadata.api_runtime === true && metadata.managed_by === API_RUNTIME_MARKER;
-}
-
-function runtimeModels(value: unknown): RuntimeModel[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const record = item as Record<string, unknown>;
-    if (typeof record.id !== "string" || record.id.length === 0) return [];
-    return [
-      {
-        id: record.id,
-        label: typeof record.label === "string" ? record.label : undefined,
-        provider: typeof record.provider === "string" ? record.provider : undefined,
-        default: record.default === true,
-      },
-    ];
-  });
-}
-
-function mergeDisplayModels(
-  runtimeModelsList: RuntimeModel[],
-  configuredModels: RuntimeModel[],
-  discoveredModelIds: string[] | undefined,
-  defaultModel: string | undefined,
-) {
-  const seen = new Set<string>();
-  const merged: RuntimeModel[] = [];
-  const add = (model: RuntimeModel) => {
-    const id = model.id.trim();
-    if (!id || seen.has(id)) return;
-    seen.add(id);
-    merged.push({
-      ...model,
-      id,
-      label: model.label ?? id,
-      default: model.default === true || id === defaultModel,
-    });
+export function buildProviderPayload(
+  form: ProviderForm,
+  enabled = true,
+): ModelAPIProviderPayload {
+  const payload: ModelAPIProviderPayload = {
+    preset: form.preset,
+    name: form.name.trim() || undefined,
+    enabled,
+    api_key: form.apiKey.trim() || undefined,
+    base_url: form.baseUrl.trim() || undefined,
+    model_name: form.modelName.trim() || undefined,
+    model_names: form.modelNames.trim() || form.modelName.trim() || undefined,
+    runtime_name: form.runtimeName.trim() || undefined,
   };
-  runtimeModelsList.forEach(add);
-  configuredModels.forEach(add);
-  discoveredModelIds?.forEach((id) => add({ id }));
-  return merged;
+  const toolRoots = form.toolRoots.trim();
+  if (toolRoots) payload.tool_roots = toolRoots;
+  return payload;
 }
 
-function modeInfo(mode: SetupMode) {
-  return SETUP_MODES.find((item) => item.id === mode) ?? SETUP_MODES[0];
-}
-
-export function modelApiProviderDefaults(mode: SetupMode) {
-  const info = modeInfo(mode);
-  return {
-    baseUrl: info.defaultBaseUrl,
-    runtimeName: info.defaultRuntimeName,
-  };
-}
-
-export function getPrimaryConnectionFields(mode: SetupMode): PrimaryConnectionField[] {
-  if (mode === "official") return ["apiKey", "modelName"];
-  return ["apiKey", "baseUrl", "modelName"];
-}
-
-function isDefaultModeValue(value: string, key: "defaultBaseUrl" | "defaultRuntimeName") {
-  return SETUP_MODES.some((item) => item[key] === value);
-}
-
-function quoteShellValue(value: string, options: { allowVariables?: boolean } = {}) {
-  const escaped = value
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/`/g, "\\`")
-    .replace(/\$/g, options.allowVariables ? "$" : "\\$");
-  return `"${escaped}"`;
-}
-
-function commandValue(
-  value: string,
-  placeholder: string,
-  options: { allowVariables?: boolean } = {},
-) {
-  const trimmed = value.trim();
-  return quoteShellValue(trimmed.length > 0 ? trimmed : placeholder, options);
-}
-
-function maskApiKeyForDisplay(value: string) {
+export function maskApiKeyForDisplay(value: string) {
   const trimmed = value.trim();
   if (trimmed.length === 0) return "";
   if (trimmed.length <= 8) return "********";
   return `${trimmed.slice(0, 4)}********${trimmed.slice(-4)}`;
 }
 
-export function buildGuidedSetupSnippets(form: GuidedSetupForm) {
-  const info = modeInfo(form.mode);
-  const modelName = form.modelName.trim() || MODEL_PLACEHOLDER;
-  const modelList = form.modelList.trim() || form.modelName.trim() || MODEL_PLACEHOLDER;
-  const toolRoots = form.toolRoots.trim() || TOOL_ROOTS_PLACEHOLDER;
-
-  if (form.mode === "ccSwitch") {
-    const launchctl = [
-      "# 1. 把下面三个值换成你的 cc-switch / 中转站配置",
-      `launchctl setenv OPENAI_API_KEY ${commandValue(form.apiKey, API_KEY_PLACEHOLDER)}`,
-      `launchctl setenv OPENAI_BASE_URL ${commandValue(form.baseUrl, info.defaultBaseUrl)}`,
-      `launchctl setenv OPENAI_MODEL ${quoteShellValue(modelName)}`,
-      `launchctl setenv OPENAI_MODELS ${quoteShellValue(modelList)}`,
-      "",
-      "# 2. 限制 API runtime 只能读取和搜索这个目录",
-      `launchctl setenv ORIGIN_MODEL_TOOL_ROOTS ${quoteShellValue(toolRoots, {
-        allowVariables: true,
-      })}`,
-      "",
-      "# 3. 重启 Origin，让本地 App 读取新配置",
-      'osascript -e \'quit app "Origin"\'',
-      'open -a "Origin"',
-    ].join("\n");
-
-    const shell = [
-      "# 终端 / daemon 启动方式",
-      `export OPENAI_API_KEY=${commandValue(form.apiKey, API_KEY_PLACEHOLDER)}`,
-      `export OPENAI_BASE_URL=${commandValue(form.baseUrl, info.defaultBaseUrl)}`,
-      `export OPENAI_MODEL=${quoteShellValue(modelName)}`,
-      `export OPENAI_MODELS=${quoteShellValue(modelList)}`,
-      `export ORIGIN_MODEL_TOOL_ROOTS=${quoteShellValue(toolRoots, { allowVariables: true })}`,
-    ].join("\n");
-
-    return { launchctl, shell };
-  }
-
-  const runtimeName = form.runtimeName.trim() || info.defaultRuntimeName;
-  const launchctl = [
-    "# 1. 把下面三个值换成你的 API 服务配置",
-    'launchctl setenv ORIGIN_MODEL_PROVIDER "openai_compatible"',
-    `launchctl setenv ORIGIN_MODEL_API_KEY ${commandValue(form.apiKey, API_KEY_PLACEHOLDER)}`,
-    `launchctl setenv ORIGIN_MODEL_BASE_URL ${commandValue(form.baseUrl, info.defaultBaseUrl)}`,
-    `launchctl setenv ORIGIN_MODEL_NAME ${quoteShellValue(modelName)}`,
-    `launchctl setenv ORIGIN_MODEL_NAMES ${quoteShellValue(modelList)}`,
-    `launchctl setenv ORIGIN_MODEL_RUNTIME_NAME ${quoteShellValue(runtimeName)}`,
-    "",
-    "# 2. 限制 API runtime 只能读取和搜索这个目录",
-    `launchctl setenv ORIGIN_MODEL_TOOL_ROOTS ${quoteShellValue(toolRoots, {
-      allowVariables: true,
-    })}`,
-    "",
-    "# 3. 重启 Origin，让本地 App 读取新配置",
-    'osascript -e \'quit app "Origin"\'',
-    'open -a "Origin"',
-  ].join("\n");
-
-  const shell = [
-    "# 终端 / daemon 启动方式",
-    'export ORIGIN_MODEL_PROVIDER="openai_compatible"',
-    `export ORIGIN_MODEL_API_KEY=${commandValue(form.apiKey, API_KEY_PLACEHOLDER)}`,
-    `export ORIGIN_MODEL_BASE_URL=${commandValue(form.baseUrl, info.defaultBaseUrl)}`,
-    `export ORIGIN_MODEL_NAME=${quoteShellValue(modelName)}`,
-    `export ORIGIN_MODEL_NAMES=${quoteShellValue(modelList)}`,
-    `export ORIGIN_MODEL_RUNTIME_NAME=${quoteShellValue(runtimeName)}`,
-    `export ORIGIN_MODEL_TOOL_ROOTS=${quoteShellValue(toolRoots, { allowVariables: true })}`,
-  ].join("\n");
-
-  return { launchctl, shell };
+function providerQueryKey(wsId: string) {
+  return ["model-api-providers", wsId] as const;
 }
 
-export function buildGuidedSetupDisplaySnippets(form: GuidedSetupForm) {
-  return buildGuidedSetupSnippets({
-    ...form,
-    apiKey: maskApiKeyForDisplay(form.apiKey),
-  });
-}
-
-function modelApiConfigKey(wsId: string) {
-  return ["model-api-config", wsId] as const;
-}
-
-export function buildModelApiConnectionPayload(form: GuidedSetupForm): ModelAPIConfigPayload {
-  const toolRoots = form.toolRoots.trim();
-  const payload: ModelAPIConfigPayload = {
-    provider: "openai_compatible",
-    api_key: form.apiKey.trim() || undefined,
-    base_url: form.baseUrl.trim() || undefined,
-    model_name: form.modelName.trim() || undefined,
-    model_names: form.modelList.trim() || form.modelName.trim() || undefined,
-    runtime_name: form.runtimeName.trim() || modeInfo(form.mode).defaultRuntimeName,
-  };
-  if (toolRoots) payload.tool_roots = toolRoots;
-  return payload;
-}
-
-function FieldRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="grid grid-cols-[96px_minmax(0,1fr)] items-baseline gap-3 py-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span
-        className={cn("min-w-0 truncate text-sm", mono && "font-mono text-xs")}
-        title={typeof value === "string" ? value : undefined}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function HelpIconButton({ topic, onOpen }: { topic: HelpTopic; onOpen: (topic: HelpTopic) => void }) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-xs"
-      className="text-muted-foreground"
-      onClick={() => onOpen(topic)}
-    >
-      <HelpCircle className="h-3.5 w-3.5" />
-      <span className="sr-only">查看说明</span>
-    </Button>
-  );
-}
-
-function FormField({
-  id,
-  label,
-  children,
-  helpTopic,
-  onHelp,
-}: {
-  id: string;
-  label: string;
-  children: ReactNode;
-  helpTopic?: HelpTopic;
-  onHelp: (topic: HelpTopic) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5">
-        <Label htmlFor={id} className="text-xs font-medium">
-          {label}
-        </Label>
-        {helpTopic && <HelpIconButton topic={helpTopic} onOpen={onHelp} />}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function CopyBlock({
-  title,
-  description,
-  value,
-  displayValue,
-  onCopy,
-}: {
-  title: string;
-  description: string;
-  value: string;
-  displayValue?: string;
-  onCopy: () => void;
-}) {
-  return (
-    <div className="rounded-lg border bg-muted/15">
-      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{title}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={onCopy}>
-          <Clipboard className="h-3.5 w-3.5" />
-          复制
-        </Button>
-      </div>
-      <pre className="max-h-64 overflow-auto p-4 text-xs leading-relaxed">
-        <code>{displayValue ?? value}</code>
-      </pre>
-    </div>
-  );
-}
+type HelpTopic = "apiKey" | "baseUrl" | "modelName" | "advanced";
 
 function ConnectionResult({ result }: { result: ModelAPIConnectionTestResponse | null }) {
   if (!result) return null;
@@ -533,6 +204,21 @@ function connectionResultFromApiError(error: unknown): ModelAPIConnectionTestRes
   };
 }
 
+function providerModels(
+  provider: ModelAPIProvider,
+): Array<{ id: string; label?: string; default?: boolean }> {
+  const out: Array<{ id: string; label?: string; default?: boolean }> = [];
+  const seen = new Set<string>();
+  const add = (id: string, label?: string, isDefault?: boolean) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, label: label ?? id, default: isDefault === true });
+  };
+  (provider.models ?? []).forEach((m) => add(m.id, m.label, m.default));
+  (provider.discovered_models ?? []).forEach((id) => add(id));
+  return out;
+}
+
 function HelpDialog({
   topic,
   onOpenChange,
@@ -547,15 +233,15 @@ function HelpDialog({
     },
     baseUrl: {
       title: "Base URL",
-      body: "中转站和私有网关通常需要填到 /v1。OpenAI 官方直连可以使用默认地址，所以主流程里不要求填写。",
+      body: "中转站和私有网关通常需要填到 /v1。选择 DeepSeek 预设会填入官方地址。",
     },
     modelName: {
       title: "模型 ID",
-      body: "必须和供应商后台展示的可调用模型名一致，例如 gpt-4.1-mini 或 openrouter/auto。连接测试会用这个模型发起一次最小请求。",
+      body: "必须和供应商后台展示的可调用模型名一致。连接测试会用这个模型发起一次最小请求。",
     },
     advanced: {
       title: "高级信息",
-      body: "模型列表、能力来源名称、允许读取的目录和环境变量命令都放在这里。普通接入只需要完成主流程里的三个字段。",
+      body: "可选模型列表、能力来源名称、允许读取的目录都放在这里。普通接入只需要完成预设、API Key 和模型 ID。",
     },
   } satisfies Record<HelpTopic, { title: string; body: string }>;
   const item = topic ? content[topic] : null;
@@ -572,148 +258,480 @@ function HelpDialog({
   );
 }
 
-export function ModelApiSettingsTab() {
+function Field({
+  id,
+  label,
+  helpTopic,
+  onHelp,
+  children,
+}: {
+  id: string;
+  label: string;
+  helpTopic?: HelpTopic;
+  onHelp: (topic: HelpTopic) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={id} className="text-xs font-medium">
+          {label}
+        </Label>
+        {helpTopic && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground"
+            onClick={() => onHelp(helpTopic)}
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+            <span className="sr-only">查看说明</span>
+          </Button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ProviderCard({
+  provider,
+  testing,
+  testResult,
+  onToggle,
+  onTest,
+  onEdit,
+  onDelete,
+}: {
+  provider: ModelAPIProvider;
+  testing: boolean;
+  testResult: ModelAPIConnectionTestResponse | null;
+  onToggle: (enabled: boolean) => void;
+  onTest: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const models = providerModels(provider);
+  const readonly = provider.readonly;
+
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <CardTitle className="truncate">{provider.name}</CardTitle>
+              <Badge variant="outline">{provider.provider}</Badge>
+              {readonly && <Badge variant="secondary">环境变量</Badge>}
+            </div>
+            <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    provider.status === "online" ? "bg-success" : "bg-muted-foreground/40",
+                  )}
+                />
+                {provider.status === "online" ? "在线" : "离线"}
+              </span>
+              {provider.base_url && <span className="truncate font-mono text-xs">{provider.base_url}</span>}
+              {readonly && provider.config_source && <span>来源 {provider.config_source}</span>}
+            </CardDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-xs text-muted-foreground">启用</span>
+            <Switch
+              checked={provider.enabled}
+              disabled={readonly}
+              onCheckedChange={onToggle}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-1.5">
+          {models.length > 0 ? (
+            models.map((m) => (
+              <Badge
+                key={m.id}
+                variant={m.default ? "default" : "outline"}
+                className="max-w-full"
+                title={m.id}
+              >
+                <span className="truncate">{m.label ?? m.id}</span>
+                {m.default && <span className="ml-1">默认</span>}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-xs text-muted-foreground">暂无已发现模型</span>
+          )}
+        </div>
+
+        {readonly && (
+          <p className="text-xs text-muted-foreground">
+            该 Provider 由环境变量（ORIGIN_MODEL_* / OPENAI_*）提供，只读。清空环境变量并重启后端后即可在页面管理。
+          </p>
+        )}
+
+        <ConnectionResult result={testResult} />
+
+        {!readonly && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onTest} disabled={testing}>
+              {testing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plug className="h-3.5 w-3.5" />
+              )}
+              测试连接
+            </Button>
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+              编辑
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              删除
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProviderFormBody({
+  provider,
+  onClose,
+}: {
+  provider: ModelAPIProvider | null;
+  onClose: () => void;
+}) {
   const wsId = useWorkspaceId();
-  const workspacePaths = useWorkspacePaths();
   const queryClient = useQueryClient();
-  const runtimesQuery = useQuery(runtimeListOptions(wsId));
-  const configQuery = useQuery({
-    queryKey: modelApiConfigKey(wsId),
-    queryFn: () => api.getModelAPIConfig(),
-    enabled: Boolean(wsId),
-  });
-  const [form, setForm] = useState<GuidedSetupForm>({
-    mode: "ccSwitch",
-    apiKey: "",
-    baseUrl: modeInfo("ccSwitch").defaultBaseUrl,
-    modelName: "gpt-4.1-mini",
-    modelList: "",
-    runtimeName: modeInfo("ccSwitch").defaultRuntimeName,
-    toolRoots: DEFAULT_TOOL_ROOTS,
-  });
-  const [formTouched, setFormTouched] = useState(false);
-  const [connectionResult, setConnectionResult] = useState<ModelAPIConnectionTestResponse | null>(null);
+  const isEdit = provider !== null;
+
+  const [preset, setPreset] = useState<ProviderPresetId>(
+    provider ? (provider.preset === "deepseek" ? "deepseek" : "custom") : "deepseek",
+  );
+  const [name, setName] = useState(provider?.name ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(
+    provider?.base_url ?? (isEdit ? "" : presetInfo("deepseek").defaultBaseUrl),
+  );
+  const [modelName, setModelName] = useState(
+    provider?.model_name ?? (isEdit ? "" : presetInfo("deepseek").defaultModel),
+  );
+  const [modelNames, setModelNames] = useState(provider?.model_names ?? "");
+  const [runtimeName, setRuntimeName] = useState(
+    provider?.runtime_name ?? (isEdit ? "" : presetInfo("deepseek").defaultRuntimeName),
+  );
+  const [toolRoots, setToolRoots] = useState(provider?.tool_roots ?? "");
+  const [testResult, setTestResult] = useState<ModelAPIConnectionTestResponse | null>(null);
   const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
 
-  useEffect(() => {
-    const cfg = configQuery.data;
-    if (!cfg || formTouched) return;
-    setForm((current) => ({
-      ...current,
-      baseUrl: cfg.base_url || current.baseUrl,
-      modelName: cfg.model_name || current.modelName,
-      modelList: cfg.model_names || current.modelList,
-      runtimeName: cfg.runtime_name || current.runtimeName,
-      toolRoots: cfg.tool_roots ?? current.toolRoots,
-    }));
-  }, [configQuery.data, formTouched]);
+  const form: ProviderForm = {
+    preset,
+    name,
+    apiKey,
+    baseUrl,
+    modelName,
+    modelNames,
+    runtimeName,
+    toolRoots,
+  };
 
-  const apiRuntime = useMemo(
-    () => runtimesQuery.data?.find(isModelApiRuntime) ?? null,
-    [runtimesQuery.data],
-  );
-  const metadata = asMetadata(apiRuntime);
-  const models = mergeDisplayModels(
-    runtimeModels(metadata.models),
-    configQuery.data?.models ?? [],
-    configQuery.data?.discovered_models,
-    configQuery.data?.model_name ?? metadata.default_model,
-  );
-  const savedConnectionResult = connectionResultFromLastTest(
-    configQuery.data?.last_test,
-    configQuery.data?.discovered_models,
-  );
-  const activeModeInfo = modeInfo(form.mode);
-  const primaryFields = getPrimaryConnectionFields(form.mode);
-  const requiresBaseUrl = primaryFields.includes("baseUrl");
-  const configSource = configQuery.data?.config_source ?? metadata.config_source ?? "none";
-  const savedSecretAvailable = Boolean(
-    configQuery.data?.api_key_configured && !configSource.startsWith("environment"),
-  );
-  const hasApiKey = Boolean(form.apiKey.trim() || configQuery.data?.api_key_configured);
   const hasMinimumFields = Boolean(
-    hasApiKey && form.modelName.trim() && (!requiresBaseUrl || form.baseUrl.trim()),
+    (apiKey.trim() || provider?.api_key_configured) && modelName.trim(),
   );
-  const canSave = Boolean(
-    (form.apiKey.trim() || savedSecretAvailable) &&
-      form.modelName.trim() &&
-      (!requiresBaseUrl || form.baseUrl.trim()),
-  );
-  const configured = Boolean(configQuery.data?.api_key_configured || metadata.api_key_configured);
-  const ready = Boolean(configQuery.data?.ready || (configured && apiRuntime?.status === "online"));
-  const snippets = useMemo(() => buildGuidedSetupSnippets(form), [form]);
-  const displaySnippets = useMemo(() => buildGuidedSetupDisplaySnippets(form), [form]);
 
-  const updateForm = (patch: Partial<GuidedSetupForm>) => {
-    setFormTouched(true);
-    setConnectionResult(null);
-    setForm((current) => ({ ...current, ...patch }));
-  };
-
-  const selectMode = (mode: SetupMode) => {
-    const next = modeInfo(mode);
-    setFormTouched(true);
-    setConnectionResult(null);
-    setForm((current) => ({
-      ...current,
-      mode,
-      baseUrl:
-        current.baseUrl.trim().length === 0 || isDefaultModeValue(current.baseUrl, "defaultBaseUrl")
-          ? next.defaultBaseUrl
-          : current.baseUrl,
-      runtimeName:
-        current.runtimeName.trim().length === 0 ||
-        isDefaultModeValue(current.runtimeName, "defaultRuntimeName")
-          ? next.defaultRuntimeName
-          : current.runtimeName,
-    }));
-  };
-
-  const refresh = async () => {
+  const invalidate = async () => {
     await Promise.all([
+      queryClient.invalidateQueries({ queryKey: providerQueryKey(wsId) }),
       queryClient.invalidateQueries({ queryKey: runtimeKeys.list(wsId) }),
-      queryClient.invalidateQueries({ queryKey: modelApiConfigKey(wsId) }),
     ]);
-    toast.success("正在刷新大模型 API 状态");
   };
 
-  const saveMutation = useMutation({
-    mutationFn: () => api.saveModelAPIConfig(buildModelApiConnectionPayload(form)),
-    onSuccess: async (data) => {
-      queryClient.setQueryData(modelApiConfigKey(wsId), data);
-      setConnectionResult(connectionResultFromLastTest(data.last_test, data.discovered_models));
-      setFormTouched(false);
-      await queryClient.invalidateQueries({ queryKey: runtimeKeys.list(wsId) });
-      toast.success("大模型 API 已测试并启用");
-    },
-    onError: (error) => {
-      const result = connectionResultFromApiError(error);
-      if (result) setConnectionResult(result);
-      toast.error(error instanceof Error ? error.message : "保存失败");
-    },
-  });
+  const selectPreset = (next: ProviderPresetId) => {
+    setPreset(next);
+    const info = presetInfo(next);
+    setBaseUrl(info.defaultBaseUrl);
+    setModelName(info.defaultModel);
+    setRuntimeName(info.defaultRuntimeName);
+  };
 
   const testMutation = useMutation({
-    mutationFn: () => api.testModelAPIConfig(buildModelApiConnectionPayload(form)),
+    mutationFn: () => api.testModelAPIProvider(provider!.id),
     onSuccess: (result) => {
-      setConnectionResult(result);
+      setTestResult(result);
       if (result.ok) toast.success("连接测试通过");
       else toast.error(result.message);
     },
     onError: (error) => {
       const result = connectionResultFromApiError(error);
-      if (result) setConnectionResult(result);
+      if (result) setTestResult(result);
       toast.error(error instanceof Error ? error.message : "连接测试失败");
     },
   });
 
-  const copyText = async (value: string, message: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success(message);
-    } catch {
-      toast.error("复制失败");
-    }
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload = buildProviderPayload(form, provider?.enabled ?? true);
+      return provider
+        ? api.updateModelAPIProvider(provider.id, payload)
+        : api.createModelAPIProvider(payload);
+    },
+    onSuccess: async () => {
+      await invalidate();
+      toast.success(provider ? "Provider 已更新" : "Provider 已测试并保存");
+      onClose();
+    },
+    onError: (error) => {
+      const result = connectionResultFromApiError(error);
+      if (result) setTestResult(result);
+      toast.error(error instanceof Error ? error.message : "保存失败");
+    },
+  });
+
+  return (
+    <div className="space-y-5">
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium">预设</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {PROVIDER_PRESETS.map((p) => {
+            const selected = p.id === preset;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selectPreset(p.id)}
+                className={cn(
+                  "min-w-0 rounded-lg border p-3 text-left transition-colors hover:bg-muted/30",
+                  selected && "border-primary bg-primary/5 shadow-sm",
+                )}
+              >
+                <p className="text-sm font-semibold">{p.title}</p>
+                <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
+                  {p.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Field id="provider-api-key" label="API Key" helpTopic="apiKey" onHelp={setHelpTopic}>
+        <Input
+          id="provider-api-key"
+          type="password"
+          value={apiKey}
+          placeholder={provider?.api_key_configured ? "已保存，留空则继续使用" : "sk-..."}
+          onChange={(event) => setApiKey(event.target.value)}
+        />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="provider-name" label="名称" onHelp={setHelpTopic}>
+          <Input
+            id="provider-name"
+            value={name}
+            placeholder="本地模型"
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        <Field id="provider-base-url" label="Base URL" helpTopic="baseUrl" onHelp={setHelpTopic}>
+          <Input
+            id="provider-base-url"
+            value={baseUrl}
+            placeholder={presetInfo(preset).defaultBaseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+          />
+        </Field>
+        <Field id="provider-model" label="模型 ID" helpTopic="modelName" onHelp={setHelpTopic}>
+          <Input
+            id="provider-model"
+            value={modelName}
+            placeholder={MODEL_PLACEHOLDER}
+            onChange={(event) => setModelName(event.target.value)}
+          />
+        </Field>
+        <Field id="provider-models" label="可选模型列表" helpTopic="advanced" onHelp={setHelpTopic}>
+          <Input
+            id="provider-models"
+            value={modelNames}
+            placeholder={`${modelName || "gpt-4.1-mini"},gpt-4.1`}
+            onChange={(event) => setModelNames(event.target.value)}
+          />
+        </Field>
+        <Field id="provider-runtime-name" label="能力来源名称" helpTopic="advanced" onHelp={setHelpTopic}>
+          <Input
+            id="provider-runtime-name"
+            value={runtimeName}
+            placeholder={presetInfo(preset).defaultRuntimeName}
+            onChange={(event) => setRuntimeName(event.target.value)}
+          />
+        </Field>
+        <Field id="provider-tool-roots" label="允许读取的目录" helpTopic="advanced" onHelp={setHelpTopic}>
+          <Input
+            id="provider-tool-roots"
+            value={toolRoots}
+            placeholder={TOOL_ROOTS_PLACEHOLDER}
+            onChange={(event) => setToolRoots(event.target.value)}
+          />
+        </Field>
+      </div>
+
+      <ConnectionResult result={testResult} />
+
+      <div className="flex items-center justify-end gap-2">
+        {isEdit && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={testMutation.isPending}
+            onClick={() => testMutation.mutate()}
+          >
+            {testMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plug className="h-3.5 w-3.5" />
+            )}
+            测试连接
+          </Button>
+        )}
+        <Button
+          type="button"
+          disabled={!hasMinimumFields || saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+        >
+          {saveMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          )}
+          测试并保存
+        </Button>
+      </div>
+
+      <HelpDialog topic={helpTopic} onOpenChange={(open) => !open && setHelpTopic(null)} />
+    </div>
+  );
+}
+
+function ProviderFormDialog({
+  open,
+  provider,
+  onClose,
+}: {
+  open: boolean;
+  provider: ModelAPIProvider | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{provider ? "编辑 Provider" : "新增 Provider"}</DialogTitle>
+          <DialogDescription>
+            {provider
+              ? "修改连接信息；API Key 留空会沿用已保存的值。"
+              : "选择预设并填写连接信息，保存前会先做连通性校验。"}
+          </DialogDescription>
+        </DialogHeader>
+        {open && (
+          <ProviderFormBody
+            key={provider?.id ?? "new"}
+            provider={provider}
+            onClose={onClose}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ModelApiSettingsTab() {
+  const wsId = useWorkspaceId();
+  const queryClient = useQueryClient();
+  const runtimesQuery = useQuery(runtimeListOptions(wsId));
+  const providersQuery = useQuery({
+    queryKey: providerQueryKey(wsId),
+    queryFn: () => api.listModelAPIProviders(),
+    enabled: Boolean(wsId),
+  });
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<ModelAPIProvider | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ModelAPIProvider | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<
+    Record<string, ModelAPIConnectionTestResponse>
+  >({});
+
+  const providers = providersQuery.data ?? [];
+
+  const invalidate = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: providerQueryKey(wsId) }),
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.list(wsId) }),
+    ]);
+  };
+
+  const refresh = async () => {
+    await invalidate();
+    toast.success("正在刷新大模型 API 状态");
+  };
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.patchModelAPIProvider(id, { enabled }),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("已更新启用状态");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "更新失败");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteModelAPIProvider(id),
+    onSuccess: async () => {
+      setConfirmDelete(null);
+      await invalidate();
+      toast.success("Provider 已删除");
+    },
+    onError: (error) => {
+      setDeleteError(error instanceof Error ? error.message : "删除失败");
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: (id: string) => api.testModelAPIProvider(id),
+    onMutate: (id) => setTestingId(id),
+    onSuccess: (result, id) => {
+      setTestResults((current) => ({ ...current, [id]: result }));
+      if (result.ok) toast.success("连接测试通过");
+      else toast.error(result.message);
+    },
+    onError: (error, id) => {
+      const result = connectionResultFromApiError(error);
+      if (result) setTestResults((current) => ({ ...current, [id]: result }));
+      toast.error(error instanceof Error ? error.message : "连接测试失败");
+    },
+    onSettled: () => setTestingId(null),
+  });
+
+  const openDelete = (provider: ModelAPIProvider) => {
+    setDeleteError(null);
+    setConfirmDelete(provider);
   };
 
   return (
@@ -722,355 +740,117 @@ export function ModelApiSettingsTab() {
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">大模型 API</h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            选择服务商，填连接信息，保存前会自动测试，成功后成为可选能力来源。
+            管理多个模型 Provider，每个可独立启用、测试与删除；启用后会成为智能体可选的能力来源。
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-fit shrink-0"
-          onClick={() => void refresh()}
-          disabled={runtimesQuery.isFetching || configQuery.isFetching}
-        >
-          <RefreshCw
-            className={cn(
-              "h-3.5 w-3.5",
-              (runtimesQuery.isFetching || configQuery.isFetching) && "animate-spin",
-            )}
-          />
-          刷新状态
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => void refresh()}
+            disabled={providersQuery.isFetching || runtimesQuery.isFetching}
+          >
+            <RefreshCw
+              className={cn(
+                "h-3.5 w-3.5",
+                (providersQuery.isFetching || runtimesQuery.isFetching) && "animate-spin",
+              )}
+            />
+            刷新状态
+          </Button>
+          <Button size="sm" className="shrink-0" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            新增 Provider
+          </Button>
+        </div>
       </div>
 
-      {configQuery.data?.env_override && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>当前环境变量正在覆盖页面保存的配置</AlertTitle>
-          <AlertDescription>
-            页面仍可保存备用配置，但运行时会优先使用 ORIGIN_MODEL_* 或 OPENAI_*。要让页面配置接管，
-            清空这些环境变量后重启后端。
-          </AlertDescription>
-        </Alert>
+      {providersQuery.isLoading ? (
+        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          正在加载…
+        </div>
+      ) : providers.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            还没有配置任何模型 Provider。点击右上角「新增 Provider」开始。
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {providers.map((provider) => (
+            <ProviderCard
+              key={provider.id}
+              provider={provider}
+              testing={testingId === provider.id}
+              testResult={
+                testResults[provider.id] ??
+                connectionResultFromLastTest(provider.last_test, provider.discovered_models)
+              }
+              onToggle={(enabled) => toggleMutation.mutate({ id: provider.id, enabled })}
+              onTest={() => testMutation.mutate(provider.id)}
+              onEdit={() => setEditingProvider(provider)}
+              onDelete={() => openDelete(provider)}
+            />
+          ))}
+        </div>
       )}
 
-      <div className={modelApiSettingsLayoutClasses.shellGrid}>
-        <Card className="min-w-0 border-primary/25">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <CardTitle>连接模型服务</CardTitle>
-                <CardDescription>主流程只保留会影响连接成败的字段，点击保存时会先做连通性校验。</CardDescription>
-              </div>
-              <Badge variant={ready ? "default" : hasMinimumFields ? "secondary" : "outline"}>
-                {ready ? "已启用" : hasMinimumFields ? "可测试" : "待填写"}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className={modelApiSettingsLayoutClasses.providerGrid}>
-              {SETUP_MODES.map((mode) => {
-                const selected = mode.id === form.mode;
-                return (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => selectMode(mode.id)}
-                    className={cn(
-                      "min-w-0 rounded-lg border p-4 text-left transition-colors hover:bg-muted/30",
-                      selected && "border-primary bg-primary/5 shadow-sm",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold leading-snug">{mode.title}</p>
-                        <p className="mt-1 break-words text-xs text-muted-foreground">{mode.eyebrow}</p>
-                      </div>
-                      {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />}
-                    </div>
-                    <p className="mt-3 break-words text-xs leading-relaxed text-muted-foreground">
-                      {mode.description}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+      <ProviderFormDialog
+        open={createOpen}
+        provider={null}
+        onClose={() => setCreateOpen(false)}
+      />
+      <ProviderFormDialog
+        open={editingProvider !== null}
+        provider={editingProvider}
+        onClose={() => setEditingProvider(null)}
+      />
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <FormField
-                id="model-api-key"
-                label="API Key"
-                helpTopic="apiKey"
-                onHelp={setHelpTopic}
-              >
-                <Input
-                  id="model-api-key"
-                  type="password"
-                  value={form.apiKey}
-                  placeholder={configQuery.data?.api_key_configured ? "已保存，留空则继续使用" : "sk-..."}
-                  onChange={(event) => updateForm({ apiKey: event.target.value })}
-                />
-              </FormField>
-              {requiresBaseUrl && (
-                <FormField
-                  id="model-api-base-url"
-                  label="Base URL"
-                  helpTopic="baseUrl"
-                  onHelp={setHelpTopic}
-                >
-                  <Input
-                    id="model-api-base-url"
-                    value={form.baseUrl}
-                    placeholder={activeModeInfo.defaultBaseUrl}
-                    onChange={(event) => updateForm({ baseUrl: event.target.value })}
-                  />
-                </FormField>
-              )}
-              <FormField
-                id="model-api-model"
-                label="模型 ID"
-                helpTopic="modelName"
-                onHelp={setHelpTopic}
-              >
-                <Input
-                  id="model-api-model"
-                  value={form.modelName}
-                  placeholder={MODEL_PLACEHOLDER}
-                  onChange={(event) => updateForm({ modelName: event.target.value })}
-                />
-              </FormField>
-            </div>
-
-            <ConnectionResult result={connectionResult} />
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant="outline"
-                disabled={!hasMinimumFields || testMutation.isPending}
-                onClick={() => testMutation.mutate()}
-              >
-                {testMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plug className="h-3.5 w-3.5" />
-                )}
-                测试连接
-              </Button>
-              <Button
-                disabled={!canSave || saveMutation.isPending}
-                onClick={() => saveMutation.mutate()}
-              >
-                {saveMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                )}
-                测试并保存
-              </Button>
-            </div>
-
-            <Accordion>
-              <AccordionItem value="advanced">
-                <AccordionTrigger className="px-0">
-                  <span className="flex items-center gap-2">
-                    <Settings2 className="h-4 w-4 text-muted-foreground" />
-                    高级信息与手动配置
-                    <HelpIconButton topic="advanced" onOpen={setHelpTopic} />
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {!requiresBaseUrl && (
-                      <FormField
-                        id="model-api-official-base-url"
-                        label="Base URL"
-                        helpTopic="baseUrl"
-                        onHelp={setHelpTopic}
-                      >
-                        <Input
-                          id="model-api-official-base-url"
-                          value={form.baseUrl}
-                          placeholder={activeModeInfo.defaultBaseUrl}
-                          onChange={(event) => updateForm({ baseUrl: event.target.value })}
-                        />
-                      </FormField>
-                    )}
-                    <FormField id="model-api-models" label="可选模型列表" onHelp={setHelpTopic}>
-                      <Input
-                        id="model-api-models"
-                        value={form.modelList}
-                        placeholder={`${form.modelName || "gpt-4.1-mini"},gpt-4.1`}
-                        onChange={(event) => updateForm({ modelList: event.target.value })}
-                      />
-                    </FormField>
-                    <FormField id="model-api-runtime-name" label="能力来源名称" onHelp={setHelpTopic}>
-                      <Input
-                        id="model-api-runtime-name"
-                        value={form.runtimeName}
-                        placeholder={activeModeInfo.defaultRuntimeName}
-                        onChange={(event) => updateForm({ runtimeName: event.target.value })}
-                      />
-                    </FormField>
-                    <FormField id="model-api-tool-roots" label="允许读取的目录" onHelp={setHelpTopic}>
-                      <Input
-                        id="model-api-tool-roots"
-                        value={form.toolRoots}
-                        placeholder={TOOL_ROOTS_PLACEHOLDER}
-                        onChange={(event) => updateForm({ toolRoots: event.target.value })}
-                      />
-                    </FormField>
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <CopyBlock
-                      title="Mac App 环境变量"
-                      description="只在你需要绕过页面保存、继续使用系统环境变量时复制。"
-                      value={snippets.launchctl}
-                      displayValue={displaySnippets.launchctl}
-                      onCopy={() => void copyText(snippets.launchctl, "Mac App 配置命令已复制")}
-                    />
-                    <CopyBlock
-                      title="终端 / daemon"
-                      description="适合从终端手动启动后端或调试进程。"
-                      value={snippets.shell}
-                      displayValue={displaySnippets.shell}
-                      onCopy={() => void copyText(snippets.shell, "终端配置片段已复制")}
-                    />
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </CardContent>
-        </Card>
-
-        <Card className="min-w-0">
-          <CardHeader>
-            <CardTitle>连接状态</CardTitle>
-            <CardDescription>保存后会出现在智能体的能力来源里。</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-lg border bg-muted/15 px-4 py-3">
-              <FieldRow label="状态" value={ready ? "已就绪" : configured ? "已保存，待确认" : "未配置"} />
-              <FieldRow label="能力来源" value={apiRuntime?.name ?? configQuery.data?.runtime_name ?? "未创建"} />
-              <FieldRow label="默认模型" value={configQuery.data?.model_name ?? metadata.default_model ?? "—"} mono />
-              <FieldRow label="配置来源" value={configSource} mono />
-              <FieldRow label="API Key" value={configured ? "已配置" : "未配置"} />
-              <FieldRow
-                label="最近检测"
-                value={
-                  savedConnectionResult
-                    ? `${savedConnectionResult.ok ? "通过" : "失败"} · ${formatLastTestedAt(
-                        savedConnectionResult.last_tested_at ?? "",
-                      )}`
-                    : "未检测"
-                }
-              />
-              {savedConnectionResult?.latency_ms !== undefined && (
-                <FieldRow label="响应耗时" value={`${savedConnectionResult.latency_ms}ms`} />
-              )}
-            </div>
-
-            <div className="rounded-lg border bg-muted/15 px-4 py-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Wrench className="h-4 w-4" />
-                当前开放工具
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {["list_directory", "read_text_file", "search_text"].map((name) => (
-                  <Badge
-                    key={name}
-                    variant="outline"
-                    className={modelApiSettingsLayoutClasses.codeBadge}
-                  >
-                    {name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            <Button render={<AppLink href={workspacePaths.agents()} />}>
-              去智能体选择
-              <ArrowRight className="h-3.5 w-3.5" />
+      <Dialog
+        open={confirmDelete !== null}
+        onOpenChange={(v) => !v && setConfirmDelete(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除 Provider</DialogTitle>
+            <DialogDescription>
+              确定要删除「{confirmDelete?.name}」吗？该 Provider 正在被智能体使用时无法删除。
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>删除失败</AlertTitle>
+              <AlertDescription>{deleteError}</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDelete(null)}
+              disabled={deleteMutation.isPending}
+            >
+              取消
             </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="flex items-start gap-3">
-              <KeyRound className="mt-0.5 h-5 w-5 text-muted-foreground" />
-              <div>
-                <CardTitle>已识别模型</CardTitle>
-                <CardDescription>保存多个模型后，创建智能体时可选择。</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {models.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {models.map((model) => (
-                  <Badge
-                    key={model.id}
-                    variant={model.default ? "default" : "outline"}
-                    className="max-w-full"
-                    title={model.id}
-                  >
-                    <span className="truncate">{model.label ?? model.id}</span>
-                    {model.default && <span>默认</span>}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">暂无模型，保存后会显示。</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-start gap-3">
-              <Terminal className="mt-0.5 h-5 w-5 text-muted-foreground" />
-              <div>
-                <CardTitle>变量族</CardTitle>
-                <CardDescription>仅给排障和迁移使用，主流程不需要记这些变量。</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border px-3 py-2">
-              <p className="text-xs font-medium">必填变量</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {activeModeInfo.requiredEnv.map((name) => (
-                  <Badge
-                    key={name}
-                    variant="outline"
-                    className={modelApiSettingsLayoutClasses.codeBadge}
-                  >
-                    {name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-lg border px-3 py-2">
-              <p className="text-xs font-medium">常用可选</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {activeModeInfo.optionalEnv.map((name) => (
-                  <Badge
-                    key={name}
-                    variant="outline"
-                    className={modelApiSettingsLayoutClasses.codeBadge}
-                  >
-                    {name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <HelpDialog topic={helpTopic} onOpenChange={(open) => !open && setHelpTopic(null)} />
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (confirmDelete) deleteMutation.mutate(confirmDelete.id);
+              }}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              删除
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

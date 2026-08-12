@@ -208,8 +208,10 @@ export interface ApiClientOptions {
   identity?: ApiClientIdentity;
 }
 
-export interface ModelAPIConfigPayload {
-  provider?: string;
+export interface ModelAPIProviderPayload {
+  preset?: string;
+  name?: string;
+  enabled?: boolean;
   api_key?: string;
   base_url?: string;
   model_name?: string;
@@ -227,7 +229,19 @@ export interface ModelAPILastTest {
   latency_ms?: number;
 }
 
-export interface ModelAPIConfigResponse {
+export interface ModelAPIProviderModel {
+  id: string;
+  label?: string;
+  provider?: string;
+  default?: boolean;
+}
+
+export interface ModelAPIProvider {
+  id: string;
+  name: string;
+  preset: string;
+  enabled: boolean;
+  readonly: boolean;
   provider: string;
   api_key_configured: boolean;
   base_url?: string;
@@ -239,13 +253,7 @@ export interface ModelAPIConfigResponse {
   config_source: string;
   status: "online" | "offline";
   ready: boolean;
-  env_override: boolean;
-  models?: Array<{
-    id: string;
-    label?: string;
-    provider?: string;
-    default?: boolean;
-  }>;
+  models?: ModelAPIProviderModel[];
   last_test?: ModelAPILastTest;
   discovered_models?: string[];
 }
@@ -1044,21 +1052,47 @@ export class ApiClient {
     return this.fetch("/api/config");
   }
 
-  async getModelAPIConfig(): Promise<ModelAPIConfigResponse> {
-    return this.fetch("/api/model-api-config/");
+  // Model API providers. List / create / update / patch / delete all return
+  // the refreshed provider list (server-side the list is the source of truth),
+  // while the single-object read and the connection test return one object.
+  async listModelAPIProviders(): Promise<ModelAPIProvider[]> {
+    return this.fetch("/api/model-api-config/providers");
   }
 
-  async saveModelAPIConfig(data: ModelAPIConfigPayload): Promise<ModelAPIConfigResponse> {
-    return this.fetch("/api/model-api-config/", {
+  async createModelAPIProvider(data: ModelAPIProviderPayload): Promise<ModelAPIProvider[]> {
+    return this.fetch("/api/model-api-config/providers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateModelAPIProvider(id: string, data: ModelAPIProviderPayload): Promise<ModelAPIProvider[]> {
+    return this.fetch(`/api/model-api-config/providers/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   }
 
-  async testModelAPIConfig(data: ModelAPIConfigPayload): Promise<ModelAPIConnectionTestResponse> {
-    return this.fetch("/api/model-api-config/test", {
-      method: "POST",
+  async patchModelAPIProvider(id: string, data: { enabled: boolean }): Promise<ModelAPIProvider[]> {
+    return this.fetch(`/api/model-api-config/providers/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
+    });
+  }
+
+  async deleteModelAPIProvider(id: string): Promise<ModelAPIProvider[]> {
+    return this.fetch(`/api/model-api-config/providers/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async testModelAPIProvider(
+    id: string,
+    data?: ModelAPIProviderPayload,
+  ): Promise<ModelAPIConnectionTestResponse> {
+    return this.fetch(`/api/model-api-config/providers/${id}/test`, {
+      method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
     });
   }
 

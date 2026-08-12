@@ -59,11 +59,13 @@ export function ModelSettingsTab({
           </PropRow>
           <PropRow label="模型">
             <ModelPicker
+              runtimes={runtimes}
               runtimeId={runtime?.id ?? null}
-              runtimeOnline={runtime?.status === "online"}
               value={agent.model}
               canEdit={canEdit}
-              onChange={(model) => onUpdate(agent.id, { model })}
+              onChange={(model, nextRuntimeId) =>
+                onUpdate(agent.id, { model, runtime_id: nextRuntimeId })
+              }
             />
           </PropRow>
         </div>

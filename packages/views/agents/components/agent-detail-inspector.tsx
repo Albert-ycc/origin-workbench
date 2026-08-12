@@ -48,7 +48,6 @@ import { VisibilityPicker } from "./inspector/visibility-picker";
 
 interface InspectorProps {
   agent: Agent;
-  runtime: AgentRuntime | null;
   owner: MemberWithUser | null;
   presence: AgentPresenceDetail | null | undefined;
   // Below: needed for inline edit. The inspector now owns the editing surface
@@ -82,7 +81,6 @@ interface InspectorProps {
  */
 export function AgentDetailInspector({
   agent,
-  runtime,
   owner,
   presence,
   runtimes,
@@ -92,7 +90,6 @@ export function AgentDetailInspector({
   onUpdate,
 }: InspectorProps) {
   const update = (data: Record<string, unknown>) => onUpdate(agent.id, data);
-  const isOnline = runtime?.status === "online";
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto rounded-lg border bg-background">
@@ -123,11 +120,13 @@ export function AgentDetailInspector({
         </PropRow>
         <PropRow label="模型" interactive={false}>
           <ModelPicker
+            runtimes={runtimes}
             runtimeId={agent.runtime_id}
-            runtimeOnline={!!isOnline}
             value={agent.model ?? ""}
             canEdit={canEdit}
-            onChange={(m) => update({ model: m })}
+            onChange={(m, nextRuntimeId) =>
+              update({ model: m, runtime_id: nextRuntimeId })
+            }
           />
         </PropRow>
         <PropRow label="可见性" interactive={false}>

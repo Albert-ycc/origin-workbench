@@ -145,7 +145,6 @@ export function AgentHero({
       {editing && (
         <EditAgentDialog
           agent={agent}
-          runtime={runtime}
           owner={owner}
           presence={presence}
           runtimes={runtimes}
