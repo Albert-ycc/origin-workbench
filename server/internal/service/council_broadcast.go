@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -677,6 +679,60 @@ func pickSalonSpeaker(roster []CouncilBroadcastMemberInfo, priorAgentID string) 
 	return next, true
 }
 
+// roomAgentPersonaQuerier 是 roomPersonaOverride 依赖的最小查询面，
+// *db.Queries 天然满足；测试用 fake 注入预设数据。
+type roomAgentPersonaQuerier interface {
+	GetRoomAgentPersona(ctx context.Context, arg db.GetRoomAgentPersonaParams) (db.RoomAgentPersona, error)
+}
+
+// roomPersonaOverride 按 (room_id, agent_id) 查 room_agent_persona 的
+// persona_override，返回 map 形式注入 CouncilBroadcastContext.PersonaOverride。
+// sessionID 传 CouncilSessionID：room 场景它即 room.ID，能查到该 agent 的
+// override；council/team 场景它是 council/team UUID，查不到行，返回 nil。
+// 查询/解析失败只记日志，不阻塞 relay 链。
+func roomPersonaOverride(ctx context.Context, q roomAgentPersonaQuerier, sessionID, agentID string) map[string]any {
+	if sessionID == "" || agentID == "" {
+		return nil
+	}
+	roomUUID, err := util.ParseUUID(sessionID)
+	if err != nil || !roomUUID.Valid {
+		return nil
+	}
+	agentUUID, err := util.ParseUUID(agentID)
+	if err != nil || !agentUUID.Valid {
+		return nil
+	}
+	row, err := q.GetRoomAgentPersona(ctx, db.GetRoomAgentPersonaParams{
+		RoomID:  roomUUID,
+		AgentID: agentUUID,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("room persona override lookup failed",
+				"room_id", sessionID,
+				"agent_id", agentID,
+				"error", err)
+		}
+		return nil
+	}
+	if len(row.PersonaOverride) == 0 {
+		return nil
+	}
+	var override map[string]any
+	if err := json.Unmarshal(row.PersonaOverride, &override); err != nil {
+		slog.Warn("room persona override unmarshal failed",
+			"room_id", sessionID,
+			"agent_id", agentID,
+			"error", err)
+		return nil
+	}
+	// 空 map 同样视为无覆盖，与 daemon 侧 len()==0 判据保持一致。
+	if len(override) == 0 {
+		return nil
+	}
+	return override
+}
+
 // enqueueSalonOpening 是 salon 模式的开场轮：选第一位发言者（优先 convener，
 // 否则 roster[0]），TurnIndex=1。
 func (s *TaskService) enqueueSalonOpening(
@@ -802,6 +858,7 @@ func (s *TaskService) enqueueSalonNextTurn(
 		MaxTurns:         prior.MaxTurns,
 		RelayGeneration:  prior.RelayGeneration,
 		Transcript:       transcript,
+		PersonaOverride:  roomPersonaOverride(ctx, s.Queries, prior.CouncilSessionID, next.AgentID),
 	}
 	contextJSON, err := json.Marshal(payload)
 	if err != nil {

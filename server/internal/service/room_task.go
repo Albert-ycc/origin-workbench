@@ -238,6 +238,7 @@ func (s *TaskService) EnqueueRoomChatTasks(
 		Role:             CouncilBroadcastRoleSalon,
 		TurnIndex:        1,
 		MaxTurns:         len(rosterInfo),
+		PersonaOverride:  roomPersonaOverride(ctx, q, util.UUIDToString(room.ID), openerID),
 	}
 	contextJSON, err := json.Marshal(broadcastCtx)
 	if err != nil {
