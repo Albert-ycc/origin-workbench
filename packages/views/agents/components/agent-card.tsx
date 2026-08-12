@@ -5,6 +5,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import type { AgentRow } from "./agent-columns";
 import { AgentRowActions } from "./agent-row-actions";
+import { runtimeCapabilityCopy, deriveRuntimeCapability } from "@multica/core/runtimes";
 
 export const agentBadgeMetaLabels = [
   "入职时间",
@@ -91,6 +92,9 @@ export function AgentCard({
               已归档
             </Badge>
           )}
+          {!archived && (
+            <CapabilityBadge capability={deriveRuntimeCapability(row.runtime)} />
+          )}
         </div>
 
         <p
@@ -144,5 +148,17 @@ export function AgentCard({
         </div>
       </button>
     </article>
+  );
+}
+
+function CapabilityBadge({ capability }: { capability: "api_readonly" | "local_execute" | "unavailable" }) {
+  const copy = runtimeCapabilityCopy[capability];
+  return (
+    <span
+      className={cn("inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium", copy.badgeClassName)}
+      title={copy.description}
+    >
+      {copy.label}
+    </span>
   );
 }
