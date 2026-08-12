@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -231,30 +232,44 @@ func (h *Handler) DeleteModelAPIProvider(w http.ResponseWriter, r *http.Request)
 
 	workspaceID := h.resolveWorkspaceID(r)
 	userID := requestUserID(r)
-	daemonID := runtimeconfig.SavedProvider{ID: id}.DaemonID(userID)
 
 	runtimes, err := h.Queries.ListAgentRuntimes(r.Context(), parseUUID(workspaceID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list runtimes")
 		return
 	}
+
+	// The providers file is shared across users, but each user gets their own
+	// runtime row (daemon_id embeds the owner). Reject deletion while ANY
+	// user's runtime for this provider still has active agents, and only touch
+	// the requesting user's own runtime row.
 	var target *db.AgentRuntime
+	var totalActive int64
 	for i := range runtimes {
-		if runtimes[i].DaemonID.Valid && runtimes[i].DaemonID.String == daemonID {
-			target = &runtimes[i]
-			break
+		rt := &runtimes[i]
+		if !runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata) || !rt.DaemonID.Valid || !rt.OwnerID.Valid {
+			continue
 		}
-	}
-	if target != nil {
-		activeCount, err := h.Queries.CountActiveAgentsByRuntime(r.Context(), target.ID)
+		owner := uuidToString(rt.OwnerID)
+		expectedDaemonID := runtimeconfig.SavedProvider{ID: id}.DaemonID(owner)
+		if rt.DaemonID.String != expectedDaemonID {
+			continue
+		}
+		count, err := h.Queries.CountActiveAgentsByRuntime(r.Context(), rt.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to check runtime dependencies")
 			return
 		}
-		if activeCount > 0 {
-			writeError(w, http.StatusConflict, fmt.Sprintf("该 Provider 正被 %d 个 agent 使用，请先解绑或归档", activeCount))
-			return
+		totalActive += count
+		if owner == userID {
+			target = rt
 		}
+	}
+	if totalActive > 0 {
+		writeError(w, http.StatusConflict, fmt.Sprintf("该 Provider 正被 %d 个 agent 使用，请先解绑或归档", totalActive))
+		return
+	}
+	if target != nil {
 		if err := h.Queries.DeleteArchivedAgentsByRuntime(r.Context(), target.ID); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to clean up archived agents")
 			return
@@ -496,7 +511,11 @@ func modelAPIProviderResponseFrom(p runtimeconfig.SavedProvider, cfg runtimeconf
 }
 
 func (h *Handler) listModelAPIProvidersResponse() []modelAPIProviderResponse {
-	providers := runtimeconfig.ListProviders(os.Getenv)
+	providers, err := runtimeconfig.ListProviders(os.Getenv)
+	if err != nil {
+		slog.Warn("failed to load model API providers", "error", err)
+		providers = nil
+	}
 	out := make([]modelAPIProviderResponse, 0, len(providers))
 	for _, p := range providers {
 		out = append(out, modelAPIProviderResponseFrom(p, h.providerConfig(p)))

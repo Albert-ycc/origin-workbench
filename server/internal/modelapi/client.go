@@ -172,8 +172,8 @@ func (c *Client) TestConnection(ctx context.Context, model string) ConnectionTes
 
 func (c *Client) connectionTestError(err error) ConnectionTestResult {
 	detail := err.Error()
-	if c != nil && c.apiKey != "" {
-		detail = strings.ReplaceAll(detail, c.apiKey, "[redacted]")
+	if c != nil {
+		detail = redactAPIKey(detail, c.apiKey)
 	}
 	lower := strings.ToLower(detail)
 	code := "api_error"
@@ -211,6 +211,32 @@ func (c *Client) connectionTestError(err error) ConnectionTestResult {
 		Message: message,
 		Detail:  detail,
 	}
+}
+
+// redactAPIKey scrubs the API key and common truncated forms of it from error
+// detail so a mangled key echo can't leak the full secret to the frontend.
+func redactAPIKey(value, apiKey string) string {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return value
+	}
+	out := strings.ReplaceAll(value, apiKey, "[redacted]")
+	for _, variant := range secretSummaryVariants(apiKey) {
+		out = strings.ReplaceAll(out, variant, "[redacted]")
+	}
+	return out
+}
+
+// secretSummaryVariants returns the "first6…last4" digest forms of a long
+// secret, used to scrub truncated key echoes from error detail.
+func secretSummaryVariants(secret string) []string {
+	const head, tail = 6, 4
+	if len(secret) <= head+tail {
+		return nil
+	}
+	h := secret[:head]
+	t := secret[len(secret)-tail:]
+	return []string{h + t, h + "..." + t, h + "…" + t}
 }
 
 func (c *Client) Chat(ctx context.Context, req ChatRequest) (res ChatResult, err error) {

@@ -400,6 +400,13 @@ func TestProviderConfigForRuntime(t *testing.T) {
 	if !ok || cfgLegacy.APIKey != "sk-env" {
 		t.Fatalf("legacy provider config = %+v (ok=%v)", cfgLegacy, ok)
 	}
+
+	// Empty provider_id with no env and no "legacy" file entry must not fall
+	// back to an arbitrary first-enabled provider (p_a).
+	cfgNone, ok := ProviderConfigForRuntime(rawLegacy, getenv)
+	if ok {
+		t.Fatalf("expected no config for empty provider_id with only named providers, got %+v", cfgNone)
+	}
 }
 
 func TestListProvidersAppendsReadOnlyEnvProvider(t *testing.T) {
@@ -411,12 +418,63 @@ func TestListProvidersAppendsReadOnlyEnvProvider(t *testing.T) {
 		EnvAPIKey:     "sk-env",
 		EnvModelName:  "env-model",
 	}
-	providers := ListProviders(func(key string) string { return env[key] })
+	providers, err := ListProviders(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
 	if len(providers) != 2 {
 		t.Fatalf("providers = %d, want 2", len(providers))
 	}
 	if providers[1].ID != EnvProviderID || providers[1].Name != "环境变量" {
 		t.Fatalf("env provider = %+v", providers[1])
+	}
+}
+
+func TestLoadProvidersFileFiltersEnvProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{"version":2,"providers":[
+		{"id":"p_a","enabled":true,"provider":"custom","api_key":"sk-a","model_name":"a-model"},
+		{"id":"env","name":"Ghost Env","enabled":true,"provider":"custom","api_key":"sk-env","model_name":"env-model"}
+	]}`)
+
+	providers, err := LoadProvidersFile(path)
+	if err != nil {
+		t.Fatalf("load providers: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers = %d, want 1 (env ghost filtered)", len(providers))
+	}
+	if providers[0].ID != "p_a" {
+		t.Fatalf("expected p_a to survive, got %+v", providers[0])
+	}
+}
+
+func TestListProvidersReturnsErrorOnUnreadableFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/model_api_config.json"
+	writeFile(t, path, `{"version":2,"providers":[`)
+
+	providers, err := ListProviders(func(key string) string {
+		if key == EnvConfigFile {
+			return path
+		}
+		return ""
+	})
+	if err == nil {
+		t.Fatalf("expected read error for corrupt providers file, providers=%+v", providers)
+	}
+}
+
+func TestRedactSecretRedactsTruncatedKey(t *testing.T) {
+	secret := "sk-live-1234567890abcdef"
+	detail := "invalid api key: " + secret[:6] + "…" + secret[len(secret)-4:]
+	out := redactSecret(detail, secret)
+	if strings.Contains(out, secret[:6]+"…"+secret[len(secret)-4:]) {
+		t.Fatalf("truncated key form not redacted: %q", out)
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("full key not redacted: %q", out)
 	}
 }
 

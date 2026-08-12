@@ -418,8 +418,9 @@ func (h *Handler) syncConfiguredAPIRuntimes(r *http.Request, workspaceID, userID
 		ownerID = parseUUID(userID)
 	}
 
+	providers, providersErr := runtimeconfig.ListProviders(os.Getenv)
 	synced := make(map[string]struct{})
-	for _, p := range runtimeconfig.ListProviders(os.Getenv) {
+	for _, p := range providers {
 		if !p.Enabled {
 			continue
 		}
@@ -463,12 +464,26 @@ func (h *Handler) syncConfiguredAPIRuntimes(r *http.Request, workspaceID, userID
 		}
 	}
 
+	// If the providers file could not be read, the synced set is not
+	// authoritative — skip the orphan cleanup entirely rather than risk
+	// deleting or taking offline runtimes that are still configured.
+	if providersErr != nil {
+		slog.Warn("API runtime cleanup skipped: providers file unreadable", "error", providersErr)
+		return nil
+	}
+
 	runtimes, err := h.Queries.ListAgentRuntimes(r.Context(), parseUUID(workspaceID))
 	if err != nil {
 		return err
 	}
 	for _, rt := range runtimes {
 		if !runtimeconfig.IsAPIRuntimeMetadata(rt.Metadata) || !rt.DaemonID.Valid {
+			continue
+		}
+		// Only reconcile API runtimes owned by the requesting user. Runtimes
+		// owned by other users are out of scope for this sync and must never
+		// be deleted or taken offline here.
+		if !rt.OwnerID.Valid || rt.OwnerID != ownerID {
 			continue
 		}
 		if _, ok := synced[rt.DaemonID.String]; ok {

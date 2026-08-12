@@ -264,7 +264,7 @@ func LoadProvidersFile(path string) ([]SavedProvider, error) {
 			if err := json.Unmarshal(raw, &file); err != nil {
 				return nil, err
 			}
-			return file.Providers, nil
+			return filterSavedProviders(file.Providers), nil
 		}
 	}
 
@@ -294,11 +294,27 @@ func LoadProvidersFile(path string) ([]SavedProvider, error) {
 	}}, nil
 }
 
+// filterSavedProviders drops reserved virtual provider IDs that must never be
+// persisted (the env provider), in case the file was hand-edited to carry one.
+// Such a ghost entry would shadow the real env provider and be un-deletable via
+// the write endpoints.
+func filterSavedProviders(providers []SavedProvider) []SavedProvider {
+	out := providers[:0]
+	for _, p := range providers {
+		if p.ID == EnvProviderID {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func SaveProvidersFile(path string, providers []SavedProvider) error {
 	if strings.TrimSpace(path) == "" {
 		return os.ErrInvalid
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	sanitized := make([]SavedProvider, 0, len(providers))
@@ -309,7 +325,33 @@ func SaveProvidersFile(path string, providers []SavedProvider) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o600)
+	raw = append(raw, '\n')
+
+	// Write atomically: write a temp file in the same directory, then rename
+	// over the target. A crash mid-write must never leave a truncated document
+	// that reads as "zero providers" and triggers a full runtime purge.
+	tmp, err := os.CreateTemp(dir, ".model_api_config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 func sanitizeSavedProvider(p SavedProvider) SavedProvider {
@@ -401,9 +443,12 @@ func ApplyProviderPreset(p SavedProvider) SavedProvider {
 }
 
 // ListProviders returns the persisted providers plus a read-only env provider
-// entry when environment configuration is present.
-func ListProviders(getenv func(string) string) []SavedProvider {
-	providers, _ := LoadProvidersFile(ConfigFilePath(getenv))
+// entry when environment configuration is present. A non-nil error means the
+// providers file could not be read (as opposed to simply being absent) — the
+// returned slice may still carry the env provider, but the caller must not
+// treat it as an authoritative full list.
+func ListProviders(getenv func(string) string) ([]SavedProvider, error) {
+	providers, err := LoadProvidersFile(ConfigFilePath(getenv))
 	if cfg, ok := LoadAPIRuntimeConfig(getenv); ok {
 		providers = append(providers, SavedProvider{
 			ID:          EnvProviderID,
@@ -418,11 +463,15 @@ func ListProviders(getenv func(string) string) []SavedProvider {
 			ToolRoots:   strings.Join(cfg.ToolRoots, ","),
 		})
 	}
-	return providers
+	return providers, err
 }
 
 func FindProvider(id string, getenv func(string) string) (SavedProvider, bool) {
-	for _, p := range ListProviders(getenv) {
+	providers, err := ListProviders(getenv)
+	if err != nil {
+		return SavedProvider{}, false
+	}
+	for _, p := range providers {
 		if p.ID == id {
 			return p, true
 		}
@@ -458,8 +507,9 @@ func ProviderIDFromMetadata(raw []byte) string {
 }
 
 // ProviderConfigForRuntime resolves the config for a runtime's metadata. When
-// the metadata carries a provider_id it loads that provider; otherwise it falls
-// back to the legacy env-first-file behavior for pre-migration runtimes.
+// the metadata carries a provider_id it loads that provider; otherwise it only
+// recognizes the environment config or an explicit "legacy" file entry for
+// pre-migration runtimes — never an arbitrary first-enabled provider.
 func ProviderConfigForRuntime(rawMetadata []byte, getenv func(string) string) (APIRuntimeConfig, bool) {
 	if id := ProviderIDFromMetadata(rawMetadata); id != "" {
 		cfg, ok, err := LoadProviderConfigByID(id, getenv)
@@ -468,7 +518,13 @@ func ProviderConfigForRuntime(rawMetadata []byte, getenv func(string) string) (A
 		}
 		return cfg, true
 	}
-	return LoadAPIRuntimeConfigFromSources(getenv)
+	if cfg, ok := LoadAPIRuntimeConfig(getenv); ok {
+		return cfg, true
+	}
+	if cfg, ok, err := LoadProviderConfigByID(LegacyProviderID, getenv); err == nil && ok {
+		return cfg, true
+	}
+	return APIRuntimeConfig{}, false
 }
 
 func normalizeModelIDs(ids []string) []string {
@@ -503,8 +559,25 @@ func redactSecret(value string, secrets ...string) string {
 			continue
 		}
 		out = strings.ReplaceAll(out, secret, "[redacted]")
+		// Providers may echo a truncated form of the key (e.g. "sk-abcd…wxyz");
+		// redact the first-6/last-4 summary too so a mangled key doesn't leak.
+		for _, variant := range secretSummaryVariants(secret) {
+			out = strings.ReplaceAll(out, variant, "[redacted]")
+		}
 	}
 	return out
+}
+
+// secretSummaryVariants returns the "first6…last4" digest forms of a long
+// secret, used to scrub truncated key echoes from error detail.
+func secretSummaryVariants(secret string) []string {
+	const head, tail = 6, 4
+	if len(secret) <= head+tail {
+		return nil
+	}
+	h := secret[:head]
+	t := secret[len(secret)-tail:]
+	return []string{h + t, h + "..." + t, h + "…" + t}
 }
 
 func (c APIRuntimeConfig) Status() string {

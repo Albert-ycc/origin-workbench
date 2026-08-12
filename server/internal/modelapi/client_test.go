@@ -271,6 +271,18 @@ func TestClientTestConnectionClassifiesAuthFailure(t *testing.T) {
 	}
 }
 
+func TestRedactAPIKeyRedactsTruncatedForm(t *testing.T) {
+	key := "sk-live-1234567890abcdef"
+	detail := "auth failed for " + key[:6] + "…" + key[len(key)-4:]
+	out := redactAPIKey(detail, key)
+	if strings.Contains(out, key[:6]+"…"+key[len(key)-4:]) {
+		t.Fatalf("truncated key form not redacted: %q", out)
+	}
+	if strings.Contains(out, key) {
+		t.Fatalf("full key not redacted: %q", out)
+	}
+}
+
 // SSE 响应构建辅助
 func sseLines(chunks ...string) string {
 	var b strings.Builder

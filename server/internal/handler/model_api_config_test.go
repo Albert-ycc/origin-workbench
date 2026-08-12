@@ -174,10 +174,10 @@ func TestDeleteModelAPIProviderRejectsWhenActiveAgentBound(t *testing.T) {
 	daemonID := "origin-api:" + testUserID + ":p_del"
 	var runtimeID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at)
-		VALUES ($1, $2, 'Delete Me', 'cloud', 'custom', 'online', '', '{}'::jsonb, now())
+		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at)
+		VALUES ($1, $2, 'Delete Me', 'cloud', 'custom', 'online', '', $3, $4, now())
 		RETURNING id
-	`, testWorkspaceID, daemonID).Scan(&runtimeID); err != nil {
+	`, testWorkspaceID, daemonID, []byte(`{"api_runtime":true,"managed_by":"origin_api"}`), testUserID).Scan(&runtimeID); err != nil {
 		t.Fatalf("insert runtime: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_runtime WHERE id = $1`, runtimeID) })
@@ -202,5 +202,86 @@ func TestDeleteModelAPIProviderRejectsWhenActiveAgentBound(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "agent") {
 		t.Fatalf("expected agent-bound error, got %s", w.Body.String())
+	}
+}
+
+func TestDeleteModelAPIProviderRejectsWhenOtherUserAgentBound(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "model_api_config.json")
+	clearModelAPIConfigEnv(t, path)
+	writeProvidersFile(t, path, `{"version":2,"providers":[{"id":"p_del","name":"Shared","preset":"custom","enabled":true,"provider":"custom","api_key":"sk-x","base_url":"https://x.example.test/v1","model_name":"m1"}]}`)
+
+	var otherUserID string
+	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Other User', 'other-provider-test@multica.ai') RETURNING id`).Scan(&otherUserID); err != nil {
+		t.Fatalf("insert other user: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM "user" WHERE id = $1`, otherUserID) })
+
+	daemonID := "origin-api:" + otherUserID + ":p_del"
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at)
+		VALUES ($1, $2, 'Shared', 'cloud', 'custom', 'online', '', $3, $4, now())
+		RETURNING id
+	`, testWorkspaceID, daemonID, []byte(`{"api_runtime":true,"managed_by":"origin_api"}`), otherUserID).Scan(&runtimeID); err != nil {
+		t.Fatalf("insert runtime: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_runtime WHERE id = $1`, runtimeID) })
+
+	var agentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent (workspace_id, name, description, runtime_mode, runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id)
+		VALUES ($1, 'Other Agent', '', 'cloud', '{}'::jsonb, $2, 'workspace', 1, $3)
+		RETURNING id
+	`, testWorkspaceID, runtimeID, otherUserID).Scan(&agentID); err != nil {
+		t.Fatalf("insert agent: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent WHERE id = $1`, agentID) })
+
+	w := httptest.NewRecorder()
+	req := newRequest(http.MethodDelete, "/api/model-api-config/providers/p_del", nil)
+	req = withURLParam(req, "id", "p_del")
+	testHandler.DeleteModelAPIProvider(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for provider used by another user, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncConfiguredAPIRuntimesSkipsCleanupOnUnreadableProvidersFile(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "model_api_config.json")
+	clearModelAPIConfigEnv(t, path)
+	// Corrupt the providers file so it reads as "unreadable", not "absent".
+	writeProvidersFile(t, path, `{"version":2,"providers":[`)
+
+	daemonID := "origin-api:" + testUserID + ":ghost"
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at)
+		VALUES ($1, $2, 'Ghost', 'cloud', 'custom', 'online', '', $3, $4, now())
+		RETURNING id
+	`, testWorkspaceID, daemonID, []byte(`{"api_runtime":true,"managed_by":"origin_api"}`), testUserID).Scan(&runtimeID); err != nil {
+		t.Fatalf("insert runtime: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_runtime WHERE id = $1`, runtimeID) })
+
+	req := newRequest(http.MethodGet, "/api/runtimes", nil)
+	if err := testHandler.syncConfiguredAPIRuntimes(req, testWorkspaceID, testUserID); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	var count int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM agent_runtime WHERE id = $1`, runtimeID).Scan(&count); err != nil {
+		t.Fatalf("count runtime: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected orphan runtime to survive unreadable providers file, count=%d", count)
 	}
 }
