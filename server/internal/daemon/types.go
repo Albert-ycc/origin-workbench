@@ -129,6 +129,12 @@ type CouncilBroadcastData struct {
 	// Salon transcript：service 端打包的历史发言（speaker + content），
 	// daemon 自己看不到表里别人写的 chat_message，必须通过 payload 拿。
 	Transcript []CouncilSalonTurnData `json:"transcript,omitempty"`
+	// PersonaOverride mirrors service.CouncilBroadcastContext.PersonaOverride —
+	// the room's per-agent persona customization
+	// (room_agent_persona.persona_override JSONB). Injected as the
+	// highest-priority persona layer in the council prompt. Empty for
+	// council / team broadcasts that have no room.
+	PersonaOverride map[string]any `json:"persona_override,omitempty"`
 }
 
 // CouncilSalonTurnData 是 salon transcript 的一条发言，镜像 service.CouncilSalonTurn。

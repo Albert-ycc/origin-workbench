@@ -1,20 +1,68 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/personabible"
 )
+
+// PromptLayers assembles a Council @全体 relay system prompt as five ordered
+// layers. Layers 1–3 are byte-stable across turns of the same relay — the
+// operator profile, the persona card, and the role shape never change while
+// the relay runs, so the shared prefix is KV-cache friendly. Layer 4 (task
+// context) grows as the salon transcript accumulates; layer 5 (turn tail)
+// carries the per-turn requested skills.
+type PromptLayers struct {
+	OperatorPreferences string // L1 — user identity card (may be empty)
+	Persona             string // L2 — personabible role card + room persona override
+	RoleInstructions    string // L3 — council role shape (lead / follower / salon)
+	TaskContext         string // L4 — topic, roster, turn state, transcript
+	TurnTail            string // L5 — requested skills
+}
+
+// Build concatenates the layers in order, skipping empty layers. Each
+// non-empty layer is trimmed, adjacent layers are separated by a blank line,
+// and the result always ends with a single newline.
+func (l PromptLayers) Build() string {
+	raw := []string{
+		strings.TrimSpace(l.OperatorPreferences),
+		strings.TrimSpace(l.Persona),
+		strings.TrimSpace(l.RoleInstructions),
+		strings.TrimSpace(l.TaskContext),
+		strings.TrimSpace(l.TurnTail),
+	}
+	parts := make([]string, 0, len(raw))
+	for _, s := range raw {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n\n") + "\n"
+}
 
 // BuildPrompt constructs the task prompt for an agent CLI.
 // Keep this minimal — detailed instructions live in CLAUDE.md / AGENTS.md
 // injected by execenv.InjectRuntimeConfig.
 //
+// Council @全体 relay tasks take the five-layer path
+// (buildCouncilBroadcastPrompt): the persona and role layers are byte-stable
+// across turns of the same relay, which keeps the shared prefix KV-cache
+// friendly as the transcript grows.
+//
 // Origin §14.10: when task.OperatorPreferences is set, its content is
 // prepended as the closest layer of the system prompt — agents must read it
 // before doing anything else so user-written preferences override defaults.
 func BuildPrompt(task Task) string {
+	if task.CouncilBroadcast != nil {
+		return buildCouncilBroadcastPrompt(task)
+	}
 	body := buildPromptBody(task)
 	return prependOperatorPreferences(task.OperatorPreferences, body)
 }
@@ -191,143 +239,7 @@ func buildChatPrompt(task Task) string {
 	//   - follower: the next member picks up after the lead, self-introduces,
 	//     lists scope, references teammates.
 	if task.CouncilBroadcast != nil {
-		bc := task.CouncilBroadcast
-		if bc.Role == "salon_speaker" {
-			b.WriteString("You are in an Origin Salon — a casual chillout room, NOT a work meeting. Multiple agents take turns speaking to keep the user company. This turn is yours.\n\n")
-		} else {
-			b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat. This is a serial relay (NOT a parallel fan-out): exactly one agent speaks per turn, and you are this turn.\n\n")
-		}
-		if bc.CouncilTopic != "" {
-			if bc.Role == "salon_speaker" {
-				fmt.Fprintf(&b, "Salon vibe / topic: %s\n", bc.CouncilTopic)
-			} else {
-				fmt.Fprintf(&b, "Council topic: %s\n", bc.CouncilTopic)
-			}
-		}
-		selfName := bc.SelfAgentName
-		if selfName == "" && task.Agent != nil {
-			selfName = task.Agent.Name
-		}
-		if selfName != "" {
-			fmt.Fprintf(&b, "You are: %s\n", selfName)
-		}
-		if len(bc.Participants) > 0 {
-			b.WriteString("\nRoom roster (everyone in this room, in seat order):\n")
-			for _, m := range bc.Participants {
-				name := m.Name
-				if name == "" {
-					name = m.AgentID
-				}
-				role := m.Role
-				if role == "" {
-					role = "member"
-				}
-				marker := ""
-				if m.AgentID == bc.SelfAgentID {
-					marker = "  ← you"
-				}
-				fmt.Fprintf(&b, "- %s (%s)%s\n", name, role, marker)
-			}
-		}
-		broadcaster := bc.BroadcasterName
-		if broadcaster == "" {
-			broadcaster = "the user"
-		}
-		if bc.Role == "salon_speaker" {
-			fmt.Fprintf(&b, "\n%s kicked off the salon by saying: %q\n\n", broadcaster, bc.UserMessage)
-		} else {
-			fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\nUser said: %q\n\n", broadcaster, bc.UserMessage)
-		}
-
-		switch bc.Role {
-		case "salon_speaker":
-			// Salon（圆桌客厅）模式：不是来评议方案的，是来陪用户聊天的。
-			// 多 agent 轮流发言，每轮一人，松弛、共情、有腔调，可以跟队友
-			// 接话/吐槽/搭茬，但不要总结、不要列方案、不要做结论。
-			turnIdx := bc.TurnIndex
-			maxTurns := bc.MaxTurns
-			if maxTurns <= 0 {
-				maxTurns = 8
-			}
-			fmt.Fprintf(&b, "This is turn %d of %d in this salon. ", turnIdx, maxTurns)
-			if turnIdx == 1 {
-				b.WriteString("You are opening the room.\n\n")
-			} else if turnIdx >= maxTurns {
-				b.WriteString("This is the final turn — leave the user with a warm closing vibe, not a summary.\n\n")
-			} else {
-				b.WriteString("Pick up naturally from where the room is.\n\n")
-			}
-			if len(bc.Transcript) > 0 {
-				b.WriteString("Conversation so far (read this before you speak):\n")
-				for _, t := range bc.Transcript {
-					speaker := strings.TrimSpace(t.Speaker)
-					if speaker == "" {
-						speaker = "成员"
-					}
-					content := strings.TrimSpace(t.Content)
-					if content == "" {
-						continue
-					}
-					fmt.Fprintf(&b, "  [%s] %s\n", speaker, content)
-				}
-				b.WriteString("\n")
-			}
-			if bc.PriorSpeakerName != "" {
-				fmt.Fprintf(&b, "Prior speaker was: %s. You can riff off what they said, agree, push back, or change the topic.\n\n", bc.PriorSpeakerName)
-			}
-			b.WriteString("You are in salon (chillout) mode, not work mode. Shape:\n\n")
-			b.WriteString("1. Speak as yourself — one short paragraph, 1–4 sentences total.\n")
-			b.WriteString("2. Stay in character. If the prior speaker said something teasable, tease back. If the user shared something heavy, sit with it before reacting.\n")
-			b.WriteString("3. You can address the user OR a teammate by name. Cross-talk is fine.\n")
-			b.WriteString("4. Land on something the next person can pick up — a question, a joke, an opinion, a vibe. Do NOT close the conversation.\n\n")
-			b.WriteString("STRICT bans:\n")
-			b.WriteString("- Do NOT run `multica issue`, `multica council`, or any other CLI workflow. The prompt already contains the message and roster.\n")
-			b.WriteString("- Do NOT create issues, comments, tasks, or records. Your only job is to write the chat reply text.\n")
-			b.WriteString("- Do NOT summarize what's been said.\n")
-			b.WriteString("- Do NOT list bullet points, action items, or next steps.\n")
-			b.WriteString("- Do NOT offer to deliver a document, plan, or analysis.\n")
-			b.WriteString("- Do NOT preface with role boilerplate like \"作为 X…\".\n")
-			b.WriteString("- Do NOT narrate any reasoning steps.\n")
-			b.WriteString("- Do NOT repeat what a prior speaker just said in different words.\n")
-			b.WriteString("- Keep it short. This is conversation, not a memo.\n\n")
-			writeRequestedSkills(&b, task.RequestedSkills)
-			return b.String()
-		case "lead":
-			b.WriteString("You are the team LEAD. Your job this turn is to OPEN THE ROOM as chairperson — NOT to answer the substantive question. Follow this shape strictly:\n\n")
-			b.WriteString("1. Warm acknowledgement of the user, one short sentence.\n")
-			b.WriteString("2. Name every teammate that is standing by (use roster names exactly), and one short phrase describing each one's scope. Be specific to each member's role identity, not generic.\n")
-			b.WriteString("3. Invite the user to clarify what they want first — what topic, what depth, who they want to hear from.\n")
-			b.WriteString("4. End on a question to the user. The next speaker will pick up from there.\n\n")
-			b.WriteString("STRICT bans:\n")
-			b.WriteString("- Do NOT answer the user's actual question (model? roadmap? data?) — leave substance to the followers.\n")
-			b.WriteString("- Do NOT narrate any reasoning, exploration steps, or self-talk in the message body. Phrases like \"我先确认…\", \"我再看一下…\", \"已经从本地快照里找到…\", \"下一步我直接…\" are FORBIDDEN. If you need to call a tool, call it silently.\n")
-			b.WriteString("- Do NOT preface with role boilerplate like \"作为产品经理…\". Just speak.\n")
-			b.WriteString("- Do NOT @-mention any teammate in a way that creates a delegation task — this turn is an opening, not a hand-off.\n")
-			b.WriteString("- Total length 4–7 sentences. This is a chairperson's opening, not an essay.\n\n")
-		case "follower":
-			prior := bc.PriorSpeakerName
-			if prior == "" {
-				prior = "the team lead"
-			}
-			fmt.Fprintf(&b, "%s just opened the room. Your job this turn is to PICK UP THE RELAY — introduce yourself and declare your scope. Follow this shape strictly:\n\n", prior)
-			b.WriteString("1. One short acknowledgement of the user (varied phrasing, don't echo the lead's open).\n")
-			b.WriteString("2. State your own role identity in one sentence — what you focus on in this team.\n")
-			b.WriteString("3. Reference the OTHER teammates' scope so the user sees clean division of labor. Use the pattern: \"While [colleague A] handles X and [colleague B] handles Y, I'm here for Z.\" Use roster names exactly.\n")
-			b.WriteString("4. List 3–5 bullet points of concrete things YOU can do on this topic. Each bullet should be a verb-first capability, not a job-title slogan.\n")
-			b.WriteString("5. End with one open question inviting the user to share specifics before you go deeper.\n\n")
-			b.WriteString("STRICT bans:\n")
-			b.WriteString("- Do NOT narrate your reasoning or exploration steps in the message body. Tool calls happen silently.\n")
-			b.WriteString("- Do NOT repeat the lead's opening — assume the user already read it.\n")
-			b.WriteString("- Do NOT @-mention or delegate to other teammates.\n")
-			b.WriteString("- Do NOT speak \"on behalf of the whole team\". Stay in your own role identity.\n")
-			b.WriteString("- Total length 5–8 sentences plus the bullet list. Keep it scannable.\n\n")
-		default:
-			// Defensive fallback for an unset/unknown Role — behave like a
-			// follower so we never silently drop back to "answer it yourself".
-			b.WriteString("Self-introduce briefly, declare your scope, list 3–5 concrete things you can do on this topic, and invite the user to share specifics. Do NOT narrate your reasoning. 5–8 sentences plus the bullet list.\n\n")
-		}
-		writeRequestedSkills(&b, task.RequestedSkills)
-		return b.String()
+		return buildCouncilBroadcastPrompt(task)
 	}
 	if task.TeamID != "" {
 		b.WriteString("You are running inside an Origin Council Session (a multi-agent group chat for cross-role decisions).\n\n")
@@ -381,6 +293,240 @@ func buildChatPrompt(task Task) string {
 	b.WriteString("Stay in your role (see Agent Identity / operator preferences above). Do NOT introduce yourself as a \"Multica platform agent\" or describe your capabilities in terms of `multica issue` / `multica autopilot` / workspace management — those are local CLI plumbing and the user does not see them. Talk in Origin terms (Mission / Idea Pool / Council Session / Branching Exploration / Tool Binding) when describing what you can do.\n\n")
 	writeRequestedSkills(&b, task.RequestedSkills)
 	fmt.Fprintf(&b, "User message:\n%s\n", task.ChatMessage)
+	return b.String()
+}
+
+// buildCouncilBroadcastPrompt assembles the five-layer system prompt for a
+// Council @全体 relay leg. Layers 1–3 are stable within one relay; layer 4
+// carries the per-turn context; layer 5 the requested skills.
+func buildCouncilBroadcastPrompt(task Task) string {
+	bc := task.CouncilBroadcast
+	layers := PromptLayers{
+		OperatorPreferences: prependOperatorPreferences(task.OperatorPreferences, ""),
+		Persona:             buildCouncilPersonaPrompt(bc, task),
+		RoleInstructions:    buildCouncilRoleInstructions(bc),
+		TaskContext:         buildCouncilTaskContext(bc, task),
+		TurnTail:            buildCouncilTurnTail(task),
+	}
+	return layers.Build()
+}
+
+// buildCouncilPersonaPrompt loads the personabible role card for bc.Role and
+// injects it as the persona layer. The agent's real display name replaces the
+// role card's default name so a user-customized agent never answers as
+// "林知遥 / 周维 / 江照". A room persona override (if present) is appended as
+// the highest-priority layer.
+func buildCouncilPersonaPrompt(bc *CouncilBroadcastData, task Task) string {
+	persona, err := personabible.Load(bc.Role)
+	if err != nil {
+		persona = nil
+	}
+	name := bc.SelfAgentName
+	if name == "" && task.Agent != nil {
+		name = task.Agent.Name
+	}
+	var base string
+	if persona != nil {
+		base = personabible.Inject(persona, "")
+		if name != "" && persona.Name != "" {
+			// Replace every mention of the default persona name — the opening
+			// "你是 X" and any "我是 X" self-introduction inside the body — so a
+			// user-customized agent never answers as the stock persona.
+			base = strings.ReplaceAll(base, persona.Name, name)
+		}
+	}
+	if len(bc.PersonaOverride) == 0 {
+		return base
+	}
+	var b strings.Builder
+	if base != "" {
+		b.WriteString(base)
+		b.WriteString("\n")
+	}
+	b.WriteString("房间人格覆盖（本房间管理员设定，优先级高于上面的人设）：\n")
+	b.WriteString(formatPersonaOverride(bc.PersonaOverride))
+	return b.String()
+}
+
+// formatPersonaOverride renders a room persona override map as stable sorted
+// key-value lines, so the injected byte sequence does not vary between turns.
+func formatPersonaOverride(override map[string]any) string {
+	if len(override) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(override))
+	for k := range override {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		v := override[k]
+		switch val := v.(type) {
+		case string:
+			if val != "" {
+				fmt.Fprintf(&b, "- %s: %s\n", k, val)
+			}
+		default:
+			raw, err := json.Marshal(val)
+			if err != nil {
+				raw = []byte(fmt.Sprintf("%v", val))
+			}
+			fmt.Fprintf(&b, "- %s: %s\n", k, raw)
+		}
+	}
+	return b.String()
+}
+
+// buildCouncilRoleInstructions renders the role-specific shape and strict
+// bans. This is layer 3 — byte-stable for a given role within one relay.
+func buildCouncilRoleInstructions(bc *CouncilBroadcastData) string {
+	var b strings.Builder
+	switch bc.Role {
+	case personabible.RoleSalonSpeaker:
+		b.WriteString("You are in salon (chillout) mode, not work mode. Shape:\n\n")
+		b.WriteString("1. Speak as yourself — one short paragraph, 1–4 sentences total.\n")
+		b.WriteString("2. Stay in character. If the prior speaker said something teasable, tease back. If the user shared something heavy, sit with it before reacting.\n")
+		b.WriteString("3. You can address the user OR a teammate by name. Cross-talk is fine.\n")
+		b.WriteString("4. Land on something the next person can pick up — a question, a joke, an opinion, a vibe. Do NOT close the conversation.\n\n")
+		b.WriteString("STRICT bans:\n")
+		b.WriteString("- Do NOT run `multica issue`, `multica council`, or any other CLI workflow. The prompt already contains the message and roster.\n")
+		b.WriteString("- Do NOT create issues, comments, tasks, or records. Your only job is to write the chat reply text.\n")
+		b.WriteString("- Do NOT summarize what's been said.\n")
+		b.WriteString("- Do NOT list bullet points, action items, or next steps.\n")
+		b.WriteString("- Do NOT offer to deliver a document, plan, or analysis.\n")
+		b.WriteString("- Do NOT preface with role boilerplate like \"作为 X…\".\n")
+		b.WriteString("- Do NOT narrate any reasoning steps.\n")
+		b.WriteString("- Do NOT repeat what a prior speaker just said in different words.\n")
+		b.WriteString("- Keep it short. This is conversation, not a memo.")
+	case personabible.RoleLead:
+		b.WriteString("You are the team LEAD. Your job this turn is to OPEN THE ROOM as chairperson — NOT to answer the substantive question. Follow this shape strictly:\n\n")
+		b.WriteString("1. Warm acknowledgement of the user, one short sentence.\n")
+		b.WriteString("2. Name every teammate that is standing by (use roster names exactly), and one short phrase describing each one's scope. Be specific to each member's role identity, not generic.\n")
+		b.WriteString("3. Invite the user to clarify what they want first — what topic, what depth, who they want to hear from.\n")
+		b.WriteString("4. End on a question to the user. The next speaker will pick up from there.\n\n")
+		b.WriteString("STRICT bans:\n")
+		b.WriteString("- Do NOT answer the user's actual question (model? roadmap? data?) — leave substance to the followers.\n")
+		b.WriteString("- Do NOT narrate any reasoning, exploration steps, or self-talk in the message body. Phrases like \"我先确认…\", \"我再看一下…\", \"已经从本地快照里找到…\", \"下一步我直接…\" are FORBIDDEN. If you need to call a tool, call it silently.\n")
+		b.WriteString("- Do NOT preface with role boilerplate like \"作为产品经理…\". Just speak.\n")
+		b.WriteString("- Do NOT @-mention any teammate in a way that creates a delegation task — this turn is an opening, not a hand-off.\n")
+		b.WriteString("- Total length 4–7 sentences. This is a chairperson's opening, not an essay.")
+	case personabible.RoleFollower:
+		prior := bc.PriorSpeakerName
+		if prior == "" {
+			prior = "the team lead"
+		}
+		fmt.Fprintf(&b, "%s just opened the room. Your job this turn is to PICK UP THE RELAY — introduce yourself and declare your scope. Follow this shape strictly:\n\n", prior)
+		b.WriteString("1. One short acknowledgement of the user (varied phrasing, don't echo the lead's open).\n")
+		b.WriteString("2. State your own role identity in one sentence — what you focus on in this team.\n")
+		b.WriteString("3. Reference the OTHER teammates' scope so the user sees clean division of labor. Use the pattern: \"While [colleague A] handles X and [colleague B] handles Y, I'm here for Z.\" Use roster names exactly.\n")
+		b.WriteString("4. List 3–5 bullet points of concrete things YOU can do on this topic. Each bullet should be a verb-first capability, not a job-title slogan.\n")
+		b.WriteString("5. End with one open question inviting the user to share specifics before you go deeper.\n\n")
+		b.WriteString("STRICT bans:\n")
+		b.WriteString("- Do NOT narrate your reasoning or exploration steps in the message body. Tool calls happen silently.\n")
+		b.WriteString("- Do NOT repeat the lead's opening — assume the user already read it.\n")
+		b.WriteString("- Do NOT @-mention or delegate to other teammates.\n")
+		b.WriteString("- Do NOT speak \"on behalf of the whole team\". Stay in your own role identity.\n")
+		b.WriteString("- Total length 5–8 sentences plus the bullet list. Keep it scannable.")
+	default:
+		// Defensive fallback for an unset/unknown Role — behave like a
+		// follower so we never silently drop back to "answer it yourself".
+		b.WriteString("Self-introduce briefly, declare your scope, list 3–5 concrete things you can do on this topic, and invite the user to share specifics. Do NOT narrate your reasoning. 5–8 sentences plus the bullet list.")
+	}
+	return b.String()
+}
+
+// buildCouncilTaskContext renders the per-turn context — opening framing,
+// topic, roster, the user's broadcast message, and salon turn state. This is
+// layer 4: it grows as the salon transcript accumulates.
+func buildCouncilTaskContext(bc *CouncilBroadcastData, task Task) string {
+	var b strings.Builder
+	if bc.Role == personabible.RoleSalonSpeaker {
+		b.WriteString("You are in an Origin Salon — a casual chillout room, NOT a work meeting. Multiple agents take turns speaking to keep the user company. This turn is yours.\n")
+	} else {
+		b.WriteString("You are participating in an Origin Council Session as one member of a multi-role group chat. This is a serial relay (NOT a parallel fan-out): exactly one agent speaks per turn, and you are this turn.\n")
+	}
+	if bc.CouncilTopic != "" {
+		if bc.Role == personabible.RoleSalonSpeaker {
+			fmt.Fprintf(&b, "Salon vibe / topic: %s\n", bc.CouncilTopic)
+		} else {
+			fmt.Fprintf(&b, "Council topic: %s\n", bc.CouncilTopic)
+		}
+	}
+	selfName := bc.SelfAgentName
+	if selfName == "" && task.Agent != nil {
+		selfName = task.Agent.Name
+	}
+	if selfName != "" {
+		fmt.Fprintf(&b, "You are: %s\n", selfName)
+	}
+	if len(bc.Participants) > 0 {
+		b.WriteString("\nRoom roster (everyone in this room, in seat order):\n")
+		for _, m := range bc.Participants {
+			name := m.Name
+			if name == "" {
+				name = m.AgentID
+			}
+			role := m.Role
+			if role == "" {
+				role = "member"
+			}
+			marker := ""
+			if m.AgentID == bc.SelfAgentID {
+				marker = "  ← you"
+			}
+			fmt.Fprintf(&b, "- %s (%s)%s\n", name, role, marker)
+		}
+	}
+	broadcaster := bc.BroadcasterName
+	if broadcaster == "" {
+		broadcaster = "the user"
+	}
+	if bc.Role == personabible.RoleSalonSpeaker {
+		fmt.Fprintf(&b, "\n%s kicked off the salon by saying: %q\n", broadcaster, bc.UserMessage)
+	} else {
+		fmt.Fprintf(&b, "\n%s addressed the whole room with @全体.\nUser said: %q\n", broadcaster, bc.UserMessage)
+	}
+	if bc.Role == personabible.RoleSalonSpeaker {
+		turnIdx := bc.TurnIndex
+		maxTurns := bc.MaxTurns
+		if maxTurns <= 0 {
+			maxTurns = 8
+		}
+		fmt.Fprintf(&b, "\nThis is turn %d of %d in this salon. ", turnIdx, maxTurns)
+		if turnIdx == 1 {
+			b.WriteString("You are opening the room.")
+		} else if turnIdx >= maxTurns {
+			b.WriteString("This is the final turn — leave the user with a warm closing vibe, not a summary.")
+		} else {
+			b.WriteString("Pick up naturally from where the room is.")
+		}
+		b.WriteString("\n")
+		if len(bc.Transcript) > 0 {
+			b.WriteString("\nConversation so far (read this before you speak):\n")
+			for _, t := range bc.Transcript {
+				speaker := strings.TrimSpace(t.Speaker)
+				if speaker == "" {
+					speaker = "成员"
+				}
+				content := strings.TrimSpace(t.Content)
+				if content == "" {
+					continue
+				}
+				fmt.Fprintf(&b, "  [%s] %s\n", speaker, content)
+			}
+		}
+		if bc.PriorSpeakerName != "" {
+			fmt.Fprintf(&b, "\nPrior speaker was: %s. You can riff off what they said, agree, push back, or change the topic.", bc.PriorSpeakerName)
+		}
+	}
+	return b.String()
+}
+
+// buildCouncilTurnTail renders the per-turn requested skills. This is layer 5.
+func buildCouncilTurnTail(task Task) string {
+	var b strings.Builder
+	writeRequestedSkills(&b, task.RequestedSkills)
 	return b.String()
 }
 

@@ -43,6 +43,11 @@ type CouncilBroadcastContext struct {
 	// 知道队友说过什么。daemon 子进程跑 claude 时是新 session，看不到表里
 	// 别人写的 chat_message，必须通过 prompt 注入。
 	Transcript []CouncilSalonTurn `json:"transcript,omitempty"`
+	// PersonaOverride is the room's per-agent persona customization
+	// (room_agent_persona.persona_override JSONB), carried through the daemon
+	// and injected as the highest-priority persona layer. Populated by the
+	// room relay path only; council / team broadcasts leave it nil.
+	PersonaOverride map[string]any `json:"persona_override,omitempty"`
 }
 
 // CouncilSalonTurn 是 salon 模式 transcript 的一条发言，按 timeline 顺序流转。
