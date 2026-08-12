@@ -25,6 +25,7 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/redact"
+	"github.com/multica-ai/multica/server/pkg/sanitizer"
 )
 
 type TaskService struct {
@@ -1286,7 +1287,7 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 			message, err := s.Queries.CreateChatMessage(ctx, db.CreateChatMessageParams{
 				ChatSessionID: task.ChatSessionID,
 				Role:          "assistant",
-				Content:       redact.Text(body),
+				Content:       sanitizer.Sanitize(redact.Text(body)),
 				TaskID:        task.ID,
 				ElapsedMs:     computeChatElapsedMs(task),
 				// For team sessions the daemon hands us back an assistant reply
